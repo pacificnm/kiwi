@@ -44,8 +44,19 @@ mod tests {
     use crate::bootstrap::StartupContext;
     use crate::config::ResolvedConfig;
     use crate::terminal::TerminalGuard;
+    use crate::theme::capabilities::TerminalCapabilities;
+    use crate::theme::loader::load_theme_with_capabilities;
+    use crate::theme::ThemePalette;
 
     use super::App;
+
+    fn test_palette() -> ThemePalette {
+        load_theme_with_capabilities(
+            &ResolvedConfig::default().theme,
+            TerminalCapabilities::TrueColor,
+        )
+        .expect("load default theme")
+    }
 
     #[test]
     fn app_constructs_without_panic() {
@@ -53,6 +64,7 @@ mod tests {
             repo_root: PathBuf::from("."),
             is_git_repo: false,
             config: ResolvedConfig::default(),
+            theme: test_palette(),
             terminal: TerminalGuard::inactive(),
         };
         let _app = App::new(context);
