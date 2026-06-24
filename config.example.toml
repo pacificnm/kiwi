@@ -1,0 +1,59 @@
+# Kiwi configuration example
+#
+# Copy to either:
+#   ~/.config/kiwi/config.toml   — user-wide defaults
+#   .kiwi.toml                   — project overrides (repository root)
+#
+# Precedence (highest to lowest):
+#   CLI flags → .kiwi.toml → ~/.config/kiwi/config.toml → built-in defaults
+#
+# See docs/architecture/adr/ADR-005-configuration-system.md
+# and docs/specs/SPEC-018-configuration-loader.md
+
+[app]
+left_width = 30 # 10–50: left navigation pane width (percent)
+
+[theme]
+name = "kiwi-dark"
+# custom = "~/.config/kiwi/themes/custom.toml" # overrides bundled theme name
+
+[editor]
+command = "nvim"
+
+[agent]
+command = "agent"
+# args = ["--flag"]
+# [agent.env]
+# EXAMPLE = "value"
+
+[shell]
+command = "bash"
+# args = ["-l"]
+
+[mouse]
+enabled = true
+mode = "hybrid" # "hybrid" | "disabled"
+
+[git]
+watch = true
+show_untracked = true
+
+[github]
+command = "gh"
+
+[workspace]
+persist = true
+save_interval_secs = 30
+
+[search]
+command = "rg"
+debounce_ms = 200
+
+[preview]
+max_size_bytes = 1048576
+line_numbers = true
+wrap = false
+
+[diff]
+context_lines = 3
+word_wrap = false

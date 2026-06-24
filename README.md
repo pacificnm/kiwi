@@ -13,18 +13,50 @@ TUI skeleton, configuration, theming, layout, and navigation.
 
 ## Quick Start
 
-### Build
+### Install
 
-Requires Rust (2021 edition). From the repository root:
+**Prerequisites:** Rust (2021 edition) with `cargo`, `rustfmt`, and `clippy`; Git for
+repository workflows.
+
+Optional as features land: [GitHub CLI](https://cli.github.com/) (`gh`) for GitHub
+integration; [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) for content search.
+
+Clone and build from source:
 
 ```bash
-cargo build
-cargo test --workspace
+git clone https://github.com/pacificnm/kiwi.git
+cd kiwi
+./scripts/build.sh
 ```
 
-See [BUILD_COMMANDS.md](BUILD_COMMANDS.md) for lint, release, and tooling commands.
+Release build: `./scripts/build.sh --release`
+
+See [BUILD_COMMANDS.md](BUILD_COMMANDS.md) for lint, test, and tooling commands.
+
+### Configuration
+
+Kiwi uses TOML configuration. Precedence (highest first): CLI flags → `.kiwi.toml`
+in the repository root → `~/.config/kiwi/config.toml` → built-in defaults.
+
+```bash
+mkdir -p ~/.config/kiwi
+cp config.example.toml ~/.config/kiwi/config.toml
+```
+
+Edit `command` values for your editor, shell, and agent. For team or project
+defaults, commit `.kiwi.toml` in the repository root.
+
+Reference: [ADR-005](docs/architecture/adr/ADR-005-configuration-system.md),
+[SPEC-018](docs/specs/SPEC-018-configuration-loader.md), and
+[config.example.toml](config.example.toml).
 
 ### Run
+
+```bash
+./scripts/launch.sh
+```
+
+Or with Cargo:
 
 ```bash
 cargo run -p kiwi
@@ -79,6 +111,7 @@ Full setup: [tools/MCP-SETUP.md](tools/MCP-SETUP.md).
 ```text
 kiwi/
 ├── crates/kiwi/          # Main application binary
+├── config.example.toml   # Example user/project configuration
 ├── docs/                 # Architecture, specs, design, roadmap
 ├── scripts/              # Development scripts (e.g. index-memory.sh)
 ├── tools/                # MCP memory servers and Python helpers
