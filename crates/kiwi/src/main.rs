@@ -1,9 +1,13 @@
 mod app;
 mod bootstrap;
+mod cli;
 mod shutdown;
 
+use cli::Cli;
+
 fn main() {
-    bootstrap::init();
-    app::App::new().run();
+    let cli = Cli::parse_args();
+    bootstrap::init(&cli);
+    app::App::new(cli).run();
     shutdown::cleanup();
 }
