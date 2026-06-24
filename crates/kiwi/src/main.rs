@@ -3,6 +3,7 @@ mod bootstrap;
 mod cli;
 mod config;
 mod layout;
+mod navigation;
 mod repo;
 mod shutdown;
 mod terminal;

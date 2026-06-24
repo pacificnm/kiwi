@@ -158,7 +158,7 @@ fn pty_dimensions(area: Rect) -> (u16, u16) {
 
 #[cfg(test)]
 mod tests {
-    use super::super::focus::{PaneFocus, Region};
+    use super::super::focus::{FocusTarget, Region};
     use super::*;
 
     fn assert_rect(rect: Rect, x: u16, y: u16, width: u16, height: u16) {
@@ -284,18 +284,18 @@ mod tests {
 
     #[test]
     fn focus_border_region_tracks_focus_changes() {
-        let left = PaneFocus::Left.focused_region();
-        let main = PaneFocus::Main.focused_region();
-        let palette = PaneFocus::CommandPalette.focused_region();
-        let shell = PaneFocus::Shell.focused_region();
+        let left = FocusTarget::Left.focused_region();
+        let main = FocusTarget::Main.focused_region();
+        let palette = FocusTarget::CommandPalette.focused_region();
+        let shell = FocusTarget::Shell.focused_region();
 
         assert_eq!(left, Region::LeftContent);
         assert_eq!(main, Region::MainContent);
         assert_eq!(palette, Region::Palette);
         assert_eq!(shell, Region::Shell);
 
-        assert!(PaneFocus::Shell.is_focused(Region::Shell));
-        assert!(!PaneFocus::Shell.is_focused(Region::MainContent));
+        assert!(FocusTarget::Shell.is_focused(Region::Shell));
+        assert!(!FocusTarget::Shell.is_focused(Region::MainContent));
     }
 
     #[test]

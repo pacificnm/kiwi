@@ -7,11 +7,12 @@ use ratatui::Terminal;
 
 use crate::bootstrap::StartupContext;
 use crate::layout::compute_layout;
-use crate::ui::{draw_frame, UiState};
+use crate::navigation::{map_key, NavigationState};
+use crate::ui::draw_frame;
 
 pub struct App {
     context: StartupContext,
-    ui: UiState,
+    navigation: NavigationState,
 }
 
 impl App {
@@ -19,7 +20,7 @@ impl App {
     pub fn new(context: StartupContext) -> Self {
         Self {
             context,
-            ui: UiState::default(),
+            navigation: NavigationState::default(),
         }
     }
 
@@ -29,7 +30,7 @@ impl App {
 
         loop {
             terminal
-                .draw(|frame| draw_frame(frame, &self.context, &self.ui))
+                .draw(|frame| draw_frame(frame, &self.context, &self.navigation))
                 .expect("draw frame");
 
             if event::poll(Duration::from_millis(100)).expect("poll terminal events") {
@@ -46,11 +47,7 @@ impl App {
                             continue;
                         }
 
-                        let quit = matches!(key.code, KeyCode::Char('q'))
-                            || (key.code == KeyCode::Char('c')
-                                && key.modifiers.contains(KeyModifiers::CONTROL));
-
-                        if quit {
+                        if self.handle_key(key) {
                             break;
                         }
                     }
@@ -60,6 +57,21 @@ impl App {
         }
 
         crate::shutdown::cleanup(&mut self.context);
+    }
+
+    fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        let quit = matches!(key.code, KeyCode::Char('q'))
+            || (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL));
+
+        if quit {
+            return true;
+        }
+
+        if let Some(command) = map_key(key) {
+            self.navigation.apply(command);
+        }
+
+        false
     }
 }
 

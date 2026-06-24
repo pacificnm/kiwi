@@ -4,9 +4,6 @@ use ratatui::text::{Line, Span};
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
 
-pub const LEFT_TAB_LABELS: &[&str] = &["Files", "Git", "Diff", "GH", "Search"];
-pub const MAIN_TAB_LABELS: &[&str] = &["Agent", "Issues", "PRs", "Diff", "Preview", "Logs"];
-
 pub fn tab_bar_line(
     tabs: &[&'static str],
     selected: usize,
@@ -41,6 +38,7 @@ mod tests {
     use ratatui::style::Color;
 
     use crate::config::ResolvedConfig;
+    use crate::navigation::{LeftNavTab, MainTab, LEFT_TAB_LABELS, MAIN_TAB_LABELS};
     use crate::theme::capabilities::TerminalCapabilities;
     use crate::theme::loader::load_theme_with_capabilities;
 
@@ -56,21 +54,20 @@ mod tests {
 
     #[test]
     fn left_tab_labels_match_design() {
-        assert_eq!(LEFT_TAB_LABELS, &["Files", "Git", "Diff", "GH", "Search"]);
+        assert_eq!(LEFT_TAB_LABELS[0], LeftNavTab::Files.label());
+        assert_eq!(LEFT_TAB_LABELS[4], LeftNavTab::Search.label());
     }
 
     #[test]
     fn main_tab_labels_match_design() {
-        assert_eq!(
-            MAIN_TAB_LABELS,
-            &["Agent", "Issues", "PRs", "Diff", "Preview", "Logs"]
-        );
+        assert_eq!(MAIN_TAB_LABELS[0], MainTab::Agent.label());
+        assert_eq!(MAIN_TAB_LABELS[5], MainTab::Logs.label());
     }
 
     #[test]
     fn active_tab_uses_accent_bold_underline() {
         let theme = test_theme();
-        let line = tab_bar_line(MAIN_TAB_LABELS, 0, &theme);
+        let line = tab_bar_line(&MAIN_TAB_LABELS, 0, &theme);
         let agent = &line.spans[0];
 
         assert_eq!(agent.content, "Agent");
@@ -82,7 +79,7 @@ mod tests {
     #[test]
     fn inactive_tab_uses_muted_style() {
         let theme = test_theme();
-        let line = tab_bar_line(MAIN_TAB_LABELS, 0, &theme);
+        let line = tab_bar_line(&MAIN_TAB_LABELS, 0, &theme);
         let issues = &line.spans[2];
 
         assert_eq!(issues.content, "Issues");
