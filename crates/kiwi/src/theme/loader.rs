@@ -15,6 +15,10 @@ const KIWI_DARK_TOML: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../assets/themes/kiwi-dark.toml"
 ));
+const KIWI_LIGHT_TOML: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../assets/themes/kiwi-light.toml"
+));
 
 #[cfg_attr(not(test), allow(dead_code))]
 pub const BUILTIN_THEME_NAMES: &[&str] = &[
@@ -85,10 +89,11 @@ pub fn load_theme_with_capabilities(
 }
 
 fn builtin_theme_toml(name: &str) -> Option<&'static str> {
-    if name == "kiwi-dark" {
-        return Some(KIWI_DARK_TOML);
+    match name {
+        "kiwi-dark" => Some(KIWI_DARK_TOML),
+        "kiwi-light" => Some(KIWI_LIGHT_TOML),
+        _ => None,
     }
-    None
 }
 
 fn parse_theme_file(path: &Path, content: String) -> Result<ThemeDefinition, ThemeError> {
@@ -161,6 +166,7 @@ mod tests {
     use super::super::roles::SemanticRole;
     use super::{
         load_theme_with_capabilities, parse_theme_toml, BUILTIN_THEME_NAMES, KIWI_DARK_TOML,
+        KIWI_LIGHT_TOML,
     };
 
     #[test]
@@ -180,8 +186,29 @@ mod tests {
     }
 
     #[test]
+    fn kiwi_light_loads() {
+        let settings = ThemeSettings {
+            name: "kiwi-light".to_string(),
+            custom: None,
+        };
+        let palette =
+            load_theme_with_capabilities(&settings, TerminalCapabilities::TrueColor).expect("load");
+
+        assert_eq!(palette.name, "kiwi-light");
+        assert_eq!(
+            palette.get(SemanticRole::Bg).bg,
+            Some(Color::Rgb(232, 234, 244))
+        );
+        assert_eq!(
+            palette.git_modified_style().fg,
+            Some(Color::Rgb(184, 132, 31))
+        );
+    }
+
+    #[test]
     fn builtin_theme_manifest_matches_spec() {
         assert!(BUILTIN_THEME_NAMES.contains(&"kiwi-dark"));
+        assert!(BUILTIN_THEME_NAMES.contains(&"kiwi-light"));
         assert!(BUILTIN_THEME_NAMES.contains(&"tokyo-night"));
     }
 
@@ -237,5 +264,48 @@ mod tests {
                 role.as_str()
             );
         }
+    }
+
+    #[test]
+    fn kiwi_light_defines_all_roles() {
+        let definition = parse_theme_toml(KIWI_LIGHT_TOML, None).expect("parse kiwi-light");
+        for role in SemanticRole::ALL {
+            assert!(
+                definition.colors.contains_key(role.as_str()),
+                "missing role {}",
+                role.as_str()
+            );
+        }
+    }
+
+    #[test]
+    fn custom_theme_can_extend_kiwi_light() {
+        let dir = std::env::temp_dir().join("kiwi-theme-light-extends-test");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("create temp dir");
+        let path = dir.join("custom.toml");
+        fs::write(
+            &path,
+            "name = \"custom-light\"\nextends = \"kiwi-light\"\n\n[colors]\naccent = \"#ff00ff\"\n",
+        )
+        .expect("write custom theme");
+
+        let settings = ThemeSettings {
+            name: "kiwi-light".to_string(),
+            custom: Some(path),
+        };
+        let palette =
+            load_theme_with_capabilities(&settings, TerminalCapabilities::TrueColor).expect("load");
+
+        assert_eq!(
+            palette.get(SemanticRole::Accent).fg,
+            Some(Color::Rgb(255, 0, 255))
+        );
+        assert_eq!(
+            palette.get(SemanticRole::Bg).bg,
+            Some(Color::Rgb(232, 234, 244))
+        );
+
+        let _ = fs::remove_dir_all(dir);
     }
 }
