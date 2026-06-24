@@ -3,11 +3,14 @@ use std::path::PathBuf;
 
 use crate::cli::Cli;
 use crate::config::{load_config, ConfigError, ResolvedConfig};
+use crate::repo::{resolve_repo_root, warn_if_not_git_repo, RepoError};
 use crate::terminal::{TerminalError, TerminalGuard};
 
 pub struct StartupContext {
     #[allow(dead_code)]
     pub repo_root: PathBuf,
+    #[allow(dead_code)]
+    pub is_git_repo: bool,
     #[allow(dead_code)]
     pub config: ResolvedConfig,
     pub terminal: TerminalGuard,
@@ -16,6 +19,7 @@ pub struct StartupContext {
 #[derive(Debug)]
 pub enum StartupError {
     Config(ConfigError),
+    Repo(RepoError),
     Terminal(TerminalError),
 }
 
@@ -23,6 +27,7 @@ impl fmt::Display for StartupError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Config(err) => write!(f, "{err}"),
+            Self::Repo(err) => write!(f, "{err}"),
             Self::Terminal(err) => write!(f, "{err}"),
         }
     }
@@ -31,12 +36,15 @@ impl fmt::Display for StartupError {
 impl std::error::Error for StartupError {}
 
 pub fn init(cli: &Cli) -> Result<StartupContext, StartupError> {
-    let repo_root = cli.path.clone();
-    let config = load_config(cli, &repo_root).map_err(StartupError::Config)?;
+    let repo = resolve_repo_root(&cli.path).map_err(StartupError::Repo)?;
+    warn_if_not_git_repo(&repo);
+
+    let config = load_config(cli, &repo.path).map_err(StartupError::Config)?;
     let terminal = TerminalGuard::init(&config.mouse).map_err(StartupError::Terminal)?;
 
     Ok(StartupContext {
-        repo_root,
+        repo_root: repo.path,
+        is_git_repo: repo.is_git_repo,
         config,
         terminal,
     })
