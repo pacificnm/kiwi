@@ -124,7 +124,7 @@ impl App {
             return self.dispatch(AppEvent::Command(AppCommand::Quit));
         }
 
-        if let Some(command) = map_key(key) {
+        if let Some(command) = map_key(key, self.state.navigation.focus) {
             return self.dispatch(AppEvent::Command(AppCommand::Navigation(command)));
         }
 
@@ -179,5 +179,39 @@ mod tests {
             .expect("send");
         app.process_pending_events();
         assert!(app.state().dirty);
+    }
+
+    #[test]
+    fn shell_focus_ignores_main_tab_shortcuts() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+        use crate::layout::FocusTarget;
+        use crate::navigation::NavCommand;
+        use crate::state::AppCommand;
+
+        let mut app = App::new(test_context());
+        app.event_sender()
+            .send(AppEvent::Command(AppCommand::Navigation(
+                NavCommand::SetFocus(FocusTarget::Shell),
+            )))
+            .expect("send");
+        app.process_pending_events();
+        let before = app.state().navigation.main_tab;
+
+        let key = KeyEvent {
+            code: KeyCode::Char('3'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        };
+        assert!(!app.dispatch_key(key));
+        assert_eq!(app.state().navigation.main_tab, before);
+    }
+}
+
+#[cfg(test)]
+impl App {
+    fn dispatch_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        self.handle_key(key)
     }
 }

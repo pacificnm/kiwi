@@ -82,11 +82,11 @@ mod tests {
     use crate::theme::capabilities::TerminalCapabilities;
     use crate::theme::loader::load_theme_with_capabilities;
 
+    use super::*;
     use crate::state::domains::{
         AgentState, CommandPaletteState, DiffState, FileTreeState, GitHubState, GitState,
         PreviewState, SearchState, ShellState, StatusBarState, WorkspaceMeta,
     };
-    use super::*;
 
     fn test_state() -> AppState {
         AppState {
