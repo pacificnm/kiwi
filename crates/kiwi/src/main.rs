@@ -5,6 +5,7 @@ mod config;
 mod repo;
 mod shutdown;
 mod terminal;
+mod theme;
 
 use cli::Cli;
 

@@ -5,6 +5,7 @@ use crate::cli::Cli;
 use crate::config::{load_config, ConfigError, ResolvedConfig};
 use crate::repo::{resolve_repo_root, warn_if_not_git_repo, RepoError};
 use crate::terminal::{TerminalError, TerminalGuard};
+use crate::theme::{load_theme, ThemeError, ThemePalette};
 
 pub struct StartupContext {
     #[allow(dead_code)]
@@ -13,6 +14,8 @@ pub struct StartupContext {
     pub is_git_repo: bool,
     #[allow(dead_code)]
     pub config: ResolvedConfig,
+    #[allow(dead_code)]
+    pub theme: ThemePalette,
     pub terminal: TerminalGuard,
 }
 
@@ -20,6 +23,7 @@ pub struct StartupContext {
 pub enum StartupError {
     Config(ConfigError),
     Repo(RepoError),
+    Theme(ThemeError),
     Terminal(TerminalError),
 }
 
@@ -28,6 +32,7 @@ impl fmt::Display for StartupError {
         match self {
             Self::Config(err) => write!(f, "{err}"),
             Self::Repo(err) => write!(f, "{err}"),
+            Self::Theme(err) => write!(f, "{err}"),
             Self::Terminal(err) => write!(f, "{err}"),
         }
     }
@@ -40,12 +45,14 @@ pub fn init(cli: &Cli) -> Result<StartupContext, StartupError> {
     warn_if_not_git_repo(&repo);
 
     let config = load_config(cli, &repo.path).map_err(StartupError::Config)?;
+    let theme = load_theme(&config.theme).map_err(StartupError::Theme)?;
     let terminal = TerminalGuard::init(&config.mouse).map_err(StartupError::Terminal)?;
 
     Ok(StartupContext {
         repo_root: repo.path,
         is_git_repo: repo.is_git_repo,
         config,
+        theme,
         terminal,
     })
 }
