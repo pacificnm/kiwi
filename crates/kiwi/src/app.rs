@@ -1,9 +1,12 @@
-pub struct App;
+pub struct App {
+    #[allow(dead_code)]
+    cli: crate::cli::Cli,
+}
 
 impl App {
     #[must_use]
-    pub fn new() -> Self {
-        Self
+    pub fn new(cli: crate::cli::Cli) -> Self {
+        Self { cli }
     }
 
     pub fn run(&self) {
@@ -13,10 +16,15 @@ impl App {
 
 #[cfg(test)]
 mod tests {
+    use clap::Parser;
+
+    use crate::cli::Cli;
+
     use super::App;
 
     #[test]
     fn app_runs_without_panic() {
-        App::new().run();
+        let cli = Cli::parse_from(["kiwi"]);
+        App::new(cli).run();
     }
 }
