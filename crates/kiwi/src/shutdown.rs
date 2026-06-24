@@ -1,3 +1,6 @@
-pub fn cleanup() {
-    // Cleanup and persistence save will be added in later milestones.
+use crate::bootstrap::StartupContext;
+
+pub fn cleanup(context: &mut StartupContext) {
+    let _ = context.terminal.restore();
+    // Workspace persistence and service teardown will be added in later milestones.
 }

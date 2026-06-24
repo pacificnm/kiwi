@@ -1,7 +1,10 @@
+use std::time::Duration;
+
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+
 use crate::bootstrap::StartupContext;
 
 pub struct App {
-    #[allow(dead_code)]
     context: StartupContext,
 }
 
@@ -11,8 +14,26 @@ impl App {
         Self { context }
     }
 
-    pub fn run(&self) {
-        // Event loop will be implemented in later milestones.
+    pub fn run(&mut self) {
+        loop {
+            if event::poll(Duration::from_millis(100)).expect("poll keyboard events") {
+                if let Event::Key(key) = event::read().expect("read keyboard event") {
+                    if key.kind != KeyEventKind::Press {
+                        continue;
+                    }
+
+                    let quit = matches!(key.code, KeyCode::Char('q'))
+                        || (key.code == KeyCode::Char('c')
+                            && key.modifiers.contains(KeyModifiers::CONTROL));
+
+                    if quit {
+                        break;
+                    }
+                }
+            }
+        }
+
+        crate::shutdown::cleanup(&mut self.context);
     }
 }
 
@@ -22,15 +43,17 @@ mod tests {
 
     use crate::bootstrap::StartupContext;
     use crate::config::ResolvedConfig;
+    use crate::terminal::TerminalGuard;
 
     use super::App;
 
     #[test]
-    fn app_runs_without_panic() {
+    fn app_constructs_without_panic() {
         let context = StartupContext {
             repo_root: PathBuf::from("."),
             config: ResolvedConfig::default(),
+            terminal: TerminalGuard::inactive(),
         };
-        App::new(context).run();
+        let _app = App::new(context);
     }
 }
