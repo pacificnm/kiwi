@@ -7,6 +7,7 @@ mod repo;
 mod shutdown;
 mod terminal;
 mod theme;
+mod ui;
 
 use cli::Cli;
 

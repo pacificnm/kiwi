@@ -7,3 +7,4 @@ pub mod capabilities;
 
 pub use error::ThemeError;
 pub use loader::{load_theme, ThemePalette};
+pub use roles::SemanticRole;

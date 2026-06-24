@@ -1,23 +1,38 @@
+use std::io::stdout;
 use std::time::Duration;
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use ratatui::backend::CrosstermBackend;
+use ratatui::Terminal;
 
 use crate::bootstrap::StartupContext;
 use crate::layout::compute_layout;
+use crate::ui::{draw_frame, UiState};
 
 pub struct App {
     context: StartupContext,
+    ui: UiState,
 }
 
 impl App {
     #[must_use]
     pub fn new(context: StartupContext) -> Self {
-        Self { context }
+        Self {
+            context,
+            ui: UiState::default(),
+        }
     }
 
     pub fn run(&mut self) {
+        let mut terminal =
+            Terminal::new(CrosstermBackend::new(stdout())).expect("create ratatui terminal");
+
         loop {
-            if event::poll(Duration::from_millis(100)).expect("poll keyboard events") {
+            terminal
+                .draw(|frame| draw_frame(frame, &self.context, &self.ui))
+                .expect("draw frame");
+
+            if event::poll(Duration::from_millis(100)).expect("poll terminal events") {
                 match event::read().expect("read terminal event") {
                     Event::Resize(width, height) => {
                         if let Ok(layout) =
