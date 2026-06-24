@@ -1,0 +1,78 @@
+# ADR-011: File Watcher Architecture
+
+## Status
+
+Accepted
+
+## Context
+
+Git status, file tree cache, and preview content must update when files change on disk. Polling is explicitly rejected. Kiwi must debounce rapid saves (e.g., formatter on save) and avoid invalidating entire UI state.
+
+## Decision
+
+Use the **notify** crate with **debounced, coalesced events** and **path-targeted invalidation**.
+
+### Watcher scope
+
+- Watch repository root recursively
+- Respect `.gitignore` for watcher noise reduction where notify supports it; always ignore `.git/` internal churn from index writes selectively
+
+### Debounce pipeline
+
+```text
+notify event → raw queue → debounce (300ms default) → coalesce by path → AppEvent::FsChanged { paths }
+```
+
+### Invalidation map
+
+| Changed path | Invalidate |
+|--------------|------------|
+| Any tracked/untracked file | Git status (debounced) |
+| Directory | File tree cache for that dir |
+| Open preview file | Preview buffer reload |
+| `.git/HEAD`, `.git/index` | Git branch/status |
+
+### State preservation
+
+After invalidation, reducers must:
+
+- Keep scroll offset if still valid
+- Keep selection if path still exists
+- Keep focus pane unchanged
+
+### Configuration
+
+```toml
+[git]
+watch = true   # master switch for git-related refresh
+```
+
+Future: `[watcher] debounce_ms = 300`
+
+## Consequences
+
+### Positive
+
+- Low CPU vs polling
+- Coalescing prevents formatter save storms
+- Targeted invalidation minimizes flicker
+
+### Negative
+
+- notify behavior varies by OS (inotify, FSEvents, ReadDirectoryChangesW)
+- Network filesystems may not support reliable watching
+- Debounce adds slight delay to status updates (acceptable)
+
+## Alternatives Considered
+
+| Alternative | Rejection Rationale |
+|-------------|---------------------|
+| Polling `git status` | Explicitly forbidden |
+| watchman | Extra daemon dependency |
+| Manual refresh only | Poor UX |
+
+## Follow-up Work
+
+- Integrate with SPEC-008 Git Service and SPEC-005 File Explorer
+- Log watcher errors at `warn` level; fall back to manual refresh only on total failure
+- Test coalescing with 50 rapid touch events
