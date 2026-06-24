@@ -1,0 +1,14 @@
+[package]
+name = "kiwi"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Terminal-native AI development workspace"
+
+[[bin]]
+name = "kiwi"
+path = "src/main.rs"
+
+[lints]
+workspace = true
