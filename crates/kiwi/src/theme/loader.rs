@@ -19,6 +19,30 @@ const KIWI_LIGHT_TOML: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../assets/themes/kiwi-light.toml"
 ));
+const DRACULA_TOML: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../assets/themes/dracula.toml"
+));
+const CATPPUCCIN_MOCHA_TOML: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../assets/themes/catppuccin-mocha.toml"
+));
+const CATPPUCCIN_LATTE_TOML: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../assets/themes/catppuccin-latte.toml"
+));
+const GRUVBOX_TOML: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../assets/themes/gruvbox.toml"
+));
+const NORD_TOML: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../assets/themes/nord.toml"
+));
+const TOKYO_NIGHT_TOML: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../assets/themes/tokyo-night.toml"
+));
 
 #[cfg_attr(not(test), allow(dead_code))]
 pub const BUILTIN_THEME_NAMES: &[&str] = &[
@@ -92,6 +116,12 @@ fn builtin_theme_toml(name: &str) -> Option<&'static str> {
     match name {
         "kiwi-dark" => Some(KIWI_DARK_TOML),
         "kiwi-light" => Some(KIWI_LIGHT_TOML),
+        "dracula" => Some(DRACULA_TOML),
+        "catppuccin-mocha" => Some(CATPPUCCIN_MOCHA_TOML),
+        "catppuccin-latte" => Some(CATPPUCCIN_LATTE_TOML),
+        "gruvbox" => Some(GRUVBOX_TOML),
+        "nord" => Some(NORD_TOML),
+        "tokyo-night" => Some(TOKYO_NIGHT_TOML),
         _ => None,
     }
 }
@@ -165,8 +195,7 @@ mod tests {
     use super::super::capabilities::TerminalCapabilities;
     use super::super::roles::SemanticRole;
     use super::{
-        load_theme_with_capabilities, parse_theme_toml, BUILTIN_THEME_NAMES, KIWI_DARK_TOML,
-        KIWI_LIGHT_TOML,
+        builtin_theme_toml, load_theme_with_capabilities, parse_theme_toml, BUILTIN_THEME_NAMES,
     };
 
     #[test]
@@ -207,9 +236,40 @@ mod tests {
 
     #[test]
     fn builtin_theme_manifest_matches_spec() {
-        assert!(BUILTIN_THEME_NAMES.contains(&"kiwi-dark"));
-        assert!(BUILTIN_THEME_NAMES.contains(&"kiwi-light"));
-        assert!(BUILTIN_THEME_NAMES.contains(&"tokyo-night"));
+        assert_eq!(BUILTIN_THEME_NAMES.len(), 8);
+        for name in BUILTIN_THEME_NAMES {
+            assert!(
+                builtin_theme_toml(name).is_some(),
+                "missing embedded theme for {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn each_builtin_theme_loads() {
+        for &name in BUILTIN_THEME_NAMES {
+            let settings = ThemeSettings {
+                name: name.to_string(),
+                custom: None,
+            };
+            load_theme_with_capabilities(&settings, TerminalCapabilities::TrueColor)
+                .unwrap_or_else(|err| panic!("failed to load {name}: {err}"));
+        }
+    }
+
+    #[test]
+    fn each_builtin_theme_defines_all_roles() {
+        for &name in BUILTIN_THEME_NAMES {
+            let toml = builtin_theme_toml(name).expect(name);
+            let definition = parse_theme_toml(toml, None).expect(name);
+            for role in SemanticRole::ALL {
+                assert!(
+                    definition.colors.contains_key(role.as_str()),
+                    "{name} missing role {}",
+                    role.as_str()
+                );
+            }
+        }
     }
 
     #[test]
@@ -246,7 +306,7 @@ mod tests {
     #[test]
     fn unknown_builtin_theme_errors() {
         let settings = ThemeSettings {
-            name: "dracula".to_string(),
+            name: "solarized".to_string(),
             custom: None,
         };
         let err = load_theme_with_capabilities(&settings, TerminalCapabilities::TrueColor)
@@ -255,27 +315,19 @@ mod tests {
     }
 
     #[test]
-    fn kiwi_dark_defines_all_roles() {
-        let definition = parse_theme_toml(KIWI_DARK_TOML, None).expect("parse kiwi-dark");
-        for role in SemanticRole::ALL {
-            assert!(
-                definition.colors.contains_key(role.as_str()),
-                "missing role {}",
-                role.as_str()
-            );
-        }
-    }
+    fn dracula_loads_with_expected_accent() {
+        let settings = ThemeSettings {
+            name: "dracula".to_string(),
+            custom: None,
+        };
+        let palette =
+            load_theme_with_capabilities(&settings, TerminalCapabilities::TrueColor).expect("load");
 
-    #[test]
-    fn kiwi_light_defines_all_roles() {
-        let definition = parse_theme_toml(KIWI_LIGHT_TOML, None).expect("parse kiwi-light");
-        for role in SemanticRole::ALL {
-            assert!(
-                definition.colors.contains_key(role.as_str()),
-                "missing role {}",
-                role.as_str()
-            );
-        }
+        assert_eq!(palette.name, "dracula");
+        assert_eq!(
+            palette.get(SemanticRole::Accent).fg,
+            Some(Color::Rgb(189, 147, 249))
+        );
     }
 
     #[test]
