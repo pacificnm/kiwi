@@ -2,6 +2,7 @@ mod app;
 mod bootstrap;
 mod cli;
 mod config;
+mod layout;
 mod repo;
 mod shutdown;
 mod terminal;
