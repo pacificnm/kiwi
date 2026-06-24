@@ -4,12 +4,13 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
-use crate::layout::{LayoutState, Region};
+use crate::layout::Region;
 use crate::navigation::{LEFT_TAB_LABELS, MAIN_TAB_LABELS};
 use crate::state::AppState;
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
 
+use super::status_bar::render_status_bar;
 use super::tabs::tab_bar_line;
 
 pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
@@ -76,7 +77,7 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
         None,
     );
 
-    render_status_placeholder(frame, &state.layout, &state.theme);
+    render_status_bar(frame, state.layout.rects.status_bar, state);
 }
 
 fn left_pane_line(state: &AppState) -> Line<'_> {
@@ -146,25 +147,6 @@ fn render_pane(
     }
 }
 
-fn render_status_placeholder(frame: &mut Frame<'_>, layout: &LayoutState, theme: &ThemePalette) {
-    let area = layout.rects.status_bar;
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-
-    let mut style = theme.get(SemanticRole::Selection);
-    if style.fg.is_none() {
-        if let Some(fg) = theme.get(SemanticRole::Fg).fg {
-            style = style.fg(fg);
-        }
-    }
-
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(" Kiwi ", style))),
-        area,
-    );
-}
-
 fn chrome_style(theme: &ThemePalette) -> Style {
     let mut style = Style::default();
     if let Some(bg) = theme.get(SemanticRole::Bg).bg {
@@ -189,6 +171,9 @@ mod tests {
     use crate::state::AppState;
     use crate::theme::capabilities::TerminalCapabilities;
     use crate::theme::loader::load_theme_with_capabilities;
+
+    use crate::state::{reduce, AppEvent};
+    use crate::ui::status_bar::{compute_status_bar, display_width, format_status_line};
 
     use super::*;
 
@@ -229,6 +214,77 @@ mod tests {
         assert!(content.contains("Ctrl+P for commands"));
         assert!(content.contains("Files view"));
         assert!(content.contains("Agent view"));
+        assert!(content.contains("Kiwi |"));
+        assert!(content.contains("Agent Idle"));
+        assert!(content.contains("Clean"));
+    }
+
+    #[test]
+    fn draw_frame_status_bar_reflects_git_and_agent_updates() {
+        let mut state = test_state();
+        state.git.branch = Some("main".to_string());
+        state.git.modified_files = vec!["src/lib.rs".to_string()];
+        state.agent.running = true;
+        state.github.selected_issue = Some(7);
+
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| draw_frame(frame, &state))
+            .expect("draw");
+
+        let content = buffer_content(terminal.backend().buffer());
+        assert!(content.contains("Kiwi |"));
+        assert!(content.contains("main"));
+        assert!(content.contains("Agent Running"));
+        assert!(content.contains("1 Modified"));
+        assert!(content.contains("#7"));
+    }
+
+    #[test]
+    fn draw_frame_status_bar_truncates_on_narrow_terminal() {
+        let mut state = test_state();
+        state.status_bar.repo_name = "cityartwalks".to_string();
+        state.git.branch = Some("feature/very-long-branch-name".to_string());
+        state.git.modified_files = vec!["a.rs".to_string(), "b.rs".to_string()];
+        state.agent.running = true;
+        state.github.selected_issue = Some(99);
+
+        let snapshot = compute_status_bar(&state);
+        let formatted = format_status_line(&snapshot, 80);
+        assert!(display_width(&formatted) <= 80);
+        assert!(!formatted.contains("#99"));
+
+        state.layout = compute_layout(80, 40, 30).expect("layout");
+        let backend = TestBackend::new(80, 40);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| draw_frame(frame, &state))
+            .expect("draw");
+
+        let content = buffer_content(terminal.backend().buffer());
+        assert!(content.contains("Kiwi |"));
+        assert!(content.contains("Modified"));
+    }
+
+    #[test]
+    fn draw_frame_status_bar_updates_after_git_refresh_event() {
+        let mut state = test_state();
+        reduce(
+            &mut state,
+            AppEvent::GitStatusUpdated {
+                modified_files: vec!["src/main.rs".to_string(), "src/lib.rs".to_string()],
+            },
+        );
+
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| draw_frame(frame, &state))
+            .expect("draw");
+
+        let content = buffer_content(terminal.backend().buffer());
+        assert!(content.contains("2 Modified"));
     }
 
     #[test]
