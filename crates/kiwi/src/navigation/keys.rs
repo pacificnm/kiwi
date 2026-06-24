@@ -1,3 +1,8 @@
+//! Default keybindings for tab switching and focus routing.
+//!
+//! Bindings match `docs/design/keyboard-shortcuts.md` and SPEC-004. Navigation
+//! shortcuts are suppressed when the shell PTY has focus so keys can be forwarded.
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::layout::FocusTarget;
@@ -5,7 +10,11 @@ use crate::layout::FocusTarget;
 use super::state::NavCommand;
 use super::tabs::{LeftNavTab, MainTab};
 
-pub fn map_key(event: KeyEvent) -> Option<NavCommand> {
+pub fn map_key(event: KeyEvent, focus: FocusTarget) -> Option<NavCommand> {
+    if focus == FocusTarget::Shell {
+        return None;
+    }
+
     if event.modifiers.contains(KeyModifiers::CONTROL) {
         return match event.code {
             KeyCode::Char('p') | KeyCode::Char('P') => {
@@ -24,7 +33,9 @@ pub fn map_key(event: KeyEvent) -> Option<NavCommand> {
             Some(NavCommand::PreviousFocus)
         }
         KeyCode::Tab => Some(NavCommand::NextFocus),
-        KeyCode::Char(c @ '1'..='6') => main_tab_from_digit(c),
+        KeyCode::Char(c @ '1'..='6') if matches!(focus, FocusTarget::Main | FocusTarget::Left) => {
+            main_tab_from_digit(c)
+        }
         _ => None,
     }
 }
@@ -72,31 +83,105 @@ mod tests {
 
     #[test]
     fn alt_digit_selects_left_tab() {
-        let cmd = map_key(press_with_modifiers(KeyCode::Char('3'), KeyModifiers::ALT));
+        let cmd = map_key(
+            press_with_modifiers(KeyCode::Char('3'), KeyModifiers::ALT),
+            FocusTarget::Main,
+        );
         assert_eq!(cmd, Some(NavCommand::SelectLeftTab(LeftNavTab::Diff)));
     }
 
     #[test]
-    fn digit_selects_main_tab() {
-        let cmd = map_key(press(KeyCode::Char('2')));
+    fn left_tab_shortcuts_match_design_doc() {
+        let expected = [
+            (KeyCode::Char('1'), LeftNavTab::Files),
+            (KeyCode::Char('2'), LeftNavTab::Git),
+            (KeyCode::Char('3'), LeftNavTab::Diff),
+            (KeyCode::Char('4'), LeftNavTab::Gh),
+            (KeyCode::Char('5'), LeftNavTab::Search),
+        ];
+
+        for (digit, tab) in expected {
+            let cmd = map_key(
+                press_with_modifiers(digit, KeyModifiers::ALT),
+                FocusTarget::Left,
+            );
+            assert_eq!(cmd, Some(NavCommand::SelectLeftTab(tab)));
+        }
+    }
+
+    #[test]
+    fn digit_selects_main_tab_when_main_focused() {
+        let cmd = map_key(press(KeyCode::Char('2')), FocusTarget::Main);
         assert_eq!(cmd, Some(NavCommand::SelectMainTab(MainTab::Issues)));
     }
 
     #[test]
+    fn digit_selects_main_tab_when_left_focused() {
+        let cmd = map_key(press(KeyCode::Char('5')), FocusTarget::Left);
+        assert_eq!(cmd, Some(NavCommand::SelectMainTab(MainTab::Preview)));
+    }
+
+    #[test]
+    fn main_tab_shortcuts_match_design_doc() {
+        let expected = [
+            (KeyCode::Char('1'), MainTab::Agent),
+            (KeyCode::Char('2'), MainTab::Issues),
+            (KeyCode::Char('3'), MainTab::Prs),
+            (KeyCode::Char('4'), MainTab::Diff),
+            (KeyCode::Char('5'), MainTab::Preview),
+            (KeyCode::Char('6'), MainTab::Logs),
+        ];
+
+        for (digit, tab) in expected {
+            let cmd = map_key(press(digit), FocusTarget::Main);
+            assert_eq!(cmd, Some(NavCommand::SelectMainTab(tab)));
+        }
+    }
+
+    #[test]
+    fn main_tab_digits_ignored_when_palette_focused() {
+        let cmd = map_key(press(KeyCode::Char('2')), FocusTarget::CommandPalette);
+        assert_eq!(cmd, None);
+    }
+
+    #[test]
     fn tab_cycles_focus() {
-        let cmd = map_key(press(KeyCode::Tab));
+        let cmd = map_key(press(KeyCode::Tab), FocusTarget::Main);
         assert_eq!(cmd, Some(NavCommand::NextFocus));
 
-        let cmd = map_key(press_with_modifiers(KeyCode::Tab, KeyModifiers::SHIFT));
+        let cmd = map_key(
+            press_with_modifiers(KeyCode::Tab, KeyModifiers::SHIFT),
+            FocusTarget::Main,
+        );
         assert_eq!(cmd, Some(NavCommand::PreviousFocus));
     }
 
     #[test]
     fn ctrl_p_focuses_palette() {
-        let cmd = map_key(press_with_modifiers(
-            KeyCode::Char('p'),
-            KeyModifiers::CONTROL,
-        ));
+        let cmd = map_key(
+            press_with_modifiers(KeyCode::Char('p'), KeyModifiers::CONTROL),
+            FocusTarget::Main,
+        );
         assert_eq!(cmd, Some(NavCommand::SetFocus(FocusTarget::CommandPalette)));
+    }
+
+    #[test]
+    fn shell_focus_suppresses_navigation_shortcuts() {
+        assert_eq!(map_key(press(KeyCode::Tab), FocusTarget::Shell), None);
+        assert_eq!(
+            map_key(
+                press_with_modifiers(KeyCode::Char('1'), KeyModifiers::ALT),
+                FocusTarget::Shell,
+            ),
+            None
+        );
+        assert_eq!(map_key(press(KeyCode::Char('2')), FocusTarget::Shell), None);
+        assert_eq!(
+            map_key(
+                press_with_modifiers(KeyCode::Char('p'), KeyModifiers::CONTROL),
+                FocusTarget::Shell,
+            ),
+            None
+        );
     }
 }
