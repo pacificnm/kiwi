@@ -51,6 +51,7 @@ mod tests {
     fn app_constructs_without_panic() {
         let context = StartupContext {
             repo_root: PathBuf::from("."),
+            is_git_repo: false,
             config: ResolvedConfig::default(),
             terminal: TerminalGuard::inactive(),
         };
