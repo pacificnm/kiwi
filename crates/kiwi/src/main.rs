@@ -6,6 +6,7 @@ mod layout;
 mod navigation;
 mod repo;
 mod shutdown;
+mod state;
 mod terminal;
 mod theme;
 mod ui;
