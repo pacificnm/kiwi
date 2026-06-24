@@ -3,18 +3,18 @@ mod bootstrap;
 mod cli;
 mod config;
 mod shutdown;
+mod terminal;
 
 use cli::Cli;
 
 fn main() {
     let cli = Cli::parse_args();
-    let context = match bootstrap::init(&cli) {
-        Ok(context) => context,
+    let mut app = match bootstrap::init(&cli) {
+        Ok(context) => app::App::new(context),
         Err(err) => {
             eprintln!("error: {err}");
             std::process::exit(1);
         }
     };
-    app::App::new(context).run();
-    shutdown::cleanup();
+    app.run();
 }
