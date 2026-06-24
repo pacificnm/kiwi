@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": ".cursor/hooks/memory_session_start.sh"
+      }
+    ],
+    "preCompact": [
+      {
+        "command": ".cursor/hooks/memory_pre_compact.sh",
+        "timeout": 120
+      }
+    ]
+  }
+}

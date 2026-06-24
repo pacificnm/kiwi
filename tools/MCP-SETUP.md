@@ -24,6 +24,7 @@ From the repository root:
 5. Create the context table: run `tools/setup_context_memory.sql` as `postgres`.
 6. Confirm `.cursor/mcp.json` paths match your machine.
 7. Reload Cursor and confirm both servers are connected.
+8. Confirm `.cursor/hooks.json` is loaded (Hooks tab in Cursor settings).
 
 ## Prerequisites
 
@@ -267,6 +268,35 @@ These commands should start without import errors:
 
 Each process waits on stdio. Stop it with **Ctrl+C**. Cursor launches the same
 commands in the background when the servers are enabled.
+
+## 5b. Cursor Hooks (memory enforcement)
+
+Project hooks in `.cursor/hooks.json` enforce memory requirements:
+
+| Hook | Script | Behavior |
+| --- | --- | --- |
+| `sessionStart` | `.cursor/hooks/memory_session_start.sh` | Injects memory-first instructions and recent context memory for the session. |
+| `preCompact` | `.cursor/hooks/memory_pre_compact.sh` | Snapshots the conversation transcript into context memory before compaction. |
+
+Hook handlers live in `tools/memory_hooks.py`. Transcript parsing is in
+`tools/transcript_snapshot.py`.
+
+Smoke-test the session-start hook:
+
+```bash
+echo '{"conversation_id":"test-session","session_id":"test-session"}' \
+  | .cursor/hooks/memory_session_start.sh | jq .
+```
+
+Smoke-test pre-compaction with a transcript path:
+
+```bash
+echo '{"conversation_id":"test","transcript_path":"/path/to/transcript.jsonl"}' \
+  | .cursor/hooks/memory_pre_compact.sh | jq .
+```
+
+Restart Cursor after changing hook files. Check the **Hooks** output channel if
+a hook does not run.
 
 ## 6. MCP Tools
 
