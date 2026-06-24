@@ -4,13 +4,34 @@ use ratatui::text::{Line, Span};
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
 
+const TAB_SEPARATOR: &str = " | ";
+
+pub fn tab_index_at_x(local_x: u16, labels: &[&str]) -> Option<usize> {
+    let x = local_x as usize;
+    let mut cursor = 0;
+
+    for (index, label) in labels.iter().enumerate() {
+        let start = cursor;
+        let end = cursor + label.len();
+        if x >= start && x < end {
+            return Some(index);
+        }
+
+        cursor = end;
+        if index + 1 < labels.len() {
+            cursor += TAB_SEPARATOR.len();
+        }
+    }
+
+    None
+}
+
 pub fn tab_bar_line(tabs: &[&'static str], selected: usize, theme: &ThemePalette) -> Line<'static> {
-    let separator = Span::styled(" | ", theme.get(SemanticRole::Muted));
     let mut spans = Vec::new();
 
     for (index, label) in tabs.iter().enumerate() {
         if index > 0 {
-            spans.push(separator.clone());
+            spans.push(separator_span(theme));
         }
 
         let mut style = if index == selected {
@@ -27,6 +48,10 @@ pub fn tab_bar_line(tabs: &[&'static str], selected: usize, theme: &ThemePalette
     }
 
     Line::from(spans)
+}
+
+fn separator_span(theme: &ThemePalette) -> Span<'static> {
+    Span::styled(TAB_SEPARATOR, theme.get(SemanticRole::Muted))
 }
 
 #[cfg(test)]
@@ -46,6 +71,15 @@ mod tests {
             TerminalCapabilities::TrueColor,
         )
         .expect("theme")
+    }
+
+    #[test]
+    fn tab_index_at_x_selects_label_not_separator() {
+        assert_eq!(tab_index_at_x(0, &LEFT_TAB_LABELS), Some(0));
+        assert_eq!(tab_index_at_x(4, &LEFT_TAB_LABELS), Some(0));
+        assert_eq!(tab_index_at_x(5, &LEFT_TAB_LABELS), None);
+        assert_eq!(tab_index_at_x(8, &LEFT_TAB_LABELS), Some(1));
+        assert_eq!(tab_index_at_x(10, &MAIN_TAB_LABELS), Some(1));
     }
 
     #[test]
