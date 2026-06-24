@@ -30,8 +30,23 @@ should feel*. MCP memory is a retrieval aid, not a source of truth.
 
 ## Project Memory (MCP)
 
-Before changing code, search project memory for the affected subsystem, milestone,
-ADR numbers, and known issues.
+**Requirements (mandatory):**
+
+1. **Memory-first** — Before reading or editing code for implementation, search
+   project memory for the affected subsystem, milestone, ADR/SPEC numbers, and
+   known issues.
+2. **Context on resume** — At session start or when resuming a task, search and
+   list context memory for the current `session_key` (git branch, optionally
+   combined with conversation id).
+3. **Save checkpoints** — Call `save_context_memory` at stable checkpoints, before
+   handoff, and when context is getting full. Include decisions, paths, blockers,
+   and verification results.
+
+Enforcement layers:
+
+- `.cursor/rules/memory.mdc` — always-applied agent rule
+- `.cursor/hooks.json` — `sessionStart` injects memory-first context; `preCompact`
+  snapshots the transcript into context memory before compaction
 
 Useful queries:
 
@@ -54,6 +69,10 @@ Setup details: [tools/MCP-SETUP.md](tools/MCP-SETUP.md).
 Use the `kiwi-context-memory` MCP server to save and search session notes across
 Cursor context compaction. Prefer it for work-in-progress state, not permanent
 project documentation.
+
+Saving context is **required** at checkpoints (see requirements above). A
+`preCompact` hook also writes an automatic transcript snapshot; structured
+agent saves remain mandatory for decisions and task state.
 
 ## Current Focus
 
