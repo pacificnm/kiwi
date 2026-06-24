@@ -4,11 +4,7 @@ use ratatui::text::{Line, Span};
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
 
-pub fn tab_bar_line(
-    tabs: &[&'static str],
-    selected: usize,
-    theme: &ThemePalette,
-) -> Line<'static> {
+pub fn tab_bar_line(tabs: &[&'static str], selected: usize, theme: &ThemePalette) -> Line<'static> {
     let separator = Span::styled(" | ", theme.get(SemanticRole::Muted));
     let mut spans = Vec::new();
 

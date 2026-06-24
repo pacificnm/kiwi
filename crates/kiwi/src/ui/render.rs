@@ -4,95 +4,95 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
-use crate::bootstrap::StartupContext;
 use crate::layout::{LayoutState, Region};
-use crate::navigation::{NavigationState, LEFT_TAB_LABELS, MAIN_TAB_LABELS};
+use crate::navigation::{LEFT_TAB_LABELS, MAIN_TAB_LABELS};
+use crate::state::AppState;
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
 
 use super::tabs::tab_bar_line;
 
-pub fn draw_frame(frame: &mut Frame<'_>, context: &StartupContext, nav: &NavigationState) {
-    let chrome = chrome_style(&context.theme);
+pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
+    let chrome = chrome_style(&state.theme);
     frame.render_widget(Clear, frame.area());
     frame.render_widget(Paragraph::new("").style(chrome), frame.area());
 
     render_tab_bar(
         frame,
-        context.layout.rects.left_tabs,
+        state.layout.rects.left_tabs,
         &LEFT_TAB_LABELS,
-        nav.left_tab.index(),
-        &context.theme,
+        state.navigation.left_tab.index(),
+        &state.theme,
         chrome,
     );
     render_tab_bar(
         frame,
-        context.layout.rects.main_tabs,
+        state.layout.rects.main_tabs,
         &MAIN_TAB_LABELS,
-        nav.main_tab.index(),
-        &context.theme,
+        state.navigation.main_tab.index(),
+        &state.theme,
         chrome,
     );
 
     render_pane(
         frame,
-        context.layout.rects.left_content,
-        nav.left_tab.label(),
-        nav.focus.is_focused(Region::LeftContent),
-        &context.theme,
+        state.layout.rects.left_content,
+        state.navigation.left_tab.label(),
+        state.navigation.focus.is_focused(Region::LeftContent),
+        &state.theme,
         chrome,
-        Some(left_pane_line(nav)),
+        Some(left_pane_line(state)),
     );
     render_pane(
         frame,
-        context.layout.rects.main_content,
-        nav.main_tab.label(),
-        nav.focus.is_focused(Region::MainContent),
-        &context.theme,
+        state.layout.rects.main_content,
+        state.navigation.main_tab.label(),
+        state.navigation.focus.is_focused(Region::MainContent),
+        &state.theme,
         chrome,
-        Some(main_pane_line(nav)),
+        Some(main_pane_line(state)),
     );
     render_pane(
         frame,
-        context.layout.rects.palette,
+        state.layout.rects.palette,
         "Commands",
-        nav.focus.is_focused(Region::Palette),
-        &context.theme,
+        state.navigation.focus.is_focused(Region::Palette),
+        &state.theme,
         chrome,
         Some(Line::from(Span::styled(
             "Ctrl+P for commands",
-            context.theme.get(SemanticRole::Muted),
+            state.theme.get(SemanticRole::Muted),
         ))),
     );
 
-    let shell_title = format!("Shell: {}", context.config.shell.command);
+    let shell_title = format!("Shell: {}", state.config.shell.command);
     render_pane(
         frame,
-        context.layout.rects.shell,
+        state.layout.rects.shell,
         &shell_title,
-        nav.focus.is_focused(Region::Shell),
-        &context.theme,
+        state.navigation.focus.is_focused(Region::Shell),
+        &state.theme,
         chrome,
         None,
     );
 
-    render_status_placeholder(frame, &context.layout, &context.theme);
+    render_status_placeholder(frame, &state.layout, &state.theme);
 }
 
-fn left_pane_line(nav: &NavigationState) -> Line<'_> {
-    let slot = nav.left_slot();
+fn left_pane_line(state: &AppState) -> Line<'_> {
+    let slot = state.navigation.left_slot();
     Line::from(format!(
         "{} view (selection: {})",
-        nav.left_tab.label(),
+        state.navigation.left_tab.label(),
         slot.selected_index
     ))
 }
 
-fn main_pane_line(nav: &NavigationState) -> Line<'_> {
-    let slot = nav.main_slot();
+fn main_pane_line(state: &AppState) -> Line<'_> {
+    let slot = state.navigation.main_slot();
     Line::from(format!(
         "{} view (selection: {})",
-        nav.main_tab.label(),
+        state.navigation.main_tab.label(),
         slot.selected_index
     ))
 }
@@ -183,42 +183,37 @@ mod tests {
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
 
-    use crate::bootstrap::StartupContext;
     use crate::config::ResolvedConfig;
     use crate::layout::compute_layout;
-    use crate::navigation::{
-        LeftNavTab, MainTab, NavCommand, NavigationState, LEFT_TAB_LABELS, MAIN_TAB_LABELS,
-    };
-    use crate::terminal::TerminalGuard;
+    use crate::navigation::{LeftNavTab, MainTab, NavCommand};
+    use crate::state::AppState;
     use crate::theme::capabilities::TerminalCapabilities;
     use crate::theme::loader::load_theme_with_capabilities;
 
     use super::*;
 
-    fn test_context() -> StartupContext {
-        StartupContext {
-            repo_root: PathBuf::from("."),
-            is_git_repo: false,
-            config: ResolvedConfig::default(),
-            theme: load_theme_with_capabilities(
+    fn test_state() -> AppState {
+        AppState::from_startup(
+            PathBuf::from("."),
+            false,
+            ResolvedConfig::default(),
+            load_theme_with_capabilities(
                 &ResolvedConfig::default().theme,
                 TerminalCapabilities::TrueColor,
             )
             .expect("theme"),
-            layout: compute_layout(120, 40, 30).expect("layout"),
-            terminal: TerminalGuard::inactive(),
-        }
+            compute_layout(120, 40, 30).expect("layout"),
+        )
     }
 
     #[test]
     fn draw_frame_renders_tab_labels_and_pane_titles() {
-        let context = test_context();
-        let nav = NavigationState::default();
+        let state = test_state();
         let backend = TestBackend::new(120, 40);
         let mut terminal = Terminal::new(backend).expect("terminal");
 
         terminal
-            .draw(|frame| draw_frame(frame, &context, &nav))
+            .draw(|frame| draw_frame(frame, &state))
             .expect("draw");
 
         let buffer = terminal.backend().buffer();
@@ -238,15 +233,18 @@ mod tests {
 
     #[test]
     fn draw_frame_reflects_orthogonal_tab_selection() {
-        let context = test_context();
-        let mut nav = NavigationState::default();
-        nav.apply(NavCommand::SelectLeftTab(LeftNavTab::Git));
-        nav.apply(NavCommand::SelectMainTab(MainTab::Issues));
+        let mut state = test_state();
+        state
+            .navigation
+            .apply(NavCommand::SelectLeftTab(LeftNavTab::Git));
+        state
+            .navigation
+            .apply(NavCommand::SelectMainTab(MainTab::Issues));
 
         let backend = TestBackend::new(120, 40);
         let mut terminal = Terminal::new(backend).expect("terminal");
         terminal
-            .draw(|frame| draw_frame(frame, &context, &nav))
+            .draw(|frame| draw_frame(frame, &state))
             .expect("draw");
 
         let content = buffer_content(terminal.backend().buffer());
