@@ -15,6 +15,7 @@ pub struct RawConfig {
     pub git: Option<GitSection>,
     pub github: Option<GitHubSection>,
     pub workspace: Option<WorkspaceSection>,
+    pub status_bar: Option<StatusBarSection>,
     pub search: Option<SearchSection>,
     pub preview: Option<PreviewSection>,
     pub diff: Option<DiffSection>,
@@ -91,6 +92,12 @@ pub struct WorkspaceSection {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
 #[serde(default)]
+pub struct StatusBarSection {
+    pub show_issue: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
+#[serde(default)]
 pub struct SearchSection {
     pub command: Option<String>,
     pub debounce_ms: Option<u64>,
@@ -122,6 +129,7 @@ pub struct ResolvedConfig {
     pub git: GitSettings,
     pub github: GitHubSettings,
     pub workspace: WorkspaceSettings,
+    pub status_bar: StatusBarSettings,
     pub search: SearchSettings,
     pub preview: PreviewSettings,
     pub diff: DiffSettings,
@@ -180,6 +188,11 @@ pub struct WorkspaceSettings {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StatusBarSettings {
+    pub show_issue: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SearchSettings {
     pub command: String,
     pub debounce_ms: u64,
@@ -233,6 +246,7 @@ impl Default for ResolvedConfig {
                 persist: true,
                 save_interval_secs: 30,
             },
+            status_bar: StatusBarSettings { show_issue: true },
             search: SearchSettings {
                 command: "rg".to_string(),
                 debounce_ms: 200,
@@ -324,6 +338,12 @@ impl RawConfig {
             }
             if let Some(save_interval_secs) = workspace.save_interval_secs {
                 resolved.workspace.save_interval_secs = save_interval_secs;
+            }
+        }
+
+        if let Some(status_bar) = &self.status_bar {
+            if let Some(show_issue) = status_bar.show_issue {
+                resolved.status_bar.show_issue = show_issue;
             }
         }
 

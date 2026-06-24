@@ -15,6 +15,7 @@ pub struct SearchState {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GitState {
+    pub branch: Option<String>,
     pub selected_path: Option<String>,
     pub modified_files: Vec<String>,
 }
