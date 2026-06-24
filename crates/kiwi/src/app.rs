@@ -1,12 +1,14 @@
+use crate::bootstrap::StartupContext;
+
 pub struct App {
     #[allow(dead_code)]
-    cli: crate::cli::Cli,
+    context: StartupContext,
 }
 
 impl App {
     #[must_use]
-    pub fn new(cli: crate::cli::Cli) -> Self {
-        Self { cli }
+    pub fn new(context: StartupContext) -> Self {
+        Self { context }
     }
 
     pub fn run(&self) {
@@ -16,15 +18,19 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use clap::Parser;
+    use std::path::PathBuf;
 
-    use crate::cli::Cli;
+    use crate::bootstrap::StartupContext;
+    use crate::config::ResolvedConfig;
 
     use super::App;
 
     #[test]
     fn app_runs_without_panic() {
-        let cli = Cli::parse_from(["kiwi"]);
-        App::new(cli).run();
+        let context = StartupContext {
+            repo_root: PathBuf::from("."),
+            config: ResolvedConfig::default(),
+        };
+        App::new(context).run();
     }
 }
