@@ -47,7 +47,7 @@ After invalidation, reducers must:
 watch = true   # master switch for git-related refresh
 ```
 
-Future: `[watcher] debounce_ms = 300`
+Future: `[watcher] debounce_ms = 300` (implemented; default 300ms)
 
 ## Consequences
 
@@ -76,6 +76,14 @@ Future: `[watcher] debounce_ms = 300`
 - Integrate with SPEC-008 Git Service and SPEC-005 File Explorer
 - Log watcher errors at `warn` level; fall back to manual refresh only on total failure
 - Test coalescing with 50 rapid touch events
+
+## Acceptance criteria (debounce and coalesce)
+
+- [x] Watcher debounces notify events for `[watcher].debounce_ms` (default 300ms)
+- [x] Repeated path changes within the debounce window coalesce to one path set
+- [x] New events during the window reschedule the debounce deadline
+- [x] Event channel merges duplicate `FsChanged` paths before reducer dispatch
+- [x] 50 rapid path updates coalesce to a single `FsChanged` batch in tests
 
 ## Acceptance criteria (repo root watcher)
 

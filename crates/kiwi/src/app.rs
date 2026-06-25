@@ -85,14 +85,17 @@ impl App {
             }
         }
         let events = EventChannel::new();
-        let (repo_watcher, watcher_error) =
-            match RepoWatcher::spawn(repo_root.clone(), events.sender()) {
-                Ok(watcher) => (Some(watcher), None),
-                Err(err) => {
-                    eprintln!("file watcher disabled: {err}");
-                    (None, Some(err))
-                }
-            };
+        let (repo_watcher, watcher_error) = match RepoWatcher::spawn(
+            repo_root.clone(),
+            state.config.watcher.debounce_ms,
+            events.sender(),
+        ) {
+            Ok(watcher) => (Some(watcher), None),
+            Err(err) => {
+                eprintln!("file watcher disabled: {err}");
+                (None, Some(err))
+            }
+        };
         let (cols, rows) = shell_pty_size(&state.layout.rects);
         let shell = match ShellSession::spawn(&repo_root, &state.config.shell, cols, rows) {
             Ok(session) => {

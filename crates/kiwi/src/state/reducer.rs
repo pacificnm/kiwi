@@ -1152,6 +1152,27 @@ mod tests {
     }
 
     #[test]
+    fn fs_changed_many_paths_trigger_single_git_refresh() {
+        let mut state = test_state();
+        state.workspace_meta.is_git_repo = true;
+        state.config.git.watch = true;
+
+        let paths: Vec<PathBuf> = (0..50)
+            .map(|index| PathBuf::from(format!("/repo/file{index}.rs")))
+            .collect();
+        let effects = reduce(&mut state, AppEvent::FsChanged { paths });
+
+        assert_eq!(
+            effects
+                .iter()
+                .filter(|effect| **effect == SideEffect::SpawnGitRefresh)
+                .count(),
+            1
+        );
+        assert!(state.git.loading);
+    }
+
+    #[test]
     fn fs_changed_git_head_triggers_refresh() {
         let mut state = test_state();
         state.workspace_meta.is_git_repo = true;

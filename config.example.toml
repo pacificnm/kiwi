@@ -58,3 +58,6 @@ wrap = false
 [diff]
 context_lines = 3
 word_wrap = false
+
+[watcher]
+debounce_ms = 300

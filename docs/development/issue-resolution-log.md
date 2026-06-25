@@ -295,6 +295,14 @@ Format for new entries:
 - **Files:** `watcher/paths.rs`, `watcher/io.rs`, `watcher/debounce.rs`, `app.rs`, `state/reducer.rs`
 - **Verify:** `allows_git_metadata_paths`, `watcher_emits_fs_changed_for_nested_file`, `watcher_emits_fs_changed_for_git_head`, `fs_changed_git_head_triggers_refresh`; manual: save a tracked file and confirm status updates after debounce.
 
+### Debounce and coalesce events (GitHub #47, ADR-011)
+
+- **Symptom:** Rapid saves could enqueue duplicate paths and multiple `FsChanged` batches; debounce window was hard-coded with no config hook.
+- **Cause:** Path deduplication lived only in `PathDebouncer`; channel drained paths without a shared coalesce helper; ADR-011 `debounce_ms` config was not wired.
+- **Fix:** Added `coalesce_paths`, extended debouncer tests (reschedule, 50-path storm), channel coalescing test, and `[watcher] debounce_ms` config passed into `RepoWatcher::spawn`.
+- **Files:** `watcher/debounce.rs`, `state/channel.rs`, `watcher/io.rs`, `config/types.rs`, `app.rs`
+- **Verify:** `coalesces_fifty_rapid_paths`, `coalesces_fifty_fs_changed_batches`, `reschedule_extends_deadline`; manual: formatter-on-save triggers one git refresh after debounce.
+
 ---
 
 ## Reporting New Issues

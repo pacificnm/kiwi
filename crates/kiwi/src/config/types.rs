@@ -19,6 +19,7 @@ pub struct RawConfig {
     pub search: Option<SearchSection>,
     pub preview: Option<PreviewSection>,
     pub diff: Option<DiffSection>,
+    pub watcher: Option<WatcherSection>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
@@ -115,6 +116,12 @@ pub struct PreviewSection {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
 #[serde(default)]
+pub struct WatcherSection {
+    pub debounce_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
+#[serde(default)]
 pub struct DiffSection {
     pub context_lines: Option<u32>,
     pub word_wrap: Option<bool>,
@@ -135,6 +142,7 @@ pub struct ResolvedConfig {
     pub search: SearchSettings,
     pub preview: PreviewSettings,
     pub diff: DiffSettings,
+    pub watcher: WatcherSettings,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -217,6 +225,11 @@ pub struct DiffSettings {
     pub word_wrap: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WatcherSettings {
+    pub debounce_ms: u64,
+}
+
 impl Default for ResolvedConfig {
     fn default() -> Self {
         Self {
@@ -264,6 +277,7 @@ impl Default for ResolvedConfig {
                 context_lines: 3,
                 word_wrap: false,
             },
+            watcher: WatcherSettings { debounce_ms: 300 },
         }
     }
 }
@@ -385,6 +399,12 @@ impl RawConfig {
             }
             if let Some(word_wrap) = diff.word_wrap {
                 resolved.diff.word_wrap = word_wrap;
+            }
+        }
+
+        if let Some(watcher) = &self.watcher {
+            if let Some(debounce_ms) = watcher.debounce_ms {
+                resolved.watcher.debounce_ms = debounce_ms;
             }
         }
     }

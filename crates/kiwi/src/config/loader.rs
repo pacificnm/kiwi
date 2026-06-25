@@ -131,6 +131,23 @@ mod tests {
         assert_eq!(config.app.left_width, 30);
         assert_eq!(config.theme.name, "kiwi-dark");
         assert_eq!(config.editor.configured_command, None);
+        assert_eq!(config.watcher.debounce_ms, 300);
+    }
+
+    #[test]
+    fn watcher_debounce_ms_loads_from_config() {
+        let home = TestHome::new("watcher-debounce");
+        let repo = std::env::temp_dir().join("kiwi-config-test-repo-watcher");
+        let _ = fs::remove_dir_all(&repo);
+        fs::create_dir_all(&repo).expect("create repo");
+        fs::write(repo.join(".kiwi.toml"), "[watcher]\ndebounce_ms = 150\n")
+            .expect("write project config");
+
+        let cli = Cli::parse_from(["kiwi", repo.to_str().expect("utf8 path")]);
+        let config =
+            load_config_with_home(&cli, &repo, Some(home.home.clone())).expect("load config");
+
+        assert_eq!(config.watcher.debounce_ms, 150);
     }
 
     #[test]

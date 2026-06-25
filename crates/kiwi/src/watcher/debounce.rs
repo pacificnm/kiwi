@@ -39,10 +39,20 @@ impl PathDebouncer {
             return None;
         }
 
-        let paths: Vec<PathBuf> = self.pending.drain().collect();
+        let paths = coalesce_paths(self.pending.drain());
         self.deadline = None;
         Some(paths)
     }
+}
+
+/// Deduplicates changed paths before emitting `FsChanged`.
+#[must_use]
+pub fn coalesce_paths(paths: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
+    paths
+        .into_iter()
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 #[cfg(test)]
@@ -61,6 +71,44 @@ mod tests {
         thread::sleep(Duration::from_millis(50));
         let paths = debouncer.poll_ready().expect("ready");
         assert_eq!(paths.len(), 2);
+    }
+
+    #[test]
+    fn reschedule_extends_deadline() {
+        let mut debouncer = PathDebouncer::new(Duration::from_millis(80));
+        debouncer.push(PathBuf::from("/repo/a.rs"));
+        thread::sleep(Duration::from_millis(40));
+        debouncer.push(PathBuf::from("/repo/b.rs"));
+        thread::sleep(Duration::from_millis(50));
+        assert!(debouncer.poll_ready().is_none());
+        thread::sleep(Duration::from_millis(40));
+        let paths = debouncer.poll_ready().expect("ready");
+        assert_eq!(paths.len(), 2);
+    }
+
+    #[test]
+    fn deduplicates_duplicate_paths() {
+        let paths = coalesce_paths([
+            PathBuf::from("/repo/a.rs"),
+            PathBuf::from("/repo/a.rs"),
+            PathBuf::from("/repo/b.rs"),
+        ]);
+        assert_eq!(paths.len(), 2);
+        assert!(paths.contains(&PathBuf::from("/repo/a.rs")));
+        assert!(paths.contains(&PathBuf::from("/repo/b.rs")));
+    }
+
+    #[test]
+    fn coalesces_fifty_rapid_paths() {
+        let mut debouncer = PathDebouncer::new(Duration::from_millis(20));
+        for i in 0..50 {
+            debouncer.push(PathBuf::from(format!("/repo/file{i}.rs")));
+            debouncer.push(PathBuf::from(format!("/repo/file{i}.rs")));
+        }
+        assert!(debouncer.poll_ready().is_none());
+        thread::sleep(Duration::from_millis(25));
+        let paths = debouncer.poll_ready().expect("ready");
+        assert_eq!(paths.len(), 50);
     }
 
     #[test]
