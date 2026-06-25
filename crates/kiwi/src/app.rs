@@ -30,6 +30,7 @@ use crate::ui::{
     draw_frame, file_tree_interaction_at, map_mouse_click, mouse_interactions_enabled,
     palette_match_at, search_interaction_at, FileTreeMouseAction,
 };
+use crate::watcher::RepoWatcher;
 use crate::workspace::{load_palette_history, save_palette_history};
 
 const SHELL_FORCE_QUIT_WINDOW: Duration = Duration::from_millis(500);
@@ -53,6 +54,7 @@ pub struct App {
     search_cancel: SearchCancelHandle,
     search_live_generation: Arc<AtomicU64>,
     pending_editor_launch: Option<PendingEditorLaunch>,
+    _repo_watcher: Option<RepoWatcher>,
 }
 
 impl App {
@@ -75,6 +77,13 @@ impl App {
             }
         }
         let events = EventChannel::new();
+        let repo_watcher = match RepoWatcher::spawn(repo_root.clone(), events.sender()) {
+            Ok(watcher) => Some(watcher),
+            Err(err) => {
+                eprintln!("file watcher disabled: {err}");
+                None
+            }
+        };
         let (cols, rows) = shell_pty_size(&state.layout.rects);
         let shell = match ShellSession::spawn(&repo_root, &state.config.shell, cols, rows) {
             Ok(session) => {
@@ -111,6 +120,7 @@ impl App {
             search_cancel: SearchCancelHandle::default(),
             search_live_generation: Arc::new(AtomicU64::new(0)),
             pending_editor_launch: None,
+            _repo_watcher: repo_watcher,
         };
         let spawn_effects = agent_spawn_effects_if_needed(&mut app.state);
         app.execute_effects(spawn_effects);

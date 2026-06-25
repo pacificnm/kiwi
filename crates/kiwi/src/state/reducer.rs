@@ -44,6 +44,7 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
             error,
             show_modal,
         } => reduce_editor_launch_failed(state, path, error, show_modal),
+        AppEvent::FsChanged { paths } => reduce_fs_changed(state, paths),
     }
 }
 
@@ -453,7 +454,9 @@ fn reduce_preview_loaded(
         return Vec::new();
     }
 
-    state.preview.apply_loaded(path, result);
+    state
+        .preview
+        .apply_loaded(path, result, preview_viewport_rows(state));
     state.dirty = true;
     Vec::new()
 }
@@ -624,6 +627,24 @@ fn reduce_editor_launch_failed(
     }
     state.dirty = true;
     Vec::new()
+}
+
+fn reduce_fs_changed(state: &mut AppState, paths: Vec<PathBuf>) -> Vec<SideEffect> {
+    let Some(preview_path) = state.preview.path.clone() else {
+        return Vec::new();
+    };
+
+    if state.preview.loading {
+        return Vec::new();
+    }
+
+    if !crate::watcher::preview_reload_paths(&paths, &preview_path) {
+        return Vec::new();
+    }
+
+    state.preview.begin_reload();
+    state.dirty = true;
+    vec![SideEffect::LoadPreviewFile(preview_path)]
 }
 
 #[cfg(test)]
@@ -1319,5 +1340,52 @@ mod tests {
         state.notifications.show_modal("Title", "Message");
         reduce(&mut state, AppEvent::Command(AppCommand::ModalDismiss));
         assert!(state.notifications.modal.is_none());
+    }
+
+    #[test]
+    fn fs_changed_reloads_matching_preview_file() {
+        let mut state = test_state();
+        let path = PathBuf::from("/tmp/repo/src/main.rs");
+        state.preview.path = Some(path.clone());
+        state.preview.lines = vec!["old".to_string()];
+        state.preview.scroll_offset = 5;
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::FsChanged {
+                paths: vec![PathBuf::from("/tmp/repo/src/other.rs"), path.clone()],
+            },
+        );
+
+        assert!(effects.contains(&SideEffect::LoadPreviewFile(path)));
+        assert!(state.preview.loading);
+        assert!(state.preview.preserve_scroll_on_load);
+        assert_eq!(state.preview.scroll_offset, 5);
+        assert_eq!(state.navigation.main_tab, MainTab::Agent);
+    }
+
+    #[test]
+    fn fs_changed_ignores_unrelated_paths_and_in_flight_loads() {
+        let mut state = test_state();
+        let path = PathBuf::from("/tmp/repo/src/main.rs");
+        state.preview.path = Some(path.clone());
+        state.preview.loading = true;
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::FsChanged {
+                paths: vec![PathBuf::from("/tmp/repo/src/other.rs")],
+            },
+        );
+        assert!(effects.is_empty());
+
+        state.preview.loading = false;
+        let effects = reduce(
+            &mut state,
+            AppEvent::FsChanged {
+                paths: vec![PathBuf::from("/tmp/repo/src/other.rs")],
+            },
+        );
+        assert!(effects.is_empty());
     }
 }

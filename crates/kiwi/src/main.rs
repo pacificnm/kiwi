@@ -19,6 +19,7 @@ mod state;
 mod terminal;
 mod theme;
 mod ui;
+mod watcher;
 mod workspace;
 
 use cli::Cli;

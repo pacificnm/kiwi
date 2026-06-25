@@ -201,6 +201,13 @@ Format for new entries:
 - **Files:** `editor/target.rs`, `commands/mod.rs`, `app.rs`, `state/event.rs`, keyboard-shortcuts.md, SPEC-015, SPEC-006
 - **Verify:** editor target + palette tests; manual `e` from Files/Preview/Search.
 
+### Preview reload on file change (GitHub #37, SPEC-006, ADR-011)
+
+- **Symptom:** Preview pane showed stale content after external edits; no file watcher integration.
+- **Fix:** Added `watcher` module (`notify` recursive watch on repo root, 300ms debounce, `.git/` ignored). `AppEvent::FsChanged` coalesces paths in the event channel; reducer reloads the open preview file via `begin_reload` / `apply_loaded` while preserving scroll offset when possible.
+- **Files:** `watcher/`, `state/event.rs`, `state/reducer.rs`, `state/channel.rs`, `preview/state.rs`, `app.rs`, `Cargo.toml`
+- **Verify:** watcher debounce/paths/io tests, reducer `fs_changed_*` tests, preview scroll preservation test; manual: open preview, edit file in external editor, confirm content refreshes without losing scroll position.
+
 ---
 
 ## Reporting New Issues
