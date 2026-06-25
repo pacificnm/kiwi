@@ -1,5 +1,7 @@
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::Path;
+use std::thread;
+use std::time::Duration;
 
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 
@@ -10,6 +12,7 @@ use super::error::ShellError;
 
 pub struct ShellSession {
     master: Box<dyn MasterPty + Send>,
+    writer: Option<Box<dyn Write + Send>>,
     child: Box<dyn Child + Send + Sync>,
     pub spec: ShellLaunchSpec,
     pub cols: u16,
@@ -47,8 +50,14 @@ impl ShellSession {
 
         drop(pair.slave);
 
+        let writer = pair
+            .master
+            .take_writer()
+            .map_err(|err| ShellError::spawn(err.to_string()))?;
+
         Ok(Self {
             master: pair.master,
+            writer: Some(writer),
             child,
             spec,
             cols,
@@ -67,6 +76,34 @@ impl ShellSession {
             .map_err(|err| ShellError::spawn(err.to_string()))
     }
 
+    pub fn write(&mut self, data: &[u8]) -> Result<(), ShellError> {
+        let writer = self
+            .writer
+            .as_mut()
+            .ok_or_else(|| ShellError::write("shell is closed"))?;
+        writer
+            .write_all(data)
+            .map_err(|err| ShellError::write(err.to_string()))
+    }
+
+    pub fn shutdown(&mut self) {
+        self.writer.take();
+        let _ = self.child.kill();
+        self.reap_child();
+    }
+
+    fn reap_child(&mut self) {
+        for _ in 0..100 {
+            match self.child.try_wait() {
+                Ok(Some(_)) => return,
+                Ok(None) => thread::sleep(Duration::from_millis(10)),
+                Err(_) => return,
+            }
+        }
+        let _ = self.child.kill();
+        let _ = self.child.try_wait();
+    }
+
     #[must_use]
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn is_running(&mut self) -> bool {
@@ -80,8 +117,9 @@ impl ShellSession {
 
 impl Drop for ShellSession {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        if self.writer.is_some() {
+            self.shutdown();
+        }
     }
 }
 
@@ -109,5 +147,7 @@ mod tests {
         let mut session = ShellSession::spawn(&repo, &settings, 80, 24).expect("spawn shell");
         assert!(session.pid().is_some());
         assert!(session.is_running());
+        session.shutdown();
+        assert!(!session.is_running());
     }
 }

@@ -3,18 +3,30 @@
 use ratatui::layout::Rect;
 
 use crate::config::{MouseMode, MouseSettings};
-use crate::layout::LayoutRects;
+use crate::layout::{FocusTarget, LayoutRects};
 use crate::navigation::{LeftNavTab, MainTab, NavCommand, LEFT_TAB_LABELS, MAIN_TAB_LABELS};
 use crate::state::AppState;
 
 use super::tabs::tab_index_at_x;
 
-pub fn map_tab_click(state: &AppState, column: u16, row: u16) -> Option<NavCommand> {
+pub fn map_mouse_click(state: &AppState, column: u16, row: u16) -> Option<NavCommand> {
     if !mouse_interactions_enabled(&state.config.mouse) {
         return None;
     }
 
-    map_tab_click_in_layout(&state.layout.rects, column, row)
+    map_mouse_click_in_layout(&state.layout.rects, column, row)
+}
+
+pub fn map_mouse_click_in_layout(rects: &LayoutRects, column: u16, row: u16) -> Option<NavCommand> {
+    if let Some(command) = map_tab_click_in_layout(rects, column, row) {
+        return Some(command);
+    }
+
+    if point_in_rect(column, row, rects.shell) {
+        return Some(NavCommand::SetFocus(FocusTarget::Shell));
+    }
+
+    None
 }
 
 pub fn map_tab_click_in_layout(rects: &LayoutRects, column: u16, row: u16) -> Option<NavCommand> {
@@ -49,7 +61,7 @@ fn point_in_rect(column: u16, row: u16, area: Rect) -> bool {
 #[cfg(test)]
 mod tests {
     use crate::config::ResolvedConfig;
-    use crate::layout::compute_layout;
+    use crate::layout::{compute_layout, FocusTarget};
     use crate::state::AppState;
     use crate::theme::capabilities::TerminalCapabilities;
     use crate::theme::loader::load_theme_with_capabilities;
@@ -74,7 +86,7 @@ mod tests {
     fn click_on_left_tab_label_selects_tab() {
         let state = test_state();
         let rects = state.layout.rects;
-        let command = map_tab_click(&state, rects.left_tabs.x + 8, rects.left_tabs.y);
+        let command = map_mouse_click(&state, rects.left_tabs.x + 8, rects.left_tabs.y);
         assert_eq!(command, Some(NavCommand::SelectLeftTab(LeftNavTab::Git)));
     }
 
@@ -82,7 +94,7 @@ mod tests {
     fn click_on_main_tab_label_selects_tab() {
         let state = test_state();
         let rects = state.layout.rects;
-        let command = map_tab_click(&state, rects.main_tabs.x + 8, rects.main_tabs.y);
+        let command = map_mouse_click(&state, rects.main_tabs.x + 8, rects.main_tabs.y);
         assert_eq!(command, Some(NavCommand::SelectMainTab(MainTab::Issues)));
     }
 
@@ -91,8 +103,18 @@ mod tests {
         let state = test_state();
         let rects = state.layout.rects;
         assert_eq!(
-            map_tab_click(&state, rects.left_content.x + 1, rects.left_content.y + 1),
+            map_mouse_click(&state, rects.left_content.x + 1, rects.left_content.y + 1),
             None
+        );
+    }
+
+    #[test]
+    fn click_on_shell_pane_focuses_shell() {
+        let state = test_state();
+        let rects = state.layout.rects;
+        assert_eq!(
+            map_mouse_click(&state, rects.shell.x + 2, rects.shell.y + 2),
+            Some(NavCommand::SetFocus(FocusTarget::Shell))
         );
     }
 
@@ -102,7 +124,7 @@ mod tests {
         state.config.mouse.enabled = false;
         let rects = state.layout.rects;
         assert_eq!(
-            map_tab_click(&state, rects.left_tabs.x, rects.left_tabs.y),
+            map_mouse_click(&state, rects.left_tabs.x, rects.left_tabs.y),
             None
         );
     }
@@ -113,7 +135,7 @@ mod tests {
         state.config.mouse.mode = MouseMode::Disabled;
         let rects = state.layout.rects;
         assert_eq!(
-            map_tab_click(&state, rects.main_tabs.x, rects.main_tabs.y),
+            map_mouse_click(&state, rects.main_tabs.x, rects.main_tabs.y),
             None
         );
     }

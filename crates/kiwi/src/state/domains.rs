@@ -94,6 +94,29 @@ impl ShellState {
         self.child_pid = None;
         self.spawn_error = Some(message);
     }
+
+    pub fn scroll_by(&mut self, delta: i32, page_size: u16) {
+        let page = usize::from(page_size.max(1));
+        let visible_height = page;
+        let line_count = self.scrollback.line_count();
+        let max_start = line_count.saturating_sub(visible_height);
+        let current = if self.follow_tail {
+            max_start
+        } else {
+            self.viewport_offset.min(max_start)
+        };
+
+        let scroll_lines = delta.signum() * i32::from(page_size.max(1));
+        let new_offset = (current as i32 + scroll_lines).clamp(0, max_start as i32) as usize;
+
+        if new_offset >= max_start {
+            self.follow_tail = true;
+            self.viewport_offset = 0;
+        } else {
+            self.follow_tail = false;
+            self.viewport_offset = new_offset;
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
