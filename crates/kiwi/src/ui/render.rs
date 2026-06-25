@@ -14,7 +14,9 @@ use super::agent::render_agent_pane;
 use super::diff::render_diff_pane;
 use super::file_tree::render_file_tree_pane;
 use super::git::render_git_pane;
-use super::github::{render_github_hub_pane, render_github_main_pane};
+use super::github::{
+    render_github_issues_list_pane, render_github_main_pane, render_issue_detail_pane,
+};
 use super::logs::render_logs_pane;
 use super::notifications::render_notifications;
 use super::palette::render_palette_pane;
@@ -72,7 +74,7 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
             state,
         );
     } else if state.navigation.left_tab == LeftNavTab::Gh {
-        render_github_hub_pane(
+        render_github_issues_list_pane(
             frame,
             state.layout.rects.left_content,
             state.navigation.focus.is_focused(Region::LeftContent),
@@ -125,7 +127,15 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
             &state.theme,
             state,
         );
-    } else if matches!(state.navigation.main_tab, MainTab::Issues | MainTab::Prs) {
+    } else if state.navigation.main_tab == MainTab::Issues {
+        render_issue_detail_pane(
+            frame,
+            state.layout.rects.main_content,
+            state.navigation.focus.is_focused(Region::MainContent),
+            &state.theme,
+            state,
+        );
+    } else if state.navigation.main_tab == MainTab::Prs {
         render_github_main_pane(
             frame,
             state.layout.rects.main_content,
@@ -427,9 +437,21 @@ mod tests {
             .apply(NavCommand::SelectLeftTab(LeftNavTab::Git));
         state
             .navigation
+            .apply(NavCommand::SelectLeftTab(LeftNavTab::Gh));
+        state
+            .navigation
             .apply(NavCommand::SelectMainTab(MainTab::Issues));
         state.github.auth_checked = true;
         state.github.auth_ok = true;
+        state.github.issues = vec![crate::github::Issue {
+            number: 1,
+            title: "Sample".to_string(),
+            state: crate::github::IssueState::Open,
+            labels: Vec::new(),
+            assignees: Vec::new(),
+        }];
+        state.github.selected_issue = Some(1);
+        state.github.issues_loaded_at = Some(std::time::SystemTime::now());
 
         let backend = TestBackend::new(120, 40);
         let mut terminal = Terminal::new(backend).expect("terminal");
@@ -439,7 +461,8 @@ mod tests {
 
         let content = buffer_content(terminal.backend().buffer());
         assert!(content.contains("Modified"));
-        assert!(content.contains("Issues view"));
+        assert!(content.contains("#1"));
+        assert!(content.contains("Sample"));
     }
 
     #[test]

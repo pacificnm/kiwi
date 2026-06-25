@@ -63,6 +63,9 @@ pub enum AppEvent {
     GitHubAuthChecked {
         result: crate::github::GitHubAuthCheckResult,
     },
+    GitHubIssuesLoaded {
+        result: crate::github::IssueListLoadResult,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,6 +75,8 @@ pub enum AppCommand {
     #[cfg_attr(not(test), allow(dead_code))]
     RequestGitRefresh,
     GitHubRefresh,
+    GitHubMoveIssueSelection(i32),
+    GitHubOpenSelected,
     ShellWrite(Vec<u8>),
     ShellScroll(i32),
     AgentWrite(Vec<u8>),
@@ -185,6 +190,7 @@ pub enum SideEffect {
     CopyToClipboard(String),
     PasteFromClipboard,
     SpawnGitHubAuthCheck,
+    SpawnGitHubIssueList,
 }
 
 impl AppCommand {

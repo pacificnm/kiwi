@@ -22,7 +22,7 @@ use crate::editor::{
 };
 use crate::file_tree::spawn_directory_load;
 use crate::git::spawn_git_refresh;
-use crate::github::spawn_github_auth_check;
+use crate::github::{spawn_github_auth_check, spawn_github_issue_list_load};
 use crate::layout::{agent_pty_size, shell_pty_size, FocusTarget};
 use crate::navigation::{map_key, LeftNavTab, MainTab, NavCommand};
 use crate::preview::spawn_preview_load;
@@ -429,6 +429,13 @@ impl App {
                 }
                 SideEffect::SpawnGitHubAuthCheck => {
                     spawn_github_auth_check(
+                        self.state.config.github.command.clone(),
+                        self.events.sender(),
+                    );
+                }
+                SideEffect::SpawnGitHubIssueList => {
+                    spawn_github_issue_list_load(
+                        self.state.repo_root.clone(),
                         self.state.config.github.command.clone(),
                         self.events.sender(),
                     );
@@ -883,9 +890,24 @@ impl App {
             return false;
         }
 
+        let gh_list_focused = self.state.navigation.focus == FocusTarget::Left
+            && self.state.navigation.left_tab == LeftNavTab::Gh;
+
         match key.code {
             KeyCode::Char('R') => {
                 self.dispatch(AppEvent::Command(AppCommand::GitHubRefresh));
+                true
+            }
+            KeyCode::Char('j') if gh_list_focused => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubMoveIssueSelection(1)));
+                true
+            }
+            KeyCode::Char('k') if gh_list_focused => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubMoveIssueSelection(-1)));
+                true
+            }
+            KeyCode::Enter if gh_list_focused => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubOpenSelected));
                 true
             }
             _ => false,

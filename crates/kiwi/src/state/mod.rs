@@ -13,6 +13,7 @@ pub use channel::EventChannel;
 pub use channel::EventSender;
 #[cfg(test)]
 pub use domains::DiffState;
+pub use domains::GitHubState;
 pub use domains::GitState;
 pub use domains::LogLevel;
 #[cfg(test)]

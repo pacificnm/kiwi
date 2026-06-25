@@ -36,9 +36,10 @@ Example combinations:
 
 ### GH
 
-- Hub for GitHub: buttons/links to jump main tab to Issues or PRs
-- Shows open issue/PR counts
-- Auth status indicator
+- Issue list (number, title, state, labels) — same role as Git left tab for diffs
+- `j`/`k` navigate list; `Enter` opens selected issue in main **Issues** tab
+- Auth errors and loading state shown inline when `gh` is unavailable
+- `R` refresh issue list
 
 ### Search
 
@@ -63,8 +64,9 @@ Example combinations:
 
 ### Issues
 
-- List view default; `Enter` opens detail
-- Detail: title, body, labels, comments
+- Detail view for the issue selected in the **GH** left tab
+- Shows title, state, labels, assignees; body and comments (future)
+- `Enter` on GH left list focuses main and opens detail
 - Actions via palette: comment, label, branch
 
 ### PRs
@@ -104,7 +106,8 @@ Left → Main → Command Palette → Shell → Left
 |-------|------------|
 | Left | Tree/list navigation |
 | Main + Agent tab | Agent PTY |
-| Main + other tabs | Tab placeholder views (future content) |
+| Main + Issues tab | Issue detail (read-only scroll; actions via palette) |
+| Main + other tabs | Tab content views (Diff, Preview, PRs, Logs) |
 | Palette | Palette input |
 | Shell | Shell PTY |
 

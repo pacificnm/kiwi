@@ -24,13 +24,13 @@ Manage left navigation tabs, main workspace tabs, focus routing, and keyboard/mo
 1. Files — file tree
 2. Git — git status list
 3. Diff — diff file list
-4. GH — GitHub sub-nav (issues/PRs shortcut)
+4. GH — GitHub issue list (navigate; `Enter` opens main Issues detail)
 5. Search — search UI
 
 ### Main workspace tabs (order fixed)
 
 1. Agent — agent PTY
-2. Issues — GitHub issues list/detail
+2. Issues — GitHub issue detail (list lives in GH left tab)
 3. PRs — GitHub PR list/detail
 4. Diff — unified diff viewer
 5. Preview — read-only file preview

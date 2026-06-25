@@ -38,7 +38,7 @@ Status Bar (1 row, full width)
 - **Left nav tabs**: Files | Git | Diff | GH | Search — control left content only
 - **Main tabs**: Agent | Issues | PRs | Diff | Preview | Logs — independent of left nav
 
-Left nav selection and main tab selection are **orthogonal state**; e.g., Files + Agent, or Git + Diff.
+Left nav selection and main tab selection are **orthogonal state**; e.g., Files + Agent, Git + Diff, or **GH + Issues** (issue list left, detail main).
 
 ### Focus model
 

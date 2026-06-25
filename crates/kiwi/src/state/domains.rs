@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::time::SystemTime;
 
 use crate::agent::AgentStatus;
 use crate::diff::{DiffLine, DiffSource, FileDiffLoadResult};
 use crate::git::GitFileEntry;
+use crate::github::Issue;
 use crate::layout::FocusTarget;
 use crate::shell::ScrollbackBuffer;
 
@@ -148,6 +150,11 @@ pub struct GitHubState {
     pub loading: bool,
     pub error_kind: Option<crate::github::GitHubAuthErrorKind>,
     pub error: Option<String>,
+    pub issues: Vec<Issue>,
+    pub issues_loading: bool,
+    pub issues_error: Option<String>,
+    pub issues_scroll_offset: usize,
+    pub issues_loaded_at: Option<SystemTime>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
