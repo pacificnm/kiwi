@@ -1,4 +1,5 @@
 use crate::agent::AgentStatus;
+use crate::diff::{DiffLine, DiffSource, FileDiffLoadResult};
 use crate::git::GitFileEntry;
 use crate::layout::FocusTarget;
 use crate::shell::ScrollbackBuffer;
@@ -22,9 +23,54 @@ impl GitState {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiffState {
     pub selected_path: Option<String>,
+    pub source: DiffSource,
+    pub lines: Vec<DiffLine>,
+    pub scroll_offset: usize,
+    pub loading: bool,
+    pub is_binary: bool,
+    pub error: Option<String>,
+}
+
+impl Default for DiffState {
+    fn default() -> Self {
+        Self {
+            selected_path: None,
+            source: DiffSource::Unstaged,
+            lines: Vec::new(),
+            scroll_offset: 0,
+            loading: false,
+            is_binary: false,
+            error: None,
+        }
+    }
+}
+
+impl DiffState {
+    pub fn begin_load(&mut self, path: String) {
+        self.selected_path = Some(path);
+        self.loading = true;
+        self.error = None;
+        self.is_binary = false;
+        self.lines.clear();
+        self.scroll_offset = 0;
+    }
+
+    pub fn apply_loaded(&mut self, result: FileDiffLoadResult) {
+        if self.selected_path.as_deref() != Some(result.path.as_str()) {
+            return;
+        }
+
+        self.loading = false;
+        self.is_binary = result.is_binary;
+        self.error = result.error;
+        self.lines = result.lines;
+        if self.scroll_offset >= self.lines.len() && !self.lines.is_empty() {
+            self.scroll_offset = self.lines.len() - 1;
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
