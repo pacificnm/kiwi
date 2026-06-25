@@ -51,6 +51,8 @@ impl AppState {
 
         let shell_spec = shell_launch_spec(&config.shell);
         let agent_spec = agent_launch_spec(&config.agent);
+        let mut file_tree = FileTreeState::at_root(repo_root.clone());
+        file_tree.ensure_selection();
 
         Self {
             config,
@@ -59,7 +61,7 @@ impl AppState {
             theme,
             repo_root: repo_root.clone(),
             dirty: true,
-            file_tree: FileTreeState::at_root(repo_root.clone()),
+            file_tree,
             preview: PreviewState::default(),
             search: SearchState::default(),
             git: GitState::default(),

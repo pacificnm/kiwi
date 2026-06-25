@@ -4,7 +4,7 @@ use crate::agent::infer_status_from_scrollback;
 use crate::commands::{execute_command, history_input_for_id, refresh_matches};
 use crate::file_tree::ExpandAction;
 use crate::layout::{agent_pty_size, compute_layout, shell_pty_size, FocusTarget};
-use crate::navigation::{MainTab, NavCommand};
+use crate::navigation::{LeftNavTab, MainTab, NavCommand};
 
 use super::app_state::AppState;
 use super::event::{AppCommand, AppEvent, SideEffect};
@@ -62,6 +62,7 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         AppCommand::FileTreeCollapse(path) => reduce_file_tree_collapse(state, path),
         AppCommand::FileTreeSelect(path) => reduce_file_tree_select(state, path),
         AppCommand::FileTreeRefresh => reduce_file_tree_refresh(state),
+        AppCommand::FileTreeMoveSelection(delta) => reduce_file_tree_move_selection(state, delta),
     }
 }
 
@@ -70,6 +71,9 @@ fn apply_navigation(state: &mut AppState, command: NavCommand) {
     state.navigation.apply(command);
     if state.navigation != before {
         state.dirty = true;
+    }
+    if state.navigation.left_tab == LeftNavTab::Files {
+        state.file_tree.ensure_selection();
     }
 }
 
@@ -317,6 +321,18 @@ fn reduce_file_tree_collapse(state: &mut AppState, path: PathBuf) -> Vec<SideEff
 
 fn reduce_file_tree_select(state: &mut AppState, path: PathBuf) -> Vec<SideEffect> {
     state.file_tree.select(path);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn file_tree_viewport_rows(state: &AppState) -> usize {
+    state.layout.rects.left_content.height.saturating_sub(2) as usize
+}
+
+fn reduce_file_tree_move_selection(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    state
+        .file_tree
+        .move_selection(delta, file_tree_viewport_rows(state));
     state.dirty = true;
     Vec::new()
 }
@@ -794,5 +810,39 @@ mod tests {
         );
         assert_eq!(state.file_tree.children[&root].len(), 1);
         assert!(state.file_tree.nodes.contains_key(&root.join("src")));
+    }
+
+    #[test]
+    fn file_tree_move_selection_changes_selected_row() {
+        let mut state = test_state();
+        let root = state.file_tree.root.clone();
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::FileTreeExpand(root.clone())),
+        );
+        reduce(
+            &mut state,
+            AppEvent::FileTreeChildrenLoaded {
+                parent: root.clone(),
+                children: vec![
+                    DirectoryEntry {
+                        path: root.join("src"),
+                        name: "src".to_string(),
+                        is_dir: true,
+                    },
+                    DirectoryEntry {
+                        path: root.join("README.md"),
+                        name: "README.md".to_string(),
+                        is_dir: false,
+                    },
+                ],
+                error: None,
+            },
+        );
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::FileTreeMoveSelection(1)),
+        );
+        assert_eq!(state.file_tree.selected, Some(root.join("src")));
     }
 }

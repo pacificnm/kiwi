@@ -11,13 +11,16 @@ use crate::agent::{AgentOutputReader, AgentSession};
 use crate::bootstrap::StartupContext;
 use crate::file_tree::spawn_directory_load;
 use crate::layout::{agent_pty_size, shell_pty_size, FocusTarget};
-use crate::navigation::{map_key, MainTab};
+use crate::navigation::{map_key, LeftNavTab, MainTab};
 use crate::shell::{encode_key, ShellOutputReader, ShellSession};
 use crate::shutdown;
 use crate::state::{
     agent_spawn_effects_if_needed, reduce, AppCommand, AppEvent, AppState, EventChannel, SideEffect,
 };
-use crate::ui::{draw_frame, map_mouse_click, mouse_interactions_enabled, palette_match_at};
+use crate::ui::{
+    draw_frame, file_tree_interaction_at, map_mouse_click, mouse_interactions_enabled,
+    palette_match_at, FileTreeMouseAction,
+};
 use crate::workspace::{load_palette_history, save_palette_history};
 
 const SHELL_FORCE_QUIT_WINDOW: Duration = Duration::from_millis(500);
@@ -339,6 +342,30 @@ impl App {
             )));
         }
 
+        if self.state.navigation.left_tab == LeftNavTab::Files {
+            if let Some(action) = file_tree_interaction_at(
+                &self.state,
+                self.state.layout.rects.left_content,
+                mouse.column,
+                mouse.row,
+            ) {
+                let _ = self.dispatch(AppEvent::Command(AppCommand::Navigation(
+                    crate::navigation::NavCommand::SetFocus(FocusTarget::Left),
+                )));
+                return match action {
+                    FileTreeMouseAction::Select(path) => {
+                        self.dispatch(AppEvent::Command(AppCommand::FileTreeSelect(path)))
+                    }
+                    FileTreeMouseAction::Expand(path) => {
+                        self.dispatch(AppEvent::Command(AppCommand::FileTreeExpand(path)))
+                    }
+                    FileTreeMouseAction::Collapse(path) => {
+                        self.dispatch(AppEvent::Command(AppCommand::FileTreeCollapse(path)))
+                    }
+                };
+            }
+        }
+
         for command in map_mouse_click(&self.state, mouse.column, mouse.row) {
             if self.dispatch(AppEvent::Command(AppCommand::Navigation(command))) {
                 return true;
@@ -372,6 +399,10 @@ impl App {
                 crate::navigation::NavCommand::NextFocus
             };
             return self.dispatch(AppEvent::Command(AppCommand::Navigation(command)));
+        }
+
+        if self.file_tree_input_active() {
+            return self.handle_file_tree_key(key);
         }
 
         if self.agent_input_active() {
@@ -424,6 +455,40 @@ impl App {
             KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.dispatch(AppEvent::Command(AppCommand::PaletteAppendChar(ch)))
             }
+            _ => false,
+        }
+    }
+
+    fn file_tree_input_active(&self) -> bool {
+        self.state.navigation.focus == FocusTarget::Left
+            && self.state.navigation.left_tab == LeftNavTab::Files
+    }
+
+    fn handle_file_tree_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        if !key.modifiers.is_empty() {
+            return false;
+        }
+
+        match key.code {
+            KeyCode::Char('j') => {
+                self.dispatch(AppEvent::Command(AppCommand::FileTreeMoveSelection(1)))
+            }
+            KeyCode::Char('k') => {
+                self.dispatch(AppEvent::Command(AppCommand::FileTreeMoveSelection(-1)))
+            }
+            KeyCode::Char('l') => {
+                let Some(path) = self.state.file_tree.selected.clone() else {
+                    return false;
+                };
+                self.dispatch(AppEvent::Command(AppCommand::FileTreeExpand(path)))
+            }
+            KeyCode::Char('h') => {
+                let Some(path) = self.state.file_tree.selected.clone() else {
+                    return false;
+                };
+                self.dispatch(AppEvent::Command(AppCommand::FileTreeCollapse(path)))
+            }
+            KeyCode::Char('r') => self.dispatch(AppEvent::Command(AppCommand::FileTreeRefresh)),
             _ => false,
         }
     }
@@ -847,6 +912,55 @@ mod tests {
 
         assert!(!app.dispatch_mouse(mouse));
         assert_eq!(app.state().navigation.left_tab, before);
+    }
+
+    #[test]
+    fn file_tree_j_moves_selection_when_left_files_focused() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+        use crate::file_tree::DirectoryEntry;
+        use crate::layout::FocusTarget;
+        use crate::navigation::NavCommand;
+        use crate::state::{AppCommand, AppEvent};
+
+        let mut app = App::new(test_context());
+        let root = app.state().file_tree.root.clone();
+        app.event_sender()
+            .send(AppEvent::Command(AppCommand::Navigation(
+                NavCommand::SetFocus(FocusTarget::Left),
+            )))
+            .expect("send");
+        app.event_sender()
+            .send(AppEvent::Command(AppCommand::FileTreeExpand(root.clone())))
+            .expect("send");
+        app.event_sender()
+            .send(AppEvent::FileTreeChildrenLoaded {
+                parent: root.clone(),
+                children: vec![
+                    DirectoryEntry {
+                        path: root.join("src"),
+                        name: "src".to_string(),
+                        is_dir: true,
+                    },
+                    DirectoryEntry {
+                        path: root.join("README.md"),
+                        name: "README.md".to_string(),
+                        is_dir: false,
+                    },
+                ],
+                error: None,
+            })
+            .expect("send");
+        app.process_pending_events();
+
+        let key = KeyEvent {
+            code: KeyCode::Char('j'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        };
+        assert!(!app.dispatch_key(key));
+        assert_eq!(app.state().file_tree.selected, Some(root.join("src")));
     }
 }
 

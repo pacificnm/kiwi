@@ -1,4 +1,5 @@
 mod agent;
+mod file_tree;
 mod mouse;
 mod palette;
 mod render;
@@ -7,6 +8,7 @@ mod shell;
 mod status_bar;
 mod tabs;
 
+pub use file_tree::{file_tree_interaction_at, FileTreeMouseAction};
 pub use mouse::map_mouse_click;
 pub use mouse::mouse_interactions_enabled;
 pub use palette::palette_match_at;

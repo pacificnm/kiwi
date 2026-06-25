@@ -124,7 +124,10 @@ mod tests {
 
     #[test]
     fn click_outside_tab_bars_is_ignored() {
-        let state = test_state();
+        let mut state = test_state();
+        state
+            .navigation
+            .apply(NavCommand::SelectLeftTab(LeftNavTab::Git));
         let rects = state.layout.rects;
         assert_eq!(
             map_mouse_click(&state, rects.left_content.x + 1, rects.left_content.y + 1),

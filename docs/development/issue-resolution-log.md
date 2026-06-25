@@ -145,6 +145,13 @@ Format for new entries:
 - **Files:** `crates/kiwi/src/file_tree/`, `state/event.rs`, `state/reducer.rs`, `state/app_state.rs`, `app.rs`, `ui/render.rs`
 - **Verify:** `file_tree::*` and reducer tests; `cargo test` (204 tests). Tree widget UI (#31) and ignore rules (#32) follow.
 
+### Tree widget with expand/collapse (GitHub #31, SPEC-005)
+
+- **Symptom:** Lazy loading (#30) had no interactive tree UI; Files pane showed a one-line summary only.
+- **Fix:** Added `ui/file_tree.rs` with multi-line tree rendering (`▸`/`▾`/`…` glyphs, selection highlight, scroll viewport). Keyboard `j`/`k`/`h`/`l`/`r` when left Files focus; mouse click selects row, chevron click toggles expand/collapse.
+- **Files:** `ui/file_tree.rs`, `file_tree/state.rs`, `state/event.rs`, `state/reducer.rs`, `app.rs`, `ui/render.rs`, `ui/mouse.rs`
+- **Verify:** `file_tree_j_moves_selection_when_left_files_focused`, `interaction_on_chevron_expands_directory`, `draw_frame` tree glyph test; `cargo test` (210 tests).
+
 ---
 
 ## Reporting New Issues
