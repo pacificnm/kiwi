@@ -1,3 +1,4 @@
+use std::io::Read;
 use std::path::Path;
 
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
@@ -8,7 +9,6 @@ use super::command::{shell_launch_spec, ShellLaunchSpec};
 use super::error::ShellError;
 
 pub struct ShellSession {
-    #[allow(dead_code)] // read/write loop arrives in issue #20
     master: Box<dyn MasterPty + Send>,
     child: Box<dyn Child + Send + Sync>,
     pub spec: ShellLaunchSpec,
@@ -59,6 +59,12 @@ impl ShellSession {
     #[must_use]
     pub fn pid(&self) -> Option<u32> {
         self.child.process_id()
+    }
+
+    pub fn try_clone_reader(&self) -> Result<Box<dyn Read + Send>, ShellError> {
+        self.master
+            .try_clone_reader()
+            .map_err(|err| ShellError::spawn(err.to_string()))
     }
 
     #[must_use]

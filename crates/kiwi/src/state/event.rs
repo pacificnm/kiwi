@@ -16,6 +16,9 @@ pub enum AppEvent {
     },
     #[cfg_attr(not(test), allow(dead_code))]
     Quit,
+    ShellOutput(Vec<u8>),
+    #[cfg_attr(not(test), allow(dead_code))]
+    ShellExited(i32),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

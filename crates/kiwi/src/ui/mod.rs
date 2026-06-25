@@ -1,5 +1,6 @@
 mod mouse;
 mod render;
+mod shell;
 mod status_bar;
 mod tabs;
 
