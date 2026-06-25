@@ -203,6 +203,32 @@ impl FileTreeState {
         self.loading.remove(path);
     }
 
+    pub fn apply_git_status_patch(
+        &mut self,
+        repo_root: &Path,
+        patch: &crate::git::GitFileStatusPatch,
+        show_untracked: bool,
+    ) {
+        for path in &patch.removed {
+            let full_path = repo_root.join(path);
+            if let Some(node) = self.nodes.get_mut(&full_path) {
+                node.git_status = None;
+            }
+        }
+
+        for entry in &patch.changed {
+            if !show_untracked && entry.status == GitFileStatus::Untracked {
+                continue;
+            }
+            let full_path = repo_root.join(&entry.path);
+            if let Some(node) = self.nodes.get_mut(&full_path) {
+                if !node.is_dir {
+                    node.git_status = Some(entry.status);
+                }
+            }
+        }
+    }
+
     pub fn apply_git_statuses(
         &mut self,
         repo_root: &Path,
@@ -398,6 +424,57 @@ mod tests {
             .map(|row| state.nodes[&row.path].name.as_str())
             .collect();
         assert_eq!(names, vec!["kiwi", "src", "main.rs"]);
+    }
+
+    #[test]
+    fn apply_git_status_patch_updates_only_changed_paths() {
+        let root = PathBuf::from("/tmp/kiwi");
+        let mut state = FileTreeState::at_root(root.clone());
+        let _ = state.expand(&root);
+        state.apply_children_loaded(
+            &root,
+            vec![
+                DirectoryEntry {
+                    path: root.join("src/main.rs"),
+                    name: "main.rs".to_string(),
+                    is_dir: false,
+                },
+                DirectoryEntry {
+                    path: root.join("src/other.rs"),
+                    name: "other.rs".to_string(),
+                    is_dir: false,
+                },
+            ],
+            None,
+        );
+        state
+            .nodes
+            .get_mut(&root.join("src/main.rs"))
+            .unwrap()
+            .git_status = Some(GitFileStatus::Modified);
+        state
+            .nodes
+            .get_mut(&root.join("src/other.rs"))
+            .unwrap()
+            .git_status = Some(GitFileStatus::Modified);
+
+        state.apply_git_status_patch(
+            &root,
+            &crate::git::GitFileStatusPatch {
+                changed: vec![GitFileEntry {
+                    path: "src/other.rs".to_string(),
+                    status: GitFileStatus::Added,
+                }],
+                removed: vec!["src/main.rs".to_string()],
+            },
+            true,
+        );
+
+        assert_eq!(state.nodes[&root.join("src/main.rs")].git_status, None);
+        assert_eq!(
+            state.nodes[&root.join("src/other.rs")].git_status,
+            Some(GitFileStatus::Added)
+        );
     }
 
     #[test]

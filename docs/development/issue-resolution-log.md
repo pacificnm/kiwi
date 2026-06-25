@@ -263,6 +263,14 @@ Format for new entries:
 - **Files:** `git/repository.rs`, `git/io.rs`, `state/domains.rs`, `state/event.rs`, `state/reducer.rs`, `app.rs`, `Cargo.toml`
 - **Verify:** `load_branch_info_*`, `spawn_git_refresh_enqueues_branch_update`, reducer git tests; manual: open Kiwi in a git repo, status bar shows branch name.
 
+### File status lists with incremental patch (GitHub #43, SPEC-008, ADR-007)
+
+- **Symptom:** Git refresh only updated branch info; file lists stayed empty and file-tree badges never refreshed from libgit2.
+- **Cause:** `load_git_snapshot` did not call `git2` status APIs; reducer replaced `file_entries` wholesale and rescanned the entire file tree on every refresh.
+- **Fix:** Added `read_file_statuses` via `git2::StatusOptions` (respecting `show_untracked`), `git/patch.rs` diff/patch helpers, and `apply_git_status_patch` for path-targeted file-tree badge updates. `FsChanged` triggers git refresh when `[git] watch = true`.
+- **Files:** `git/repository.rs`, `git/patch.rs`, `git/io.rs`, `file_tree/state.rs`, `state/reducer.rs`, `app.rs`
+- **Verify:** `load_file_statuses_*`, `patch_*`, `apply_git_status_patch_*`, `fs_changed_requests_git_refresh_when_watch_enabled`; manual: edit a tracked file and confirm status bar/tree badge updates after watcher debounce.
+
 ---
 
 ## Reporting New Issues

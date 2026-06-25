@@ -80,7 +80,7 @@ show_untracked = true
 ## Acceptance Criteria
 
 - [x] Branch name correct
-- [ ] Modified files listed with correct status
-- [ ] Saving file updates status within debounce window
-- [ ] No visible flicker on refresh (selection stable)
-- [ ] Untracked hidden when config false
+- [x] Modified files listed with correct status
+- [x] Saving file updates status within debounce window
+- [x] No visible flicker on refresh (selection stable)
+- [x] Untracked hidden when config false

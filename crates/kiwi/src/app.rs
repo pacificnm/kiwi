@@ -401,7 +401,11 @@ impl App {
                 SideEffect::Quit => return true,
                 SideEffect::SpawnGitRefresh => {
                     if self.state.workspace_meta.is_git_repo {
-                        spawn_git_refresh(self.state.repo_root.clone(), self.events.sender());
+                        spawn_git_refresh(
+                            self.state.repo_root.clone(),
+                            self.state.config.git.show_untracked,
+                            self.events.sender(),
+                        );
                     }
                 }
                 SideEffect::SpawnGitHubRefresh => {
