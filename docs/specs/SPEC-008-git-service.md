@@ -92,3 +92,9 @@ show_untracked = true
 - [x] j/k selection with scroll preservation
 - [x] R refreshes git status from Git tab
 - [x] Enter selects file and opens main Diff tab
+
+## Manual refresh
+
+- [x] Command palette "Git: Refresh Status" triggers refresh in git repos
+- [x] Manual refresh sets `git.loading` until `GitStatusUpdated` arrives
+- [x] Palette command hidden from execution when not in a git repo

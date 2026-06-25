@@ -279,6 +279,14 @@ Format for new entries:
 - **Files:** `ui/git.rs`, `git/panel.rs`, `git/selection.rs`, `state/reducer.rs`, `state/event.rs`, `app.rs`, `ui/render.rs`
 - **Verify:** `render_git_pane_lists_grouped_files`, `git_open_selected_switches_to_main_diff_tab`, `move_selection_skips_section_headers`; manual: Git tab lists changes, j/k moves selection, R refreshes, Enter opens Diff tab.
 
+### Manual git refresh command (GitHub #45, SPEC-008)
+
+- **Symptom:** Command palette "Git: Refresh Status" spawned refresh without setting `git.loading`, so the Git panel showed stale data with no loading feedback and bypassed reducer refresh state.
+- **Cause:** `execute_command` emitted `SpawnGitRefresh` directly instead of sharing `reduce_git_refresh_requested` logic used by startup, `R`, and `GitRefreshRequested`.
+- **Fix:** Extracted `git_refresh_effects` for all manual refresh entry points; palette git refresh now sets loading and respects non-repo guard.
+- **Files:** `state/reducer.rs`, `state/mod.rs`, `commands/mod.rs`
+- **Verify:** `execute_git_refresh_emits_side_effect`, `git_refresh_requested_emits_side_effect_for_git_repo`, `palette_execute_git_refresh_sets_loading`; manual: Ctrl+P → "git ref" → Enter shows loading then updated status.
+
 ---
 
 ## Reporting New Issues

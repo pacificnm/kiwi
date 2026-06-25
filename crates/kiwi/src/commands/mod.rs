@@ -4,7 +4,7 @@ mod registry;
 use crate::clipboard::resolve_copy_text_for_focus;
 use crate::editor::resolve_editor_target;
 use crate::navigation::{MainTab, NavCommand};
-use crate::state::{AppState, SideEffect};
+use crate::state::{git_refresh_effects, AppState, SideEffect};
 
 pub use fuzzy::{best_fuzzy_score, filter_ranked};
 pub use registry::COMMANDS;
@@ -121,10 +121,7 @@ pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideE
             state.dirty = true;
             vec![SideEffect::Quit]
         }
-        PaletteAction::RequestGitRefresh => {
-            state.dirty = true;
-            vec![SideEffect::SpawnGitRefresh]
-        }
+        PaletteAction::RequestGitRefresh => git_refresh_effects(state),
         PaletteAction::RequestGitHubRefresh => {
             state.dirty = true;
             vec![SideEffect::SpawnGitHubRefresh]
@@ -273,6 +270,7 @@ mod tests {
         let effects = execute_command(&mut state, index);
         assert!(effects.contains(&SideEffect::SpawnGitRefresh));
         assert!(effects.contains(&SideEffect::SavePaletteHistory));
+        assert!(state.git.loading);
         assert!(!state.palette.open);
     }
 
