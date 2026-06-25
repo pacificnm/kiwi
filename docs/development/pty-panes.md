@@ -98,7 +98,7 @@ Bash is spawned with `-i` when not already specified so an interactive prompt ap
 - Bracketed paste forwarding into PTY (terminal enables paste; PTY routing TBD)
 - Mouse wheel scroll in PTY panes
 
-Implemented: agent status bar heuristics (#25), agent restart `Ctrl+Shift+R` (#26), command palette registry and UI (#27). Follow-ups: palette command persistence (#29), bracketed paste into PTY.
+Implemented: agent status bar heuristics (#25), agent restart `Ctrl+Shift+R` (#26), command palette registry and UI (#27), fuzzy filter (#28), initial command set and palette history persistence (#29). Follow-ups: bracketed paste into PTY.
 
 ## Related
 

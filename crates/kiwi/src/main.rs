@@ -14,6 +14,7 @@ mod state;
 mod terminal;
 mod theme;
 mod ui;
+mod workspace;
 
 use cli::Cli;
 

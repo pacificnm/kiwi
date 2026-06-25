@@ -1,12 +1,13 @@
 mod fuzzy;
+mod registry;
 
 use std::path::PathBuf;
 
-use crate::layout::FocusTarget;
-use crate::navigation::{LeftNavTab, MainTab, NavCommand};
+use crate::navigation::{MainTab, NavCommand};
 use crate::state::{AppState, SideEffect};
 
 pub use fuzzy::{best_fuzzy_score, filter_ranked};
+pub use registry::COMMANDS;
 
 pub const MAX_VISIBLE_MATCHES: usize = 10;
 
@@ -22,8 +23,10 @@ pub enum CommandContext {
 pub enum PaletteAction {
     Quit,
     RequestGitRefresh,
+    RequestGitHubRefresh,
     AgentRestart,
     Navigation(NavCommand),
+    NavigationChain(&'static [NavCommand]),
     LaunchEditor,
 }
 
@@ -36,141 +39,17 @@ pub struct CommandDef {
     pub action: PaletteAction,
 }
 
-pub const COMMANDS: &[CommandDef] = &[
-    CommandDef {
-        id: "quit",
-        title: "Quit Kiwi",
-        shortcut: Some("q"),
-        context: CommandContext::Always,
-        action: PaletteAction::Quit,
-    },
-    CommandDef {
-        id: "git.refresh",
-        title: "Git: Refresh Status",
-        shortcut: Some("R"),
-        context: CommandContext::RequiresGitRepo,
-        action: PaletteAction::RequestGitRefresh,
-    },
-    CommandDef {
-        id: "agent.restart",
-        title: "Agent: Restart",
-        shortcut: Some("Ctrl+Shift+R"),
-        context: CommandContext::AgentTab,
-        action: PaletteAction::AgentRestart,
-    },
-    CommandDef {
-        id: "editor.open",
-        title: "Open in External Editor",
-        shortcut: Some("e"),
-        context: CommandContext::HasEditorTarget,
-        action: PaletteAction::LaunchEditor,
-    },
-    CommandDef {
-        id: "focus.left",
-        title: "Focus: Left Panel",
-        shortcut: None,
-        context: CommandContext::Always,
-        action: PaletteAction::Navigation(NavCommand::SetFocus(FocusTarget::Left)),
-    },
-    CommandDef {
-        id: "focus.main",
-        title: "Focus: Main Panel",
-        shortcut: None,
-        context: CommandContext::Always,
-        action: PaletteAction::Navigation(NavCommand::SetFocus(FocusTarget::Main)),
-    },
-    CommandDef {
-        id: "focus.shell",
-        title: "Focus: Shell",
-        shortcut: None,
-        context: CommandContext::Always,
-        action: PaletteAction::Navigation(NavCommand::SetFocus(FocusTarget::Shell)),
-    },
-    CommandDef {
-        id: "focus.palette",
-        title: "Focus: Command Palette",
-        shortcut: Some("Ctrl+P"),
-        context: CommandContext::Always,
-        action: PaletteAction::Navigation(NavCommand::SetFocus(FocusTarget::CommandPalette)),
-    },
-    CommandDef {
-        id: "main.agent",
-        title: "Main Tab: Agent",
-        shortcut: Some("1"),
-        context: CommandContext::Always,
-        action: PaletteAction::Navigation(NavCommand::SelectMainTab(MainTab::Agent)),
-    },
-    CommandDef {
-        id: "main.issues",
-        title: "Main Tab: Issues",
-        shortcut: Some("2"),
-        context: CommandContext::Always,
-        action: PaletteAction::Navigation(NavCommand::SelectMainTab(MainTab::Issues)),
-    },
-    CommandDef {
-        id: "main.prs",
-        title: "Main Tab: PRs",
-        shortcut: Some("3"),
-        context: CommandContext::Always,
-        action: PaletteAction::Navigation(NavCommand::SelectMainTab(MainTab::Prs)),
-    },
-    CommandDef {
-        id: "main.diff",
-        title: "Main Tab: Diff",
-        shortcut: Some("4"),
-        context: CommandContext::Always,
-        action: PaletteAction::Navigation(NavCommand::SelectMainTab(MainTab::Diff)),
-    },
-    CommandDef {
-        id: "main.preview",
-        title: "Main Tab: Preview",
-        shortcut: Some("5"),
-        context: CommandContext::Always,
-        action: PaletteAction::Navigation(NavCommand::SelectMainTab(MainTab::Preview)),
-    },
-    CommandDef {
-        id: "main.logs",
-        title: "Main Tab: Logs",
-        shortcut: Some("6"),
-        context: CommandContext::Always,
-        action: PaletteAction::Navigation(NavCommand::SelectMainTab(MainTab::Logs)),
-    },
-    CommandDef {
-        id: "left.files",
-        title: "Left Tab: Files",
-        shortcut: Some("Alt+1"),
-        context: CommandContext::Always,
-        action: PaletteAction::Navigation(NavCommand::SelectLeftTab(LeftNavTab::Files)),
-    },
-    CommandDef {
-        id: "left.git",
-        title: "Left Tab: Git",
-        shortcut: Some("Alt+2"),
-        context: CommandContext::Always,
-        action: PaletteAction::Navigation(NavCommand::SelectLeftTab(LeftNavTab::Git)),
-    },
-    CommandDef {
-        id: "left.diff",
-        title: "Left Tab: Diff",
-        shortcut: Some("Alt+3"),
-        context: CommandContext::Always,
-        action: PaletteAction::Navigation(NavCommand::SelectLeftTab(LeftNavTab::Diff)),
-    },
-    CommandDef {
-        id: "left.gh",
-        title: "Left Tab: GH",
-        shortcut: Some("Alt+4"),
-        context: CommandContext::Always,
-        action: PaletteAction::Navigation(NavCommand::SelectLeftTab(LeftNavTab::Gh)),
-    },
-    CommandDef {
-        id: "left.search",
-        title: "Left Tab: Search",
-        shortcut: Some("Alt+5"),
-        context: CommandContext::Always,
-        action: PaletteAction::Navigation(NavCommand::SelectLeftTab(LeftNavTab::Search)),
-    },
-];
+#[must_use]
+pub fn command_by_id(id: &str) -> Option<&'static CommandDef> {
+    COMMANDS.iter().find(|command| command.id == id)
+}
+
+#[must_use]
+pub fn history_input_for_id(id: &str) -> String {
+    command_by_id(id)
+        .map(|command| command.title.to_string())
+        .unwrap_or_else(|| id.to_string())
+}
 
 #[must_use]
 pub fn command_available(state: &AppState, command: &CommandDef) -> bool {
@@ -223,7 +102,7 @@ pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideE
     state.palette.record_history(command.id);
     state.palette.close(&mut state.navigation.focus);
 
-    match command.action {
+    let mut effects = match command.action {
         PaletteAction::Quit => {
             state.dirty = true;
             vec![SideEffect::Quit]
@@ -232,6 +111,10 @@ pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideE
             state.dirty = true;
             vec![SideEffect::SpawnGitRefresh]
         }
+        PaletteAction::RequestGitHubRefresh => {
+            state.dirty = true;
+            vec![SideEffect::SpawnGitHubRefresh]
+        }
         PaletteAction::AgentRestart => {
             if state.navigation.main_tab != MainTab::Agent {
                 return Vec::new();
@@ -239,14 +122,8 @@ pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideE
             state.dirty = true;
             vec![SideEffect::RestartAgent]
         }
-        PaletteAction::Navigation(nav) => {
-            let before = state.navigation.clone();
-            state.navigation.apply(nav);
-            if state.navigation != before {
-                state.dirty = true;
-            }
-            crate::state::agent_spawn_effects_if_needed(state)
-        }
+        PaletteAction::Navigation(nav) => apply_navigation(state, nav),
+        PaletteAction::NavigationChain(chain) => apply_navigation_chain(state, chain),
         PaletteAction::LaunchEditor => {
             let Some(path) = editor_target(state) else {
                 return Vec::new();
@@ -254,7 +131,33 @@ pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideE
             state.dirty = true;
             vec![SideEffect::LaunchEditor(path)]
         }
+    };
+
+    if state.config.workspace.persist {
+        effects.push(SideEffect::SavePaletteHistory);
     }
+
+    effects
+}
+
+fn apply_navigation(state: &mut AppState, nav: NavCommand) -> Vec<SideEffect> {
+    let before = state.navigation.clone();
+    state.navigation.apply(nav);
+    if state.navigation != before {
+        state.dirty = true;
+    }
+    crate::state::agent_spawn_effects_if_needed(state)
+}
+
+fn apply_navigation_chain(state: &mut AppState, chain: &[NavCommand]) -> Vec<SideEffect> {
+    let before = state.navigation.clone();
+    for nav in chain {
+        state.navigation.apply(*nav);
+    }
+    if state.navigation != before {
+        state.dirty = true;
+    }
+    crate::state::agent_spawn_effects_if_needed(state)
 }
 
 fn editor_target(state: &AppState) -> Option<PathBuf> {
@@ -270,6 +173,7 @@ fn editor_target(state: &AppState) -> Option<PathBuf> {
 mod tests {
     use crate::config::ResolvedConfig;
     use crate::layout::compute_layout;
+    use crate::layout::FocusTarget;
     use crate::navigation::MainTab;
     use crate::state::{AppState, SideEffect};
     use crate::theme::capabilities::TerminalCapabilities;
@@ -327,7 +231,19 @@ mod tests {
             .expect("git refresh");
         let effects = execute_command(&mut state, index);
         assert!(effects.contains(&SideEffect::SpawnGitRefresh));
+        assert!(effects.contains(&SideEffect::SavePaletteHistory));
         assert!(!state.palette.open);
+    }
+
+    #[test]
+    fn execute_github_refresh_emits_side_effect() {
+        let mut state = test_state();
+        let index = COMMANDS
+            .iter()
+            .position(|command| command.id == "github.refresh")
+            .expect("github refresh");
+        let effects = execute_command(&mut state, index);
+        assert!(effects.contains(&SideEffect::SpawnGitHubRefresh));
     }
 
     #[test]
@@ -339,5 +255,24 @@ mod tests {
             .position(|command| command.id == "agent.restart")
             .expect("agent restart");
         assert!(execute_command(&mut state, index).is_empty());
+    }
+
+    #[test]
+    fn goto_agent_selects_tab_and_focuses_main() {
+        let mut state = test_state();
+        state.navigation.main_tab = MainTab::Issues;
+        state.navigation.focus = FocusTarget::Shell;
+        let index = COMMANDS
+            .iter()
+            .position(|command| command.id == "goto.agent")
+            .expect("goto agent");
+        execute_command(&mut state, index);
+        assert_eq!(state.navigation.main_tab, MainTab::Agent);
+        assert_eq!(state.navigation.focus, FocusTarget::Main);
+    }
+
+    #[test]
+    fn history_input_uses_command_title() {
+        assert_eq!(history_input_for_id("git.refresh"), "Git: Refresh Status");
     }
 }

@@ -50,6 +50,7 @@ pub enum AppCommand {
 pub enum SideEffect {
     Quit,
     SpawnGitRefresh,
+    SpawnGitHubRefresh,
     SpawnAgent,
     RestartAgent,
     WriteShell(Vec<u8>),
@@ -60,6 +61,7 @@ pub enum SideEffect {
     },
     #[cfg_attr(not(test), allow(dead_code))]
     SaveWorkspace,
+    SavePaletteHistory,
     #[cfg_attr(not(test), allow(dead_code))]
     LaunchEditor(PathBuf),
 }
