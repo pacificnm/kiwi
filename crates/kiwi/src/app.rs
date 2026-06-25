@@ -1,4 +1,5 @@
 use std::io::stdout;
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 use crossterm::event::{
@@ -10,7 +11,7 @@ use ratatui::Terminal;
 use crate::bootstrap::StartupContext;
 use crate::layout::shell_pty_size;
 use crate::navigation::map_key;
-use crate::shell::ShellSession;
+use crate::shell::{spawn_output_reader, ShellSession};
 use crate::state::{reduce, AppCommand, AppEvent, AppState, EventChannel, SideEffect};
 use crate::ui::{draw_frame, map_tab_click, mouse_interactions_enabled};
 
@@ -19,6 +20,7 @@ pub struct App {
     terminal: crate::terminal::TerminalGuard,
     events: EventChannel,
     shell: Option<ShellSession>,
+    shell_io: Option<JoinHandle<()>>,
 }
 
 impl App {
@@ -35,6 +37,7 @@ impl App {
 
         let mut state =
             AppState::from_startup(repo_root.clone(), is_git_repo, config, theme, layout);
+        let events = EventChannel::new();
         let (cols, rows) = shell_pty_size(&state.layout.rects);
         let shell = match ShellSession::spawn(&repo_root, &state.config.shell, cols, rows) {
             Ok(session) => {
@@ -52,12 +55,17 @@ impl App {
                 None
             }
         };
+        let shell_io = shell
+            .as_ref()
+            .and_then(|session| session.try_clone_reader().ok())
+            .map(|reader| spawn_output_reader(reader, events.sender()));
 
         Self {
             state,
             terminal,
-            events: EventChannel::new(),
+            events,
             shell,
+            shell_io,
         }
     }
 
@@ -106,6 +114,9 @@ impl App {
     }
 
     fn shutdown(&mut self) {
+        if let Some(handle) = self.shell_io.take() {
+            let _ = handle.join();
+        }
         self.shell.take();
         crate::shutdown::cleanup_terminal(&mut self.terminal);
     }

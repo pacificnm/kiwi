@@ -10,6 +10,7 @@ use crate::state::AppState;
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
 
+use super::shell::render_shell_pane;
 use super::status_bar::render_status_bar;
 use super::tabs::tab_bar_line;
 
@@ -67,14 +68,14 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
     );
 
     let shell_title = format!("Shell: {}", state.shell.shell_name);
-    render_pane(
+    render_shell_pane(
         frame,
         state.layout.rects.shell,
         &shell_title,
         state.navigation.focus.is_focused(Region::Shell),
         &state.theme,
         chrome,
-        None,
+        state,
     );
 
     render_status_bar(frame, state.layout.rects.status_bar, state);
@@ -306,6 +307,21 @@ mod tests {
         let content = buffer_content(terminal.backend().buffer());
         assert!(content.contains("Git view"));
         assert!(content.contains("Issues view"));
+    }
+
+    #[test]
+    fn draw_frame_renders_shell_scrollback() {
+        let mut state = test_state();
+        state.shell.scrollback.append_bytes(b"hello kiwi\n");
+
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| draw_frame(frame, &state))
+            .expect("draw");
+
+        let content = buffer_content(terminal.backend().buffer());
+        assert!(content.contains("hello kiwi"));
     }
 
     fn buffer_content(buffer: &ratatui::buffer::Buffer) -> String {

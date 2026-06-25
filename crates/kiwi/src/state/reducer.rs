@@ -16,6 +16,8 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
             state.dirty = true;
             vec![SideEffect::Quit]
         }
+        AppEvent::ShellOutput(data) => reduce_shell_output(state, data),
+        AppEvent::ShellExited(_code) => reduce_shell_exited(state),
     }
 }
 
@@ -68,6 +70,18 @@ fn reduce_git_status_updated(state: &mut AppState, modified_files: Vec<String>) 
         }
     }
 
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_shell_output(state: &mut AppState, data: Vec<u8>) -> Vec<SideEffect> {
+    state.shell.scrollback.append_bytes(&data);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_shell_exited(state: &mut AppState) -> Vec<SideEffect> {
+    state.shell.running = false;
     state.dirty = true;
     Vec::new()
 }
@@ -203,6 +217,14 @@ mod tests {
             },
         );
         assert_ne!(state.layout, before);
+        assert!(state.dirty);
+    }
+
+    #[test]
+    fn shell_output_appends_to_scrollback_and_sets_dirty() {
+        let mut state = test_state();
+        reduce(&mut state, AppEvent::ShellOutput(b"hello\nworld".to_vec()));
+        assert_eq!(state.shell.scrollback.line_count(), 1);
         assert!(state.dirty);
     }
 }

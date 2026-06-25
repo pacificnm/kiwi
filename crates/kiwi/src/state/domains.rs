@@ -35,7 +35,9 @@ pub struct AgentState {
     pub running: bool,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+use crate::shell::ScrollbackBuffer;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShellState {
     pub command: String,
     pub shell_name: String,
@@ -44,6 +46,26 @@ pub struct ShellState {
     pub cols: u16,
     pub rows: u16,
     pub spawn_error: Option<String>,
+    pub scrollback: ScrollbackBuffer,
+    pub viewport_offset: usize,
+    pub follow_tail: bool,
+}
+
+impl Default for ShellState {
+    fn default() -> Self {
+        Self {
+            command: String::new(),
+            shell_name: String::new(),
+            running: false,
+            child_pid: None,
+            cols: 0,
+            rows: 0,
+            spawn_error: None,
+            scrollback: ScrollbackBuffer::new(),
+            viewport_offset: 0,
+            follow_tail: true,
+        }
+    }
 }
 
 impl ShellState {
@@ -62,6 +84,9 @@ impl ShellState {
         self.cols = cols;
         self.rows = rows;
         self.spawn_error = None;
+        self.scrollback.clear();
+        self.viewport_offset = 0;
+        self.follow_tail = true;
     }
 
     pub fn apply_spawn_error(&mut self, message: String) {
