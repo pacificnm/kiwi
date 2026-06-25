@@ -11,8 +11,9 @@ use crate::git::{
 };
 use crate::github::{
     apply_label_picker_load, ensure_issue_selection, issue_move_selection, issue_select_row,
-    page_scroll_issue_detail, scroll_issue_detail, GitHubLeftPane, IssueDetailLoadResult,
-    IssueListLoadResult, ISSUE_LIST_CACHE_SECS,
+    missing_browser_target_message, page_scroll_issue_detail, resolve_browser_target,
+    scroll_issue_detail, GitHubLeftPane, IssueDetailLoadResult, IssueListLoadResult,
+    ISSUE_LIST_CACHE_SECS,
 };
 use crate::layout::{agent_pty_size, compute_layout, shell_pty_size, FocusTarget};
 use crate::navigation::{LeftNavTab, MainTab, NavCommand};
@@ -75,6 +76,9 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
         AppEvent::GitHubIssueLabelsApplied { number, result } => {
             reduce_github_issue_labels_applied(state, number, result)
         }
+        AppEvent::GitHubOpenBrowserCompleted { target, result } => {
+            reduce_github_open_browser_completed(state, target, result)
+        }
     }
 }
 
@@ -110,6 +114,7 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         AppCommand::GitHubLabelPickerToggle => reduce_github_label_picker_toggle(state),
         AppCommand::GitHubLabelPickerApply => reduce_github_label_picker_apply(state),
         AppCommand::GitHubLabelPickerCancel => reduce_github_label_picker_cancel(state),
+        AppCommand::GitHubOpenInBrowser => reduce_github_open_in_browser(state),
         AppCommand::ShellWrite(data) => vec![SideEffect::WriteShell(data)],
         AppCommand::ShellScroll(delta) => reduce_shell_scroll(state, delta),
         AppCommand::AgentWrite(data) => vec![SideEffect::WriteAgent(data)],
@@ -642,6 +647,43 @@ fn reduce_github_label_picker_cancel(state: &mut AppState) -> Vec<SideEffect> {
         state.github.label_picker = None;
         state.dirty = true;
     }
+    Vec::new()
+}
+
+fn reduce_github_open_in_browser(state: &mut AppState) -> Vec<SideEffect> {
+    if !state.github.auth_ok {
+        state.notifications.show_toast("GitHub authentication required");
+        state.dirty = true;
+        return Vec::new();
+    }
+
+    let Some(target) = resolve_browser_target(state) else {
+        state
+            .notifications
+            .show_toast(missing_browser_target_message(state));
+        state.dirty = true;
+        return Vec::new();
+    };
+
+    state.dirty = true;
+    vec![SideEffect::SpawnGitHubOpenBrowser { target }]
+}
+
+fn reduce_github_open_browser_completed(
+    state: &mut AppState,
+    target: crate::github::GitHubBrowserTarget,
+    result: crate::github::IssueActionResult,
+) -> Vec<SideEffect> {
+    if result.success {
+        state.github.issue_action_message = Some(format!(
+            "Opened {} #{} in browser",
+            target.label(),
+            target.number()
+        ));
+    } else if let Some(error) = result.error {
+        state.github.issue_action_message = Some(error);
+    }
+    state.dirty = true;
     Vec::new()
 }
 
@@ -2382,6 +2424,49 @@ mod tests {
                 if labels == &vec!["docs".to_string()]
             )
         }));
+    }
+
+    #[test]
+    fn github_open_in_browser_spawns_side_effect() {
+        let mut state = test_state();
+        state.github.auth_ok = true;
+        state.github.selected_issue = Some(42);
+        state
+            .navigation
+            .apply(NavCommand::SelectMainTab(MainTab::Issues));
+
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::GitHubOpenInBrowser));
+
+        assert!(effects.iter().any(|effect| {
+            matches!(
+                effect,
+                SideEffect::SpawnGitHubOpenBrowser {
+                    target: crate::github::GitHubBrowserTarget::Issue(42)
+                }
+            )
+        }));
+    }
+
+    #[test]
+    fn github_open_browser_completed_sets_status_message() {
+        use crate::github::{GitHubBrowserTarget, IssueActionResult};
+
+        let mut state = test_state();
+        reduce(
+            &mut state,
+            AppEvent::GitHubOpenBrowserCompleted {
+                target: GitHubBrowserTarget::Issue(42),
+                result: IssueActionResult {
+                    success: true,
+                    error: None,
+                },
+            },
+        );
+
+        assert_eq!(
+            state.github.issue_action_message.as_deref(),
+            Some("Opened issue #42 in browser")
+        );
     }
 
     #[test]

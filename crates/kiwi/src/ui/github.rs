@@ -510,7 +510,7 @@ fn render_issue_detail_status_line(
     } else if state.github.selected_issue.is_none() {
         "Enter on GH left list to view"
     } else if state.github.issue_detail.is_some() {
-        "j/k scroll · drag select · Ctrl+C · palette: comment/label · R refresh"
+        "j/k scroll · drag select · Ctrl+C · o browser · palette: comment/label · R refresh"
     } else {
         "Enter on GH left list · R refresh"
     };

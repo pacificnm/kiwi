@@ -4,6 +4,7 @@ use crate::state::{AppEvent, EventSender};
 
 use super::actions::{add_issue_labels, post_issue_comment};
 use super::auth::check_github_auth;
+use super::browser::{open_in_browser, GitHubBrowserTarget};
 use super::detail::load_issue_detail;
 use super::issue::load_issue_list;
 use super::labels::load_repo_labels;
@@ -64,5 +65,17 @@ pub fn spawn_github_issue_label_apply(
     std::thread::spawn(move || {
         let result = add_issue_labels(&repo_root, &command, number, &labels);
         let _ = sender.send(AppEvent::GitHubIssueLabelsApplied { number, result });
+    });
+}
+
+pub fn spawn_github_open_browser(
+    repo_root: PathBuf,
+    command: String,
+    target: GitHubBrowserTarget,
+    sender: EventSender,
+) {
+    std::thread::spawn(move || {
+        let result = open_in_browser(&repo_root, &command, target);
+        let _ = sender.send(AppEvent::GitHubOpenBrowserCompleted { target, result });
     });
 }

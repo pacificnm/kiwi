@@ -82,6 +82,13 @@ pub const COMMANDS: &[CommandDef] = &[
         action: PaletteAction::GitHubIssueLabelPicker,
     },
     CommandDef {
+        id: "github.open.browser",
+        title: "GitHub: Open in Browser",
+        shortcut: Some("o"),
+        context: CommandContext::RequiresGitRepo,
+        action: PaletteAction::GitHubOpenInBrowser,
+    },
+    CommandDef {
         id: "agent.restart",
         title: "Agent: Restart",
         shortcut: Some("Ctrl+Shift+R"),
@@ -339,6 +346,7 @@ mod tests {
             "github.refresh",
             "github.issue.comment",
             "github.issue.label",
+            "github.open.browser",
             "editor.open",
             "agent.restart",
             "focus.left",

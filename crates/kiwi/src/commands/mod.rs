@@ -3,7 +3,9 @@ mod registry;
 
 use crate::clipboard::resolve_copy_text_for_focus;
 use crate::editor::resolve_editor_target;
-use crate::github::LabelPickerState;
+use crate::github::{
+    LabelPickerState, missing_browser_target_message, resolve_browser_target,
+};
 use crate::layout::FocusTarget;
 use crate::navigation::{LeftNavTab, MainTab, NavCommand};
 use crate::state::{
@@ -42,6 +44,7 @@ pub enum PaletteAction {
     DiffPrevFile,
     GitHubIssueCommentPrompt,
     GitHubIssueLabelPicker,
+    GitHubOpenInBrowser,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -114,6 +117,7 @@ fn prioritize_github_issue_commands(state: &AppState, matches: &mut Vec<usize>) 
     }
 
     for command_id in [
+        "github.open.browser",
         "github.issue.comment",
         "github.issue.label",
         "github.refresh",
@@ -206,6 +210,7 @@ pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideE
         PaletteAction::DiffPrevFile => diff_move_file_effects(state, -1),
         PaletteAction::GitHubIssueCommentPrompt => github_issue_comment_prompt_effects(state),
         PaletteAction::GitHubIssueLabelPicker => github_issue_label_picker_effects(state),
+        PaletteAction::GitHubOpenInBrowser => github_open_in_browser_effects(state),
     };
 
     if state.config.workspace.persist {
@@ -295,6 +300,25 @@ fn github_issue_label_picker_effects(state: &mut AppState) -> Vec<SideEffect> {
     state.github.label_picker = Some(LabelPickerState::new(number, existing_labels));
     state.dirty = true;
     vec![SideEffect::SpawnGitHubRepoLabels]
+}
+
+fn github_open_in_browser_effects(state: &mut AppState) -> Vec<SideEffect> {
+    if !state.github.auth_ok {
+        state.notifications.show_toast("GitHub authentication required");
+        state.dirty = true;
+        return Vec::new();
+    }
+
+    let Some(target) = resolve_browser_target(state) else {
+        state
+            .notifications
+            .show_toast(missing_browser_target_message(state));
+        state.dirty = true;
+        return Vec::new();
+    };
+
+    state.dirty = true;
+    vec![SideEffect::SpawnGitHubOpenBrowser { target }]
 }
 
 fn selected_issue_number(state: &AppState) -> Option<u32> {
@@ -467,6 +491,7 @@ mod tests {
             .map(|index| COMMANDS[*index].id)
             .collect();
         assert!(ids.contains(&"github.issue.comment"));
+        assert!(ids.contains(&"github.open.browser"));
         assert!(ids.contains(&"github.issue.label"));
     }
 
@@ -501,6 +526,29 @@ mod tests {
         assert!(state.palette.open);
         assert!(state.palette.prompt.is_some());
         assert_eq!(state.navigation.focus, FocusTarget::CommandPalette);
+    }
+
+    #[test]
+    fn execute_open_in_browser_spawns_side_effect() {
+        let mut state = test_state();
+        state.github.auth_ok = true;
+        state.github.selected_issue = Some(7);
+        state
+            .navigation
+            .apply(NavCommand::SelectMainTab(MainTab::Issues));
+        let index = COMMANDS
+            .iter()
+            .position(|command| command.id == "github.open.browser")
+            .expect("github open browser");
+        let effects = execute_command(&mut state, index);
+        assert!(effects.iter().any(|effect| {
+            matches!(
+                effect,
+                SideEffect::SpawnGitHubOpenBrowser {
+                    target: crate::github::GitHubBrowserTarget::Issue(7)
+                }
+            )
+        }));
     }
 
     #[test]
