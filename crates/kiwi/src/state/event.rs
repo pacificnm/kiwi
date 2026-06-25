@@ -94,7 +94,6 @@ pub enum AppCommand {
     SearchCancel,
     SearchMoveSelection(i32),
     SearchSelect(usize),
-    #[cfg_attr(not(test), allow(dead_code))]
     OpenEditor {
         path: PathBuf,
         line: Option<u32>,

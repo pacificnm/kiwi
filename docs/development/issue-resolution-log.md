@@ -194,6 +194,13 @@ Format for new entries:
 - **Files:** `editor/classify.rs`, `editor/launch.rs`, `terminal.rs`, `app.rs`, `config/types.rs`, ADR-013, SPEC-015, `workflows.md`
 - **Verify:** classify/launch tests; manual: palette Open in Editor with nano/nvim shows editor full-screen, Esc/:q returns to Kiwi.
 
+### Editor launch from tree, preview, palette (GitHub #36, SPEC-015)
+
+- **Symptom:** Editor launcher only reachable via command palette; no `e` keybinding from file tree, preview, or search; palette ignored search line numbers.
+- **Fix:** Added `editor/target.rs` with focus-aware `resolve_editor_target` (preview viewport line, search content line, file tree file). Wired `e` in file tree, preview, and search handlers; palette passes line through `LaunchEditor`.
+- **Files:** `editor/target.rs`, `commands/mod.rs`, `app.rs`, `state/event.rs`, keyboard-shortcuts.md, SPEC-015, SPEC-006
+- **Verify:** editor target + palette tests; manual `e` from Files/Preview/Search.
+
 ---
 
 ## Reporting New Issues

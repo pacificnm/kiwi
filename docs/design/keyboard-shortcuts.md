@@ -82,6 +82,14 @@ When the agent process exits, the pane footer shows the exit code and the restar
 | `e` | Open in editor |
 | `Esc` | Clear query |
 
+## Preview (main, Preview tab)
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` | Scroll |
+| `PgUp` / `PgDn` | Page scroll |
+| `e` | Open in external editor at visible line |
+
 ## Command Palette
 
 | Key | Action |

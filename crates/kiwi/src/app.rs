@@ -13,7 +13,8 @@ use ratatui::Terminal;
 use crate::agent::{AgentOutputReader, AgentSession};
 use crate::bootstrap::StartupContext;
 use crate::editor::{
-    launch_gui_editor, prepare_editor_launch, run_terminal_editor, EditorLaunchMode,
+    launch_gui_editor, prepare_editor_launch, resolve_editor_target, run_terminal_editor,
+    EditorLaunchMode,
 };
 use crate::file_tree::spawn_directory_load;
 use crate::layout::{agent_pty_size, shell_pty_size, FocusTarget};
@@ -669,6 +670,7 @@ impl App {
             KeyCode::Esc => self.dispatch(AppEvent::Command(AppCommand::SearchClear)),
             KeyCode::Backspace => self.dispatch(AppEvent::Command(AppCommand::SearchBackspace)),
             KeyCode::Enter => self.dispatch_preview_from_search_selection(),
+            KeyCode::Char('e') => self.dispatch_open_editor(),
             KeyCode::Char('j') => {
                 self.dispatch(AppEvent::Command(AppCommand::SearchMoveSelection(1)))
             }
@@ -693,6 +695,16 @@ impl App {
         self.dispatch(AppEvent::Command(AppCommand::PreviewFile(
             result.path.clone(),
         )))
+    }
+
+    fn dispatch_open_editor(&mut self) -> bool {
+        let Some(target) = resolve_editor_target(&self.state) else {
+            return false;
+        };
+        self.dispatch(AppEvent::Command(AppCommand::OpenEditor {
+            path: target.path,
+            line: target.line,
+        }))
     }
 
     fn preview_input_active(&self) -> bool {
@@ -726,6 +738,7 @@ impl App {
             }
             KeyCode::Char('r') => self.dispatch(AppEvent::Command(AppCommand::FileTreeRefresh)),
             KeyCode::Char('p') => self.dispatch_preview_from_selection(),
+            KeyCode::Char('e') => self.dispatch_open_editor(),
             KeyCode::Enter => self.handle_file_tree_enter(),
             _ => false,
         }
@@ -771,6 +784,7 @@ impl App {
             KeyCode::Char('k') => self.dispatch(AppEvent::Command(AppCommand::PreviewScroll(-1))),
             KeyCode::PageUp => self.dispatch(AppEvent::Command(AppCommand::PreviewPageScroll(-1))),
             KeyCode::PageDown => self.dispatch(AppEvent::Command(AppCommand::PreviewPageScroll(1))),
+            KeyCode::Char('e') => self.dispatch_open_editor(),
             _ => false,
         }
     }

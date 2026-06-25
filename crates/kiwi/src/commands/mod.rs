@@ -1,8 +1,7 @@
 mod fuzzy;
 mod registry;
 
-use std::path::PathBuf;
-
+use crate::editor::resolve_editor_target;
 use crate::navigation::{MainTab, NavCommand};
 use crate::state::{AppState, SideEffect};
 
@@ -57,7 +56,7 @@ pub fn command_available(state: &AppState, command: &CommandDef) -> bool {
         CommandContext::Always => true,
         CommandContext::RequiresGitRepo => state.workspace_meta.is_git_repo,
         CommandContext::AgentTab => state.navigation.main_tab == MainTab::Agent,
-        CommandContext::HasEditorTarget => editor_target(state).is_some(),
+        CommandContext::HasEditorTarget => resolve_editor_target(state).is_some(),
     }
 }
 
@@ -125,11 +124,14 @@ pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideE
         PaletteAction::Navigation(nav) => apply_navigation(state, nav),
         PaletteAction::NavigationChain(chain) => apply_navigation_chain(state, chain),
         PaletteAction::LaunchEditor => {
-            let Some(path) = editor_target(state) else {
+            let Some(target) = resolve_editor_target(state) else {
                 return Vec::new();
             };
             state.dirty = true;
-            vec![SideEffect::LaunchEditor { path, line: None }]
+            vec![SideEffect::LaunchEditor {
+                path: target.path,
+                line: target.line,
+            }]
         }
     };
 
@@ -160,20 +162,12 @@ fn apply_navigation_chain(state: &mut AppState, chain: &[NavCommand]) -> Vec<Sid
     crate::state::agent_spawn_effects_if_needed(state)
 }
 
-fn editor_target(state: &AppState) -> Option<PathBuf> {
-    state
-        .preview
-        .path
-        .clone()
-        .or_else(|| state.file_tree.selected.clone())
-}
-
 #[cfg(test)]
 mod tests {
     use crate::config::ResolvedConfig;
     use crate::layout::compute_layout;
     use crate::layout::FocusTarget;
-    use crate::navigation::MainTab;
+    use crate::navigation::{MainTab, NavCommand};
     use crate::state::{AppState, SideEffect};
     use crate::theme::capabilities::TerminalCapabilities;
     use crate::theme::loader::load_theme_with_capabilities;
@@ -268,6 +262,28 @@ mod tests {
         execute_command(&mut state, index);
         assert_eq!(state.navigation.main_tab, MainTab::Agent);
         assert_eq!(state.navigation.focus, FocusTarget::Main);
+    }
+
+    #[test]
+    fn execute_editor_open_uses_preview_line() {
+        let mut state = test_state();
+        state.preview.path = Some(std::path::PathBuf::from("src/main.rs"));
+        state.preview.scroll_offset = 4;
+        state
+            .navigation
+            .apply(NavCommand::SetFocus(FocusTarget::Main));
+        state
+            .navigation
+            .apply(NavCommand::SelectMainTab(MainTab::Preview));
+        let index = COMMANDS
+            .iter()
+            .position(|command| command.id == "editor.open")
+            .expect("editor open");
+        let effects = execute_command(&mut state, index);
+        assert!(effects.contains(&SideEffect::LaunchEditor {
+            path: std::path::PathBuf::from("src/main.rs"),
+            line: Some(5),
+        }));
     }
 
     #[test]

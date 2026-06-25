@@ -76,4 +76,4 @@ command = "nvim"
 - [x] Falls back to nano when unset
 - [x] Kiwi remains responsive after GUI editor launch
 - [x] Terminal editors run on the TTY while Kiwi is suspended
-- [ ] Works from file tree, preview, search results
+- [x] Works from file tree, preview, search results
