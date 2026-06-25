@@ -23,7 +23,7 @@ Display a lazy-loaded directory tree with expand/collapse, selection, ignore rul
 1. Show repository root as tree root; sorted dirs first, then files, case-insensitive.
 2. Expand/collapse directories; lazy-load children on first expand.
 3. Skip default ignored names: `.git`, `node_modules`, `target`, `dist`, `build`, `.next`, `.nuxt`, `.venv`.
-4. Selection: single row; `Enter` or `e` opens editor (SPEC-015); `p` opens Preview tab with file.
+4. Selection: single row; `Enter` or `p` opens Preview tab; `e` opens editor (SPEC-015). Double-click file row opens Preview (mouse, ADR-015).
 5. `r` refresh tree preserving expansion set.
 6. Visual git status badge per file when git repo (color per theme).
 7. Watcher invalidates affected directory caches (ADR-011).
@@ -86,5 +86,5 @@ show_untracked = true
 - [x] Expand loads children
 - [x] Ignored dirs not shown
 - [x] Selection survives git status refresh
-- [ ] Double-click opens editor (mouse)
+- [x] Double-click opens preview (mouse)
 - [x] Git colors match theme roles

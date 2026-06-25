@@ -27,3 +27,4 @@ clap = { version = "4", features = ["derive"] }
 portable-pty = "0.8"
 signal-hook = "0.3"
 notify = "7.0.0"
+arboard = "3.4"

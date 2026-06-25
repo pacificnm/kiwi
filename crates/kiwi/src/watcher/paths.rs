@@ -1,6 +1,15 @@
 use std::path::{Component, Path, PathBuf};
 
+use notify::EventKind;
+
 pub const DEFAULT_DEBOUNCE_MS: u64 = 300;
+
+/// Returns true when a notify event can change filesystem content visible to Kiwi.
+///
+/// Access events (read/open/close) are excluded so preview loads do not retrigger reloads.
+pub fn should_emit_fs_changed_event(kind: &EventKind) -> bool {
+    !matches!(kind, EventKind::Access(_) | EventKind::Other)
+}
 
 pub fn should_ignore_watch_path(path: &Path) -> bool {
     path.components()
@@ -29,6 +38,25 @@ mod tests {
     use std::fs;
 
     use super::*;
+
+    #[test]
+    fn ignores_access_events() {
+        use notify::event::{AccessKind, AccessMode, CreateKind, ModifyKind};
+        use notify::EventKind;
+
+        assert!(!should_emit_fs_changed_event(&EventKind::Access(
+            AccessKind::Read
+        )));
+        assert!(!should_emit_fs_changed_event(&EventKind::Access(
+            AccessKind::Open(AccessMode::Read)
+        )));
+        assert!(should_emit_fs_changed_event(&EventKind::Modify(
+            ModifyKind::Any
+        )));
+        assert!(should_emit_fs_changed_event(&EventKind::Create(
+            CreateKind::File
+        )));
+    }
 
     #[test]
     fn ignores_git_internal_paths() {

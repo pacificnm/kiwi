@@ -13,26 +13,23 @@ Provide **lightweight mouse support** that complements keyboard workflows withou
 | Single click | Agent pane (Agent tab) | Focus Main pane |
 | Single click | Shell pane | Focus Shell pane |
 | Single click | List/tree row | Select item |
-| Double click | File row | Open external editor |
+| Double click | File row (Files tab) | Open Preview tab |
+| Double click | Search result row | Open Preview tab at result line |
 | Scroll wheel | Scrollable under cursor | Scroll content |
+| Left drag | Preview, Agent, Shell text | Highlight selection for copy |
 | Middle click | Focused input area | Paste (terminal convention) |
 
 ## Unsupported (v1)
 
 - Drag to resize panes
-- Right-click context menus
-- In-widget text selection for copy
+- Right-click context menus (planned)
 - Click-and-drag scrolling (wheel only)
 
 ## Terminal Text Selection
 
-Users copy from PTY and preview using **terminal emulator selection**:
+Kiwi supports **in-app text selection** in Preview, Agent, and Shell panes: left-click and drag to highlight, then `Ctrl+C` to copy.
 
-- **Shift + drag** to select text in most terminals
-- Selection copies to system clipboard per terminal settings
-- Kiwi hybrid mode must not capture shift+mouse for widget hit-testing
-
-Document in help: "Use terminal selection to copy from shell and preview."
+For hybrid mode, **Shift + drag** can still be used for terminal-native selection when needed.
 
 ## Focus vs Hover
 
@@ -61,6 +58,10 @@ mode = "hybrid"   # or "disabled"
 
 **Disabled**: No mouse capture; pure keyboard.
 
+### Double-click timing
+
+Terminals report repeated `MouseEventKind::Down` events, not a distinct double-click. Kiwi uses `DoubleClickTracker` (`ui/mouse_clicks.rs`) with a **500ms** window and matching target (file path or search index). Test on Alacritty if double-click feels sluggish.
+
 ## Platform Notes
 
 | Terminal | Notes |
@@ -73,4 +74,5 @@ mode = "hybrid"   # or "disabled"
 ## Related
 
 - ADR-015 Mouse Interaction
+- ADR-019 System Clipboard Integration
 - SPEC-014 Mouse Support

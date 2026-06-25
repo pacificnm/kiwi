@@ -28,4 +28,6 @@ After substantive doc edits, re-index project memory:
 - [KNOWN_ISSUES.md](../../KNOWN_ISSUES.md) — active defects and environment gaps
 - [backlog.md](../roadmap/backlog.md) — planned GitHub issues
 - [keyboard-shortcuts.md](../design/keyboard-shortcuts.md) — default bindings
+- [mouse-interaction.md](../design/mouse-interaction.md) — clicks, double-click preview, selection
+- ADR-019 — system clipboard
 - [navigation.md](../design/navigation.md) — focus and tab model

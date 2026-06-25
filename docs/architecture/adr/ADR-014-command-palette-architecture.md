@@ -43,6 +43,7 @@ Command {
 - Fuzzy match on title and id
 - `Enter` executes; `Esc` dismisses and restores focus
 - Mouse: click result row to execute (ADR-015)
+- Clipboard commands: **Clipboard: Copy**, **Clipboard: Cut**, **Clipboard: Paste** (ADR-019); palette input is copy/cut target when open
 
 ### Layout interaction
 

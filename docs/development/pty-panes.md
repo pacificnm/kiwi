@@ -35,6 +35,20 @@ Mouse:
 - Click **left tab** → switch tab and focus **Left**
 - Click **agent pane** (Agent tab) → focus **Main**
 - Click **shell pane** → focus **Shell**
+- **Left drag** in agent/shell scrollback → text selection for `Ctrl+C` copy (ADR-019)
+
+## Clipboard and paste
+
+| Key / input | Shell focus | Agent focus |
+|-------------|-------------|-------------|
+| `Ctrl+C` (no selection) | PTY interrupt | Copy scrollback / selection |
+| `Ctrl+C` (with selection) | Copy highlighted text | Copy highlighted text |
+| `Ctrl+V` | Paste from OS clipboard into PTY | Paste into PTY |
+| `Ctrl+X` (no selection) | Forwarded to PTY | Cut (copy + clear where applicable) |
+
+Paste uses `pty_paste_bytes`: single-line raw text; multiline bracketed paste (`\x1b[200~` … `\x1b[201~`). See ADR-019.
+
+`Ctrl+Q` force-quits from anywhere. From shell, `Ctrl+C` twice within 500ms also quits.
 
 ## Scrollback Display
 
@@ -72,9 +86,10 @@ For symptom → cause → fix notes on scrollback bugs, see [issue-resolution-lo
 | Key | Behavior |
 |-----|----------|
 | `q` | Quit when focus is not routing keys to a running PTY |
-| `Ctrl+C` | Quit when not in PTY; otherwise interrupt the PTY process |
-| `Ctrl+C` twice (500ms) | Force quit from shell or agent |
 | `Ctrl+Q` | Force quit from anywhere |
+| `Ctrl+C` (shell, no selection) | Interrupt running shell command |
+| `Ctrl+C` (shell, with selection) | Copy selection to clipboard |
+| `Ctrl+C` twice within 500ms (shell) | Force quit Kiwi |
 
 Shutdown restores the host terminal before tearing down PTY children. SIGINT/SIGTERM trigger the same clean shutdown path.
 
@@ -95,10 +110,10 @@ Bash is spawned with `-i` when not already specified so an interactive prompt ap
 ## Not Yet Implemented (see backlog)
 
 - Agent PTY resize on terminal resize (# follow-up to SPEC-010)
-- Bracketed paste forwarding into PTY (terminal enables paste; PTY routing TBD)
 - Mouse wheel scroll in PTY panes
+- Right-click context menu for copy/paste
 
-Implemented: agent status bar heuristics (#25), agent restart `Ctrl+Shift+R` (#26), command palette registry and UI (#27), fuzzy filter (#28), initial command set and palette history persistence (#29). Follow-ups: bracketed paste into PTY.
+Implemented: agent status bar heuristics (#25), agent restart `Ctrl+Shift+R` (#26), command palette (#27–#29), system clipboard `Ctrl+C/V/X` (ADR-019), in-app mouse selection (ADR-015), double-click preview from Files/Search.
 
 ## Related
 

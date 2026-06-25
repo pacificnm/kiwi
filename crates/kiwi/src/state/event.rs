@@ -105,6 +105,21 @@ pub enum AppCommand {
         line: Option<u32>,
     },
     ModalDismiss,
+    ClipboardCopy,
+    ClipboardCut,
+    ClipboardPaste,
+    PasteText(String),
+    SelectionBegin {
+        pane: crate::selection::SelectionPane,
+        line: usize,
+        col: usize,
+    },
+    SelectionExtend {
+        line: usize,
+        col: usize,
+    },
+    SelectionEnd,
+    SelectionClear,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -136,6 +151,8 @@ pub enum SideEffect {
         path: PathBuf,
         line: Option<u32>,
     },
+    CopyToClipboard(String),
+    PasteFromClipboard,
 }
 
 impl AppCommand {

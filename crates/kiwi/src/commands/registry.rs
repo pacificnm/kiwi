@@ -5,6 +5,27 @@ use super::{CommandContext, CommandDef, PaletteAction};
 
 pub const COMMANDS: &[CommandDef] = &[
     CommandDef {
+        id: "clipboard.copy",
+        title: "Clipboard: Copy",
+        shortcut: Some("Ctrl+C"),
+        context: CommandContext::Always,
+        action: PaletteAction::ClipboardCopy,
+    },
+    CommandDef {
+        id: "clipboard.cut",
+        title: "Clipboard: Cut",
+        shortcut: Some("Ctrl+X"),
+        context: CommandContext::Always,
+        action: PaletteAction::ClipboardCut,
+    },
+    CommandDef {
+        id: "clipboard.paste",
+        title: "Clipboard: Paste",
+        shortcut: Some("Ctrl+V"),
+        context: CommandContext::Always,
+        action: PaletteAction::ClipboardPaste,
+    },
+    CommandDef {
         id: "quit",
         title: "Quit Kiwi",
         shortcut: Some("q"),
