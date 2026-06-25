@@ -1152,6 +1152,23 @@ mod tests {
     }
 
     #[test]
+    fn fs_changed_git_head_triggers_refresh() {
+        let mut state = test_state();
+        state.workspace_meta.is_git_repo = true;
+        state.config.git.watch = true;
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::FsChanged {
+                paths: vec![PathBuf::from("/repo/.git/HEAD")],
+            },
+        );
+
+        assert!(effects.contains(&SideEffect::SpawnGitRefresh));
+        assert!(state.git.loading);
+    }
+
+    #[test]
     fn fs_changed_requests_git_refresh_when_watch_enabled() {
         let mut state = test_state();
         state.workspace_meta.is_git_repo = true;

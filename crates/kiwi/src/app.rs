@@ -85,13 +85,14 @@ impl App {
             }
         }
         let events = EventChannel::new();
-        let repo_watcher = match RepoWatcher::spawn(repo_root.clone(), events.sender()) {
-            Ok(watcher) => Some(watcher),
-            Err(err) => {
-                eprintln!("file watcher disabled: {err}");
-                None
-            }
-        };
+        let (repo_watcher, watcher_error) =
+            match RepoWatcher::spawn(repo_root.clone(), events.sender()) {
+                Ok(watcher) => (Some(watcher), None),
+                Err(err) => {
+                    eprintln!("file watcher disabled: {err}");
+                    (None, Some(err))
+                }
+            };
         let (cols, rows) = shell_pty_size(&state.layout.rects);
         let shell = match ShellSession::spawn(&repo_root, &state.config.shell, cols, rows) {
             Ok(session) => {
@@ -133,6 +134,15 @@ impl App {
         };
         let spawn_effects = agent_spawn_effects_if_needed(&mut app.state);
         app.execute_effects(spawn_effects);
+        if let Some(err) = watcher_error {
+            app.state.logs.push_info(format!(
+                "File watcher disabled: {err}. Use Git: Refresh Status or R in the Git tab."
+            ));
+            app.state
+                .notifications
+                .show_toast("File watcher disabled — use manual git refresh");
+            app.state.dirty = true;
+        }
         if app.state.workspace_meta.is_git_repo {
             app.dispatch(AppEvent::GitRefreshRequested);
         }

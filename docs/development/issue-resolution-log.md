@@ -287,6 +287,14 @@ Format for new entries:
 - **Files:** `state/reducer.rs`, `state/mod.rs`, `commands/mod.rs`
 - **Verify:** `execute_git_refresh_emits_side_effect`, `git_refresh_requested_emits_side_effect_for_git_repo`, `palette_execute_git_refresh_sets_loading`; manual: Ctrl+P → "git ref" → Enter shows loading then updated status.
 
+### notify watcher on repo root (GitHub #46, ADR-011)
+
+- **Symptom:** File watcher from #37 ignored all `.git/` paths, so branch switches and index updates never reached `FsChanged`; notify errors were swallowed silently.
+- **Cause:** Blanket `.git/` filter in `should_ignore_watch_path`; no startup warning when `RepoWatcher::spawn` failed.
+- **Fix:** Allow `.git/HEAD` and `.git/index` through the watcher filter per ADR-011; log notify callback errors to stderr; show one-time logs toast when spawn fails. Added nested-file and git-head integration tests.
+- **Files:** `watcher/paths.rs`, `watcher/io.rs`, `watcher/debounce.rs`, `app.rs`, `state/reducer.rs`
+- **Verify:** `allows_git_metadata_paths`, `watcher_emits_fs_changed_for_nested_file`, `watcher_emits_fs_changed_for_git_head`, `fs_changed_git_head_triggers_refresh`; manual: save a tracked file and confirm status updates after debounce.
+
 ---
 
 ## Reporting New Issues

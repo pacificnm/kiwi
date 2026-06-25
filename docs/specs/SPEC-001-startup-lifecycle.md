@@ -27,7 +27,7 @@ Define how Kiwi initializes, validates environment, enters the main event loop, 
 3. **Config load** — Merge per ADR-005; produce `ResolvedConfig`.
 4. **Terminal init** — Enable raw mode, alternate screen, bracketed paste, mouse if configured.
 5. **State init** — Load workspace persistence if present (SPEC-017); else defaults.
-6. **Service start** — Spawn tokio runtime tasks: watcher (if git repo), shell PTY, optional agent PTY lazy on first Agent tab visit.
+6. **Service start** — Spawn shell PTY, recursive `notify` file watcher on repository root (ADR-011), optional agent PTY lazy on first Agent tab visit.
 7. **Main loop** — Poll crossterm events + app event channel; render on dirty flag.
 8. **Shutdown** — On `q`, `Ctrl+C`, `Ctrl+Q`, or SIGINT/SIGTERM: restore terminal first, abandon PTY reader threads, kill PTY children, exit 0.
 

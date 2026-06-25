@@ -76,3 +76,10 @@ Future: `[watcher] debounce_ms = 300`
 - Integrate with SPEC-008 Git Service and SPEC-005 File Explorer
 - Log watcher errors at `warn` level; fall back to manual refresh only on total failure
 - Test coalescing with 50 rapid touch events
+
+## Acceptance criteria (repo root watcher)
+
+- [x] `notify` recursive watch on repository root at startup
+- [x] `.git/` internal paths ignored except `HEAD` and `index`
+- [x] Notify callback errors logged to stderr; spawn failure shows one-time in-app warning
+- [x] `AppEvent::FsChanged` emitted after debounce for workspace file changes
