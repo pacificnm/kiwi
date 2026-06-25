@@ -70,6 +70,17 @@ pub enum AppEvent {
         number: u32,
         result: crate::github::IssueDetailLoadResult,
     },
+    GitHubIssueCommentCompleted {
+        number: u32,
+        result: crate::github::IssueActionResult,
+    },
+    GitHubRepoLabelsLoaded {
+        result: crate::github::RepoLabelsLoadResult,
+    },
+    GitHubIssueLabelsApplied {
+        number: u32,
+        result: crate::github::IssueActionResult,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,6 +96,10 @@ pub enum AppCommand {
     GitHubSelectLeftPane(crate::github::GitHubLeftPane),
     GitHubIssueDetailScroll(i32),
     GitHubIssueDetailPageScroll(i32),
+    GitHubLabelPickerMove(i32),
+    GitHubLabelPickerToggle,
+    GitHubLabelPickerApply,
+    GitHubLabelPickerCancel,
     ShellWrite(Vec<u8>),
     ShellScroll(i32),
     AgentWrite(Vec<u8>),
@@ -201,6 +216,15 @@ pub enum SideEffect {
     SpawnGitHubIssueList,
     SpawnGitHubIssueDetail {
         number: u32,
+    },
+    SpawnGitHubIssueComment {
+        number: u32,
+        body: String,
+    },
+    SpawnGitHubRepoLabels,
+    SpawnGitHubIssueLabelApply {
+        number: u32,
+        labels: Vec<String>,
     },
 }
 

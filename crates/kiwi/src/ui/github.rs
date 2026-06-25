@@ -503,12 +503,14 @@ fn render_issue_detail_status_line(
     state: &AppState,
     theme: &ThemePalette,
 ) {
-    let status = if state.github.issue_detail_loading {
+    let status = if let Some(message) = &state.github.issue_action_message {
+        message.as_str()
+    } else if state.github.issue_detail_loading {
         "Loading detail…"
     } else if state.github.selected_issue.is_none() {
         "Enter on GH left list to view"
     } else if state.github.issue_detail.is_some() {
-        "j/k scroll · drag select · Ctrl+C copy · R refresh"
+        "j/k scroll · drag select · Ctrl+C · palette: comment/label · R refresh"
     } else {
         "Enter on GH left list · R refresh"
     };

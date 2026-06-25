@@ -17,6 +17,7 @@ use super::git::render_git_pane;
 use super::github::{
     render_github_left_pane, render_github_main_pane, render_issue_detail_pane,
 };
+use super::label_picker::render_label_picker_overlay;
 use super::logs::render_logs_pane;
 use super::notifications::render_notifications;
 use super::palette::render_palette_pane;
@@ -153,6 +154,14 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
             &state.theme,
             chrome,
             Some(main_pane_line(state)),
+        );
+    }
+    if state.github.label_picker.is_some() {
+        render_label_picker_overlay(
+            frame,
+            state.layout.rects.main_content,
+            &state.theme,
+            state,
         );
     }
     render_palette_pane(

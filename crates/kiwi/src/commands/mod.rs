@@ -3,10 +3,12 @@ mod registry;
 
 use crate::clipboard::resolve_copy_text_for_focus;
 use crate::editor::resolve_editor_target;
-use crate::navigation::{MainTab, NavCommand};
+use crate::github::LabelPickerState;
+use crate::layout::FocusTarget;
+use crate::navigation::{LeftNavTab, MainTab, NavCommand};
 use crate::state::{
     apply_navigation, diff_move_file_effects, diff_set_source_effects, git_refresh_effects,
-    github_refresh_effects, AppState, SideEffect,
+    github_refresh_effects, AppState, PalettePrompt, SideEffect,
 };
 
 pub use fuzzy::{best_fuzzy_score, filter_ranked};
@@ -38,6 +40,8 @@ pub enum PaletteAction {
     DiffToggleSource,
     DiffNextFile,
     DiffPrevFile,
+    GitHubIssueCommentPrompt,
+    GitHubIssueLabelPicker,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,6 +87,7 @@ pub fn refresh_matches(state: &mut AppState) {
                 matches.insert(0, index);
             }
         }
+        prioritize_github_issue_commands(state, &mut matches);
         state.palette.matches = matches.into_iter().take(MAX_VISIBLE_MATCHES).collect();
     } else {
         let ranked = filter_ranked(COMMANDS.len(), input, |index| {
@@ -101,12 +106,36 @@ pub fn refresh_matches(state: &mut AppState) {
     }
 }
 
+fn prioritize_github_issue_commands(state: &AppState, matches: &mut Vec<usize>) {
+    let surface_active = state.navigation.main_tab == MainTab::Issues
+        || state.navigation.left_tab == LeftNavTab::Gh;
+    if !surface_active {
+        return;
+    }
+
+    for command_id in [
+        "github.issue.comment",
+        "github.issue.label",
+        "github.refresh",
+    ] {
+        let Some(index) = COMMANDS.iter().position(|command| command.id == command_id) else {
+            continue;
+        };
+        matches.retain(|candidate| *candidate != index);
+        matches.insert(0, index);
+    }
+}
+
 pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideEffect> {
     let Some(command) = COMMANDS.get(registry_index) else {
         return Vec::new();
     };
 
     if !command_available(state, command) {
+        if let Some(message) = unavailable_command_message(state, command) {
+            state.notifications.show_toast(message);
+            state.dirty = true;
+        }
         return Vec::new();
     }
 
@@ -122,7 +151,9 @@ pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideE
     };
 
     state.palette.record_history(command.id);
-    state.palette.close(&mut state.navigation.focus);
+    if !matches!(command.action, PaletteAction::GitHubIssueCommentPrompt) {
+        state.palette.close(&mut state.navigation.focus);
+    }
 
     let mut effects = match command.action {
         PaletteAction::Quit => {
@@ -173,6 +204,8 @@ pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideE
         }
         PaletteAction::DiffNextFile => diff_move_file_effects(state, 1),
         PaletteAction::DiffPrevFile => diff_move_file_effects(state, -1),
+        PaletteAction::GitHubIssueCommentPrompt => github_issue_comment_prompt_effects(state),
+        PaletteAction::GitHubIssueLabelPicker => github_issue_label_picker_effects(state),
     };
 
     if state.config.workspace.persist {
@@ -203,6 +236,96 @@ fn clipboard_palette_effects_from_text(
 
     state.dirty = true;
     vec![SideEffect::CopyToClipboard(text)]
+}
+
+fn unavailable_command_message(state: &AppState, command: &CommandDef) -> Option<&'static str> {
+    match command.context {
+        CommandContext::RequiresGitRepo if !state.workspace_meta.is_git_repo => {
+            Some("Not in a git repository")
+        }
+        CommandContext::AgentTab if state.navigation.main_tab != MainTab::Agent => {
+            Some("Switch to the Agent tab first")
+        }
+        CommandContext::DiffTab if state.navigation.main_tab != MainTab::Diff => {
+            Some("Switch to the Diff tab first")
+        }
+        CommandContext::HasEditorTarget if resolve_editor_target(state).is_none() => {
+            Some("No file selected to open in an editor")
+        }
+        _ => Some("Command unavailable in current context"),
+    }
+}
+
+fn github_issue_comment_prompt_effects(state: &mut AppState) -> Vec<SideEffect> {
+    if !state.github.auth_ok {
+        state.notifications.show_toast("GitHub authentication required");
+        state.dirty = true;
+        return Vec::new();
+    }
+
+    let Some(number) = selected_issue_number(state) else {
+        state.notifications.show_toast("Select an issue in the GH left list first");
+        state.dirty = true;
+        return Vec::new();
+    };
+
+    let focus = state.navigation.focus;
+    state
+        .palette
+        .begin_prompt(PalettePrompt::GitHubIssueComment { number }, focus);
+    state.navigation.focus = FocusTarget::CommandPalette;
+    state.dirty = true;
+    Vec::new()
+}
+
+fn github_issue_label_picker_effects(state: &mut AppState) -> Vec<SideEffect> {
+    if !state.github.auth_ok {
+        state.notifications.show_toast("GitHub authentication required");
+        state.dirty = true;
+        return Vec::new();
+    }
+
+    let Some(number) = selected_issue_number(state) else {
+        state.notifications.show_toast("Select an issue in the GH left list first");
+        state.dirty = true;
+        return Vec::new();
+    };
+
+    let existing_labels = issue_labels_for_number(state, number);
+    state.github.label_picker = Some(LabelPickerState::new(number, existing_labels));
+    state.dirty = true;
+    vec![SideEffect::SpawnGitHubRepoLabels]
+}
+
+fn selected_issue_number(state: &AppState) -> Option<u32> {
+    state
+        .github
+        .selected_issue
+        .and_then(|value| u32::try_from(value).ok())
+}
+
+fn issue_labels_for_number(state: &AppState, number: u32) -> Vec<String> {
+    if state
+        .github
+        .issue_detail
+        .as_ref()
+        .is_some_and(|detail| detail.number == number)
+    {
+        return state
+            .github
+            .issue_detail
+            .as_ref()
+            .map(|detail| detail.labels.clone())
+            .unwrap_or_default();
+    }
+
+    state
+        .github
+        .issues
+        .iter()
+        .find(|issue| issue.number == number)
+        .map(|issue| issue.labels.clone())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -328,6 +451,71 @@ mod tests {
             path: std::path::PathBuf::from("src/main.rs"),
             line: Some(5),
         }));
+    }
+
+    #[test]
+    fn github_issue_commands_surface_on_issues_tab() {
+        let mut state = test_state();
+        state
+            .navigation
+            .apply(NavCommand::SelectMainTab(MainTab::Issues));
+        refresh_matches(&mut state);
+        let ids: Vec<_> = state
+            .palette
+            .matches
+            .iter()
+            .map(|index| COMMANDS[*index].id)
+            .collect();
+        assert!(ids.contains(&"github.issue.comment"));
+        assert!(ids.contains(&"github.issue.label"));
+    }
+
+    #[test]
+    fn fuzzy_find_issue_comment_command() {
+        let mut state = test_state();
+        state.palette.input = "issue comment".to_string();
+        refresh_matches(&mut state);
+        assert!(state.palette.matches.iter().any(|index| {
+            COMMANDS[*index].id == "github.issue.comment"
+        }));
+    }
+
+    #[test]
+    fn execute_issue_comment_prompt_opens_palette_prompt() {
+        let mut state = test_state();
+        state.github.auth_ok = true;
+        state.github.selected_issue = Some(7);
+        let index = COMMANDS
+            .iter()
+            .position(|command| command.id == "github.issue.comment")
+            .expect("github issue comment");
+        let effects = execute_command(&mut state, index);
+        assert!(!effects.iter().any(|effect| {
+            matches!(
+                effect,
+                SideEffect::SpawnGitHubIssueComment { .. }
+                    | SideEffect::SpawnGitHubIssueList
+                    | SideEffect::SpawnGitHubIssueDetail { .. }
+            )
+        }));
+        assert!(state.palette.open);
+        assert!(state.palette.prompt.is_some());
+        assert_eq!(state.navigation.focus, FocusTarget::CommandPalette);
+    }
+
+    #[test]
+    fn execute_issue_label_picker_spawns_label_load() {
+        let mut state = test_state();
+        state.github.auth_ok = true;
+        state.github.selected_issue = Some(7);
+        let index = COMMANDS
+            .iter()
+            .position(|command| command.id == "github.issue.label")
+            .expect("github issue label");
+        let effects = execute_command(&mut state, index);
+        assert!(state.github.label_picker.is_some());
+        assert!(effects.contains(&SideEffect::SpawnGitHubRepoLabels));
+        assert!(!state.palette.open);
     }
 
     #[test]

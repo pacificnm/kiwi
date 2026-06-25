@@ -22,7 +22,10 @@ use crate::editor::{
 };
 use crate::file_tree::spawn_directory_load;
 use crate::git::spawn_git_refresh;
-use crate::github::{spawn_github_auth_check, spawn_github_issue_detail_load, spawn_github_issue_list_load};
+use crate::github::{
+    spawn_github_auth_check, spawn_github_issue_comment, spawn_github_issue_detail_load,
+    spawn_github_issue_label_apply, spawn_github_issue_list_load, spawn_github_repo_labels_load,
+};
 use crate::layout::{agent_pty_size, shell_pty_size, FocusTarget};
 use crate::navigation::{map_key, LeftNavTab, MainTab, NavCommand};
 use crate::preview::spawn_preview_load;
@@ -448,6 +451,31 @@ impl App {
                         self.events.sender(),
                     );
                 }
+                SideEffect::SpawnGitHubIssueComment { number, body } => {
+                    spawn_github_issue_comment(
+                        self.state.repo_root.clone(),
+                        self.state.config.github.command.clone(),
+                        number,
+                        body,
+                        self.events.sender(),
+                    );
+                }
+                SideEffect::SpawnGitHubRepoLabels => {
+                    spawn_github_repo_labels_load(
+                        self.state.repo_root.clone(),
+                        self.state.config.github.command.clone(),
+                        self.events.sender(),
+                    );
+                }
+                SideEffect::SpawnGitHubIssueLabelApply { number, labels } => {
+                    spawn_github_issue_label_apply(
+                        self.state.repo_root.clone(),
+                        self.state.config.github.command.clone(),
+                        number,
+                        labels,
+                        self.events.sender(),
+                    );
+                }
                 SideEffect::SpawnAgent => {
                     self.spawn_agent();
                 }
@@ -770,6 +798,10 @@ impl App {
             return false;
         }
 
+        if self.state.github.label_picker.is_some() {
+            return self.handle_label_picker_key(key);
+        }
+
         if self.is_palette_open_key(key) {
             return self.dispatch(AppEvent::Command(AppCommand::PaletteOpen));
         }
@@ -865,24 +897,48 @@ impl App {
             && matches!(key.code, KeyCode::Char('p' | 'P'))
     }
 
+    fn handle_label_picker_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Esc => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubLabelPickerCancel))
+            }
+            KeyCode::Enter => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubLabelPickerApply))
+            }
+            KeyCode::Char(' ') => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubLabelPickerToggle))
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubLabelPickerMove(1)))
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubLabelPickerMove(-1)))
+            }
+            _ => false,
+        }
+    }
+
     fn handle_palette_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        let prompt_mode = self.state.palette.prompt.is_some();
         match key.code {
             KeyCode::Esc => self.dispatch(AppEvent::Command(AppCommand::PaletteClose)),
             KeyCode::Enter => self.dispatch(AppEvent::Command(AppCommand::PaletteExecuteSelected)),
-            KeyCode::Up => {
+            KeyCode::Up if !prompt_mode => {
                 if self.state.palette.input.is_empty() {
                     self.dispatch(AppEvent::Command(AppCommand::PaletteHistoryUp))
                 } else {
                     self.dispatch(AppEvent::Command(AppCommand::PaletteMoveSelection(-1)))
                 }
             }
-            KeyCode::Down => {
+            KeyCode::Down if !prompt_mode => {
                 if self.state.palette.input.is_empty() {
                     self.dispatch(AppEvent::Command(AppCommand::PaletteHistoryDown))
                 } else {
                     self.dispatch(AppEvent::Command(AppCommand::PaletteMoveSelection(1)))
                 }
             }
+            KeyCode::Up if prompt_mode => false,
+            KeyCode::Down if prompt_mode => false,
             KeyCode::Backspace => self.dispatch(AppEvent::Command(AppCommand::PaletteBackspace)),
             KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.dispatch(AppEvent::Command(AppCommand::PaletteAppendChar(ch)))
