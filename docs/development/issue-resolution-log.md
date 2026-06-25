@@ -303,6 +303,14 @@ Format for new entries:
 - **Files:** `watcher/debounce.rs`, `state/channel.rs`, `watcher/io.rs`, `config/types.rs`, `app.rs`
 - **Verify:** `coalesces_fifty_rapid_paths`, `coalesces_fifty_fs_changed_batches`, `reschedule_extends_deadline`; manual: formatter-on-save triggers one git refresh after debounce.
 
+### Path-targeted cache invalidation (GitHub #48, ADR-011)
+
+- **Symptom:** `FsChanged` refreshed git status and preview but left stale file-tree directory listings until manual `r` refresh.
+- **Cause:** `reduce_fs_changed` never called `FileTreeState::invalidate_children` for watcher paths.
+- **Fix:** Added `file_tree/invalidation.rs` to map changed paths to parent/directory caches, invalidate loaded nodes, and enqueue `LoadDirectoryChildren` for expanded directories while preserving selection.
+- **Files:** `file_tree/invalidation.rs`, `state/reducer.rs`, `file_tree/mod.rs`
+- **Verify:** `directories_to_invalidate_*`, `apply_fs_invalidation_*`, `fs_changed_invalidates_expanded_file_tree_directory`; manual: create a file in an expanded folder and confirm it appears without pressing `r`.
+
 ---
 
 ## Reporting New Issues
