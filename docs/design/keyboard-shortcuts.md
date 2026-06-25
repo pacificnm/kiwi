@@ -144,7 +144,8 @@ Pair **GH** left (`Alt+4`) with **Issues** main (`2`), or use palette **Go to Gi
 
 | Key | Action |
 |-----|--------|
-| `j` / `k` | Issue list navigation (GH left pane, left focus) |
+| `j` / `k` | Issue list navigation (GH left pane, left focus) or scroll detail (Issues main, main focus) |
+| `PgUp` / `PgDn` | Page scroll issue detail (Issues main, main focus) |
 | `Enter` | Open selected issue in Issues main tab |
 | `c` | Comment (opens palette prompt) |
 | `o` | Open in browser |

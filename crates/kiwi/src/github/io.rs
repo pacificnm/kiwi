@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use crate::state::{AppEvent, EventSender};
 
 use super::auth::check_github_auth;
+use super::detail::load_issue_detail;
 use super::issue::load_issue_list;
 
 pub fn spawn_github_auth_check(command: String, sender: EventSender) {
@@ -16,5 +17,17 @@ pub fn spawn_github_issue_list_load(repo_root: PathBuf, command: String, sender:
     std::thread::spawn(move || {
         let result = load_issue_list(&repo_root, &command);
         let _ = sender.send(AppEvent::GitHubIssuesLoaded { result });
+    });
+}
+
+pub fn spawn_github_issue_detail_load(
+    repo_root: PathBuf,
+    command: String,
+    number: u32,
+    sender: EventSender,
+) {
+    std::thread::spawn(move || {
+        let result = load_issue_detail(&repo_root, &command, number);
+        let _ = sender.send(AppEvent::GitHubIssueDetailLoaded { number, result });
     });
 }

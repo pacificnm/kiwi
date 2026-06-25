@@ -23,6 +23,7 @@ pub struct EventSender {
 }
 
 impl EventSender {
+    #[allow(clippy::result_large_err)]
     pub fn send(&self, event: AppEvent) -> Result<(), mpsc::SendError<AppEvent>> {
         self.inner.send(event)
     }

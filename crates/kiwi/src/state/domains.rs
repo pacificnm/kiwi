@@ -155,6 +155,11 @@ pub struct GitHubState {
     pub issues_error: Option<String>,
     pub issues_scroll_offset: usize,
     pub issues_loaded_at: Option<SystemTime>,
+    pub issue_detail_number: Option<u64>,
+    pub issue_detail: Option<crate::github::IssueDetail>,
+    pub issue_detail_loading: bool,
+    pub issue_detail_error: Option<String>,
+    pub issue_detail_scroll_offset: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
