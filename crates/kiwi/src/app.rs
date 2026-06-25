@@ -8,7 +8,9 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 use crate::bootstrap::StartupContext;
+use crate::layout::shell_pty_size;
 use crate::navigation::map_key;
+use crate::shell::ShellSession;
 use crate::state::{reduce, AppCommand, AppEvent, AppState, EventChannel, SideEffect};
 use crate::ui::{draw_frame, map_tab_click, mouse_interactions_enabled};
 
@@ -16,6 +18,7 @@ pub struct App {
     state: AppState,
     terminal: crate::terminal::TerminalGuard,
     events: EventChannel,
+    shell: Option<ShellSession>,
 }
 
 impl App {
@@ -30,10 +33,31 @@ impl App {
             terminal,
         } = context;
 
+        let mut state =
+            AppState::from_startup(repo_root.clone(), is_git_repo, config, theme, layout);
+        let (cols, rows) = shell_pty_size(&state.layout.rects);
+        let shell = match ShellSession::spawn(&repo_root, &state.config.shell, cols, rows) {
+            Ok(session) => {
+                state.shell.apply_spawn(
+                    &session.spec.command,
+                    &session.spec.shell_name,
+                    session.pid(),
+                    session.cols,
+                    session.rows,
+                );
+                Some(session)
+            }
+            Err(err) => {
+                state.shell.apply_spawn_error(err.to_string());
+                None
+            }
+        };
+
         Self {
-            state: AppState::from_startup(repo_root, is_git_repo, config, theme, layout),
+            state,
             terminal,
             events: EventChannel::new(),
+            shell,
         }
     }
 
@@ -78,6 +102,11 @@ impl App {
             }
         }
 
+        self.shutdown();
+    }
+
+    fn shutdown(&mut self) {
+        self.shell.take();
         crate::shutdown::cleanup_terminal(&mut self.terminal);
     }
 
@@ -193,6 +222,14 @@ mod tests {
             layout: compute_layout(120, 40, 30).expect("layout"),
             terminal: TerminalGuard::inactive(),
         }
+    }
+
+    #[test]
+    fn app_spawns_shell_at_startup() {
+        let app = App::new(test_context());
+        assert!(app.state().shell.running);
+        assert!(app.state().shell.child_pid.is_some());
+        assert!(!app.state().shell.shell_name.is_empty());
     }
 
     #[test]

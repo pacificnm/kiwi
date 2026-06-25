@@ -228,7 +228,7 @@ impl Default for ResolvedConfig {
                 env: HashMap::new(),
             },
             shell: ShellSettings {
-                command: "bash".to_string(),
+                command: default_shell_command(),
                 args: Vec::new(),
             },
             mouse: MouseSettings {
@@ -262,6 +262,10 @@ impl Default for ResolvedConfig {
             },
         }
     }
+}
+
+fn default_shell_command() -> String {
+    std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string())
 }
 
 impl RawConfig {

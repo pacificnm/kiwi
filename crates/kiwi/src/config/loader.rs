@@ -116,6 +116,12 @@ mod tests {
     }
 
     #[test]
+    fn default_shell_command_uses_env_or_bash() {
+        let command = crate::config::ResolvedConfig::default().shell.command;
+        assert!(!command.is_empty());
+    }
+
+    #[test]
     fn defaults_apply_when_no_files_exist() {
         let home = TestHome::new("defaults");
         let cli = Cli::parse_from(["kiwi", "/tmp/repo"]);

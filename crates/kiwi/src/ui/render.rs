@@ -66,7 +66,7 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
         ))),
     );
 
-    let shell_title = format!("Shell: {}", state.config.shell.command);
+    let shell_title = format!("Shell: {}", state.shell.shell_name);
     render_pane(
         frame,
         state.layout.rects.shell,
