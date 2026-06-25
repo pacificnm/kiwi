@@ -7,11 +7,14 @@ use crossterm::event::{
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
+use crate::agent::AgentSession;
 use crate::bootstrap::StartupContext;
-use crate::layout::{shell_pty_size, FocusTarget};
+use crate::layout::{agent_pty_size, shell_pty_size, FocusTarget};
 use crate::navigation::map_key;
 use crate::shell::{encode_key, ShellOutputReader, ShellSession};
-use crate::state::{reduce, AppCommand, AppEvent, AppState, EventChannel, SideEffect};
+use crate::state::{
+    agent_spawn_effects_if_needed, reduce, AppCommand, AppEvent, AppState, EventChannel, SideEffect,
+};
 use crate::ui::{draw_frame, map_mouse_click, mouse_interactions_enabled};
 
 pub struct App {
@@ -20,6 +23,7 @@ pub struct App {
     events: EventChannel,
     shell: Option<ShellSession>,
     shell_io: Option<ShellOutputReader>,
+    agent: Option<AgentSession>,
 }
 
 impl App {
@@ -59,13 +63,41 @@ impl App {
             .and_then(|session| session.try_clone_reader().ok())
             .map(|reader| ShellOutputReader::spawn(reader, events.sender()));
 
-        Self {
+        let mut app = Self {
             state,
             terminal,
             events,
             shell,
             shell_io,
+            agent: None,
+        };
+        let spawn_effects = agent_spawn_effects_if_needed(&mut app.state);
+        app.execute_effects(spawn_effects);
+        app
+    }
+
+    fn spawn_agent(&mut self) {
+        if self.state.agent.spawned {
+            return;
         }
+
+        let (cols, rows) = agent_pty_size(&self.state.layout.rects);
+        match AgentSession::spawn(&self.state.repo_root, &self.state.config.agent, cols, rows) {
+            Ok(session) => {
+                self.state.agent.apply_spawn(
+                    &session.spec.command,
+                    &session.spec.agent_name,
+                    session.pid(),
+                    session.cols,
+                    session.rows,
+                );
+                self.agent = Some(session);
+            }
+            Err(err) => {
+                self.state.agent.apply_spawn_error(err.to_string());
+            }
+        }
+        self.state.dirty = true;
     }
 
     #[must_use]
@@ -122,6 +154,9 @@ impl App {
         if let Some(reader) = self.shell_io.take() {
             reader.abandon();
         }
+        if let Some(mut agent) = self.agent.take() {
+            agent.shutdown();
+        }
     }
 
     fn process_pending_events(&mut self) -> bool {
@@ -145,6 +180,9 @@ impl App {
                 SideEffect::Quit => return true,
                 SideEffect::SpawnGitRefresh => {
                     // Services will enqueue GitStatusUpdated events in later milestones.
+                }
+                SideEffect::SpawnAgent => {
+                    self.spawn_agent();
                 }
                 SideEffect::WriteShell(data) => {
                     if let Some(shell) = self.shell.as_mut() {
@@ -267,6 +305,20 @@ mod tests {
             theme: test_palette(),
             layout: compute_layout(120, 40, 30).expect("layout"),
             terminal: TerminalGuard::inactive(),
+        }
+    }
+
+    #[test]
+    fn app_spawns_agent_when_agent_tab_is_active_at_startup() {
+        let mut context = test_context();
+        if std::path::Path::new("/bin/bash").exists()
+            || std::path::Path::new("/usr/bin/bash").exists()
+        {
+            context.config.agent.command = "bash".to_string();
+            let app = App::new(context);
+            assert!(app.state().agent.spawned);
+            assert!(app.state().agent.running);
+            assert!(app.state().agent.child_pid.is_some());
         }
     }
 

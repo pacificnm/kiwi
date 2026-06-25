@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use crate::agent::agent_launch_spec;
 use crate::config::ResolvedConfig;
 use crate::layout::LayoutState;
 use crate::navigation::NavigationState;
@@ -48,6 +49,7 @@ impl AppState {
             .to_string();
 
         let shell_spec = shell_launch_spec(&config.shell);
+        let agent_spec = agent_launch_spec(&config.agent);
 
         Self {
             config,
@@ -62,7 +64,11 @@ impl AppState {
             git: GitState::default(),
             diff: DiffState::default(),
             github: GitHubState::default(),
-            agent: AgentState::default(),
+            agent: AgentState {
+                command: agent_spec.command,
+                agent_name: agent_spec.agent_name,
+                ..AgentState::default()
+            },
             shell: ShellState {
                 command: shell_spec.command,
                 shell_name: shell_spec.shell_name,
