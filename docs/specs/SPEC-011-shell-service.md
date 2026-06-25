@@ -68,8 +68,8 @@ args = ["-l"]    # login shell optional
 
 ## Acceptance Criteria
 
-- [ ] bash/zsh interactive prompt works
-- [ ] `git commit`, `npm test` run successfully
-- [ ] Ctrl+C interrupts running command
+- [x] bash/zsh interactive prompt works (prompt visible; `-i` for bash)
+- [ ] `git commit`, `npm test` run successfully (manual verification)
+- [x] Ctrl+C interrupts running command (shell focus)
 - [ ] Paste multi-line script works with bracketed paste
-- [ ] Focus indicator shows when shell active
+- [x] Focus indicator shows when shell active (accent border)

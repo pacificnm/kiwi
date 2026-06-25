@@ -28,8 +28,8 @@ Define how Kiwi initializes, validates environment, enters the main event loop, 
 4. **Terminal init** — Enable raw mode, alternate screen, bracketed paste, mouse if configured.
 5. **State init** — Load workspace persistence if present (SPEC-017); else defaults.
 6. **Service start** — Spawn tokio runtime tasks: watcher (if git repo), shell PTY, optional agent PTY lazy on first Agent tab visit.
-7. **Main loop** — Poll crossterm events + app event channel; render at 60fps cap or on dirty flag.
-8. **Shutdown** — On `q` or `Ctrl+C`: save workspace, restore terminal, kill PTY children, exit 0.
+7. **Main loop** — Poll crossterm events + app event channel; render on dirty flag.
+8. **Shutdown** — On `q`, `Ctrl+C`, `Ctrl+Q`, or SIGINT/SIGTERM: restore terminal first, abandon PTY reader threads, kill PTY children, exit 0.
 
 ## Non-Functional Requirements
 
@@ -76,9 +76,9 @@ Inherited from SPEC-018; startup reads full resolved config.
 
 ## Acceptance Criteria
 
-- [ ] `kiwi .` opens TUI in current directory
-- [ ] `kiwi /path/to/repo` opens with that root
-- [ ] Invalid config prevents startup with clear error
-- [ ] Terminal restored after quit (no broken echo)
+- [x] `kiwi .` opens TUI in current directory
+- [x] `kiwi /path/to/repo` opens with that root
+- [x] Invalid config prevents startup with clear error
+- [x] Terminal restored after quit (no broken echo)
 - [ ] Workspace saved on quit when persistence enabled
-- [ ] `--help` and `--version` work without TUI
+- [x] `--help` and `--version` work without TUI

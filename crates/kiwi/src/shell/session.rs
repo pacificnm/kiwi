@@ -1,6 +1,8 @@
 use std::io::{Read, Write};
 use std::path::Path;
+#[cfg(test)]
 use std::thread;
+#[cfg(test)]
 use std::time::Duration;
 
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
@@ -39,9 +41,11 @@ impl ShellSession {
 
         let mut command = CommandBuilder::new(&spec.command);
         command.cwd(repo_root);
+        apply_pty_env(&mut command);
         for arg in &spec.args {
             command.arg(arg);
         }
+        apply_interactive_shell_args(&mut command, &spec);
 
         let child = pair
             .slave
@@ -83,6 +87,9 @@ impl ShellSession {
             .ok_or_else(|| ShellError::write("shell is closed"))?;
         writer
             .write_all(data)
+            .map_err(|err| ShellError::write(err.to_string()))?;
+        writer
+            .flush()
             .map_err(|err| ShellError::write(err.to_string()))
     }
 
@@ -108,9 +115,15 @@ impl ShellSession {
     pub fn shutdown(&mut self) {
         self.writer.take();
         let _ = self.child.kill();
+    }
+
+    #[cfg(test)]
+    fn shutdown_and_reap(&mut self) {
+        self.shutdown();
         self.reap_child();
     }
 
+    #[cfg(test)]
     fn reap_child(&mut self) {
         for _ in 0..100 {
             match self.child.try_wait() {
@@ -142,6 +155,30 @@ impl Drop for ShellSession {
     }
 }
 
+fn apply_pty_env(command: &mut CommandBuilder) {
+    let term = std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".to_string());
+    command.env("TERM", term);
+}
+
+fn apply_interactive_shell_args(command: &mut CommandBuilder, spec: &ShellLaunchSpec) {
+    let shell_name = Path::new(&spec.command)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(&spec.command);
+
+    if shell_name != "bash" {
+        return;
+    }
+
+    let has_interactive = spec
+        .args
+        .iter()
+        .any(|arg| arg == "-i" || arg.starts_with("-i") || arg == "+i" || arg.starts_with("+i"));
+    if !has_interactive {
+        command.arg("-i");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -166,7 +203,7 @@ mod tests {
         let mut session = ShellSession::spawn(&repo, &settings, 80, 24).expect("spawn shell");
         assert!(session.pid().is_some());
         assert!(session.is_running());
-        session.shutdown();
+        session.shutdown_and_reap();
         assert!(!session.is_running());
     }
 
@@ -187,6 +224,6 @@ mod tests {
         session.resize(100, 30).expect("resize pty");
         assert_eq!(session.cols, 100);
         assert_eq!(session.rows, 30);
-        session.shutdown();
+        session.shutdown_and_reap();
     }
 }

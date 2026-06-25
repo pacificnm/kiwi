@@ -1,5 +1,5 @@
 use std::io::stdout;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossterm::event::{
     self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -7,15 +7,18 @@ use crossterm::event::{
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
-use crate::agent::AgentSession;
+use crate::agent::{AgentOutputReader, AgentSession};
 use crate::bootstrap::StartupContext;
 use crate::layout::{agent_pty_size, shell_pty_size, FocusTarget};
-use crate::navigation::map_key;
+use crate::navigation::{map_key, MainTab};
 use crate::shell::{encode_key, ShellOutputReader, ShellSession};
+use crate::shutdown;
 use crate::state::{
     agent_spawn_effects_if_needed, reduce, AppCommand, AppEvent, AppState, EventChannel, SideEffect,
 };
 use crate::ui::{draw_frame, map_mouse_click, mouse_interactions_enabled};
+
+const SHELL_FORCE_QUIT_WINDOW: Duration = Duration::from_millis(500);
 
 pub struct App {
     state: AppState,
@@ -24,6 +27,9 @@ pub struct App {
     shell: Option<ShellSession>,
     shell_io: Option<ShellOutputReader>,
     agent: Option<AgentSession>,
+    agent_io: Option<AgentOutputReader>,
+    last_shell_interrupt: Option<Instant>,
+    last_agent_interrupt: Option<Instant>,
 }
 
 impl App {
@@ -70,6 +76,9 @@ impl App {
             shell,
             shell_io,
             agent: None,
+            agent_io: None,
+            last_shell_interrupt: None,
+            last_agent_interrupt: None,
         };
         let spawn_effects = agent_spawn_effects_if_needed(&mut app.state);
         app.execute_effects(spawn_effects);
@@ -91,6 +100,10 @@ impl App {
                     session.cols,
                     session.rows,
                 );
+                self.agent_io = session
+                    .try_clone_reader()
+                    .ok()
+                    .map(|reader| AgentOutputReader::spawn(reader, self.events.sender()));
                 self.agent = Some(session);
             }
             Err(err) => {
@@ -119,10 +132,16 @@ impl App {
     }
 
     pub fn run(&mut self) {
+        shutdown::install_signal_handlers();
+
         let mut terminal =
             Terminal::new(CrosstermBackend::new(stdout())).expect("create ratatui terminal");
 
         loop {
+            if shutdown::shutdown_requested() {
+                break;
+            }
+
             if self.process_pending_events() {
                 break;
             }
@@ -145,14 +164,19 @@ impl App {
     }
 
     fn shutdown(&mut self, terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) {
+        if let Some(reader) = self.shell_io.take() {
+            reader.abandon();
+        }
+        if let Some(reader) = self.agent_io.take() {
+            reader.abandon();
+        }
+
+        let _ = terminal.clear();
         let _ = terminal.show_cursor();
-        crate::shutdown::cleanup_terminal(&mut self.terminal);
+        shutdown::cleanup_terminal(&mut self.terminal);
 
         if let Some(mut shell) = self.shell.take() {
             shell.shutdown();
-        }
-        if let Some(reader) = self.shell_io.take() {
-            reader.abandon();
         }
         if let Some(mut agent) = self.agent.take() {
             agent.shutdown();
@@ -187,6 +211,11 @@ impl App {
                 SideEffect::WriteShell(data) => {
                     if let Some(shell) = self.shell.as_mut() {
                         let _ = shell.write(&data);
+                    }
+                }
+                SideEffect::WriteAgent(data) => {
+                    if let Some(agent) = self.agent.as_mut() {
+                        let _ = agent.write(&data);
                     }
                 }
                 SideEffect::ResizeShell { cols, rows } => {
@@ -229,22 +258,38 @@ impl App {
             return false;
         }
 
-        if let Some(command) = map_mouse_click(&self.state, mouse.column, mouse.row) {
-            return self.dispatch(AppEvent::Command(AppCommand::Navigation(command)));
+        for command in map_mouse_click(&self.state, mouse.column, mouse.row) {
+            if self.dispatch(AppEvent::Command(AppCommand::Navigation(command))) {
+                return true;
+            }
         }
 
         false
     }
 
     fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
-        if self.state.navigation.focus == FocusTarget::Shell {
+        if self.is_force_quit(key) {
+            return self.dispatch(AppEvent::Command(AppCommand::Quit));
+        }
+
+        if self.is_focus_cycle_key(key) {
+            let command = if key.modifiers.contains(KeyModifiers::SHIFT) {
+                crate::navigation::NavCommand::PreviousFocus
+            } else {
+                crate::navigation::NavCommand::NextFocus
+            };
+            return self.dispatch(AppEvent::Command(AppCommand::Navigation(command)));
+        }
+
+        if self.agent_input_active() {
+            return self.handle_agent_key(key);
+        }
+
+        if self.state.navigation.focus == FocusTarget::Shell && self.state.shell.running {
             return self.handle_shell_key(key);
         }
 
-        let quit = matches!(key.code, KeyCode::Char('q'))
-            || (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL));
-
-        if quit {
+        if self.is_global_quit(key) {
             return self.dispatch(AppEvent::Command(AppCommand::Quit));
         }
 
@@ -255,9 +300,69 @@ impl App {
         false
     }
 
+    fn is_focus_cycle_key(&self, key: crossterm::event::KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Tab)
+    }
+
+    fn is_force_quit(&self, key: crossterm::event::KeyEvent) -> bool {
+        key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char('q' | 'Q'))
+    }
+
+    fn is_global_quit(&self, key: crossterm::event::KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char('q'))
+            || (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL))
+    }
+
+    fn agent_input_active(&self) -> bool {
+        self.state.navigation.focus == FocusTarget::Main
+            && self.state.navigation.main_tab == MainTab::Agent
+            && self.state.agent.running
+    }
+
+    fn handle_agent_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        if key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char('c' | 'C'))
+        {
+            let now = Instant::now();
+            if self
+                .last_agent_interrupt
+                .is_some_and(|earlier| now.duration_since(earlier) <= SHELL_FORCE_QUIT_WINDOW)
+            {
+                return self.dispatch(AppEvent::Command(AppCommand::Quit));
+            }
+            self.last_agent_interrupt = Some(now);
+        } else {
+            self.last_agent_interrupt = None;
+        }
+
+        match key.code {
+            KeyCode::PageUp => self.dispatch(AppEvent::Command(AppCommand::AgentScroll(-1))),
+            KeyCode::PageDown => self.dispatch(AppEvent::Command(AppCommand::AgentScroll(1))),
+            _ => {
+                if let Some(bytes) = encode_key(key) {
+                    self.dispatch(AppEvent::Command(AppCommand::AgentWrite(bytes)))
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
     fn handle_shell_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
-        if !self.state.shell.running {
-            return false;
+        if key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char('c' | 'C'))
+        {
+            let now = Instant::now();
+            if self
+                .last_shell_interrupt
+                .is_some_and(|earlier| now.duration_since(earlier) <= SHELL_FORCE_QUIT_WINDOW)
+            {
+                return self.dispatch(AppEvent::Command(AppCommand::Quit));
+            }
+            self.last_shell_interrupt = Some(now);
+        } else {
+            self.last_shell_interrupt = None;
         }
 
         match key.code {
@@ -346,6 +451,123 @@ mod tests {
     }
 
     #[test]
+    fn tab_cycles_focus_when_agent_input_is_active() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+        use crate::layout::FocusTarget;
+        use crate::navigation::{MainTab, NavCommand};
+        use crate::state::AppCommand;
+
+        let mut app = App::new(test_context());
+        app.state_mut().navigation.main_tab = MainTab::Agent;
+        app.state_mut().agent.running = true;
+        app.event_sender()
+            .send(AppEvent::Command(AppCommand::Navigation(
+                NavCommand::SetFocus(FocusTarget::Main),
+            )))
+            .expect("send");
+        app.process_pending_events();
+
+        let tab = KeyEvent {
+            code: KeyCode::Tab,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        };
+        assert!(!app.dispatch_key(tab));
+        assert_eq!(app.state().navigation.focus, FocusTarget::CommandPalette);
+    }
+
+    #[test]
+    fn agent_focus_forwards_keys_instead_of_quitting() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+        use crate::layout::FocusTarget;
+        use crate::navigation::{MainTab, NavCommand};
+        use crate::state::AppCommand;
+
+        let mut app = App::new(test_context());
+        app.state_mut().navigation.main_tab = MainTab::Agent;
+        app.state_mut().agent.running = true;
+        app.event_sender()
+            .send(AppEvent::Command(AppCommand::Navigation(
+                NavCommand::SetFocus(FocusTarget::Main),
+            )))
+            .expect("send");
+        app.process_pending_events();
+
+        let key = KeyEvent {
+            code: KeyCode::Char('q'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        };
+        assert!(!app.dispatch_key(key));
+
+        let ctrl_c = KeyEvent {
+            code: KeyCode::Char('c'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        };
+        assert!(!app.dispatch_key(ctrl_c));
+        assert!(app.dispatch_key(ctrl_c));
+    }
+
+    #[test]
+    fn ctrl_q_quits_from_shell_focus() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+        use crate::layout::FocusTarget;
+        use crate::navigation::NavCommand;
+        use crate::state::AppCommand;
+
+        let mut app = App::new(test_context());
+        app.event_sender()
+            .send(AppEvent::Command(AppCommand::Navigation(
+                NavCommand::SetFocus(FocusTarget::Shell),
+            )))
+            .expect("send");
+        app.process_pending_events();
+
+        let key = KeyEvent {
+            code: KeyCode::Char('q'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        };
+        assert!(app.dispatch_key(key));
+    }
+
+    #[test]
+    fn mouse_click_on_main_tab_returns_focus_to_main() {
+        use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+
+        use crate::layout::FocusTarget;
+        use crate::navigation::NavCommand;
+        use crate::state::AppCommand;
+
+        let mut app = App::new(test_context());
+        app.event_sender()
+            .send(AppEvent::Command(AppCommand::Navigation(
+                NavCommand::SetFocus(FocusTarget::Shell),
+            )))
+            .expect("send");
+        app.process_pending_events();
+
+        let main_tabs = app.state().layout.rects.main_tabs;
+        let mouse = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: main_tabs.x + 8,
+            row: main_tabs.y,
+            modifiers: KeyModifiers::empty(),
+        };
+
+        assert!(!app.dispatch_mouse(mouse));
+        assert_eq!(app.state().navigation.focus, FocusTarget::Main);
+    }
+
+    #[test]
     fn shell_focus_forwards_keys_instead_of_quitting() {
         use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
@@ -376,6 +598,7 @@ mod tests {
             state: KeyEventState::NONE,
         };
         assert!(!app.dispatch_key(ctrl_c));
+        assert!(app.dispatch_key(ctrl_c));
     }
 
     #[test]

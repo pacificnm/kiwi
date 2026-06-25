@@ -19,6 +19,9 @@ pub enum AppEvent {
     ShellOutput(Vec<u8>),
     #[cfg_attr(not(test), allow(dead_code))]
     ShellExited(i32),
+    AgentOutput(Vec<u8>),
+    #[cfg_attr(not(test), allow(dead_code))]
+    AgentExited(i32),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,6 +32,8 @@ pub enum AppCommand {
     RequestGitRefresh,
     ShellWrite(Vec<u8>),
     ShellScroll(i32),
+    AgentWrite(Vec<u8>),
+    AgentScroll(i32),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,6 +42,7 @@ pub enum SideEffect {
     SpawnGitRefresh,
     SpawnAgent,
     WriteShell(Vec<u8>),
+    WriteAgent(Vec<u8>),
     ResizeShell {
         cols: u16,
         rows: u16,

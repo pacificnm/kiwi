@@ -5,11 +5,12 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
 use crate::layout::Region;
-use crate::navigation::{LEFT_TAB_LABELS, MAIN_TAB_LABELS};
+use crate::navigation::{MainTab, LEFT_TAB_LABELS, MAIN_TAB_LABELS};
 use crate::state::AppState;
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
 
+use super::agent::render_agent_pane;
 use super::shell::render_shell_pane;
 use super::status_bar::render_status_bar;
 use super::tabs::tab_bar_line;
@@ -45,15 +46,28 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
         chrome,
         Some(left_pane_line(state)),
     );
-    render_pane(
-        frame,
-        state.layout.rects.main_content,
-        state.navigation.main_tab.label(),
-        state.navigation.focus.is_focused(Region::MainContent),
-        &state.theme,
-        chrome,
-        Some(main_pane_line(state)),
-    );
+    if state.navigation.main_tab == MainTab::Agent {
+        let agent_title = format!("Agent: {}", state.agent.agent_name);
+        render_agent_pane(
+            frame,
+            state.layout.rects.main_content,
+            &agent_title,
+            state.navigation.focus.is_focused(Region::MainContent),
+            &state.theme,
+            chrome,
+            state,
+        );
+    } else {
+        render_pane(
+            frame,
+            state.layout.rects.main_content,
+            state.navigation.main_tab.label(),
+            state.navigation.focus.is_focused(Region::MainContent),
+            &state.theme,
+            chrome,
+            Some(main_pane_line(state)),
+        );
+    }
     render_pane(
         frame,
         state.layout.rects.palette,
@@ -214,7 +228,7 @@ mod tests {
         assert!(content.contains("Shell: bash"));
         assert!(content.contains("Ctrl+P for commands"));
         assert!(content.contains("Files view"));
-        assert!(content.contains("Agent view"));
+        assert!(content.contains("Agent: agent"));
         assert!(content.contains("Kiwi |"));
         assert!(content.contains("Agent Idle"));
         assert!(content.contains("Clean"));
@@ -322,6 +336,66 @@ mod tests {
 
         let content = buffer_content(terminal.backend().buffer());
         assert!(content.contains("hello kiwi"));
+    }
+
+    #[test]
+    fn draw_frame_renders_shell_prompt_without_trailing_newline() {
+        let mut state = test_state();
+        state.shell.scrollback.append_bytes(b"user@host:~/kiwi$ ");
+
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| draw_frame(frame, &state))
+            .expect("draw");
+
+        let content = buffer_content(terminal.backend().buffer());
+        assert!(content.contains("user@host:~/kiwi$"));
+    }
+
+    #[test]
+    fn draw_frame_renders_agent_scrollback() {
+        let mut state = test_state();
+        state.agent.scrollback.append_bytes(b"agent output\n");
+
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| draw_frame(frame, &state))
+            .expect("draw");
+
+        let content = buffer_content(terminal.backend().buffer());
+        assert!(content.contains("agent output"));
+    }
+
+    #[test]
+    fn draw_frame_keeps_shell_output_inside_shell_pane() {
+        let mut state = test_state();
+        state.shell.scrollback.append_bytes(b"SHELL_ONLY_OUTPUT\n");
+
+        let rects = state.layout.rects;
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| draw_frame(frame, &state))
+            .expect("draw");
+
+        let buffer = terminal.backend().buffer();
+        let palette_text = region_text(buffer, rects.palette);
+        assert!(!palette_text.contains("SHELL_ONLY_OUTPUT"));
+
+        let shell_text = region_text(buffer, rects.shell);
+        assert!(shell_text.contains("SHELL_ONLY_OUTPUT"));
+    }
+
+    fn region_text(buffer: &ratatui::buffer::Buffer, area: ratatui::layout::Rect) -> String {
+        let mut out = String::new();
+        for y in area.y..area.y.saturating_add(area.height) {
+            for x in area.x..area.x.saturating_add(area.width) {
+                out.push_str(buffer[(x, y)].symbol());
+            }
+        }
+        out
     }
 
     fn buffer_content(buffer: &ratatui::buffer::Buffer) -> String {

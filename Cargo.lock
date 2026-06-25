@@ -374,6 +374,7 @@ dependencies = [
  "portable-pty",
  "ratatui",
  "serde",
+ "signal-hook",
  "tokio",
  "toml",
 ]

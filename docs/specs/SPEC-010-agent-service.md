@@ -86,9 +86,9 @@ env = { KEY = "val" }  # optional
 
 ## Acceptance Criteria
 
-- [ ] Agent starts in Agent tab
-- [ ] Interactive prompts work
-- [ ] Scrollback preserves history while scrolling
+- [x] Agent starts in Agent tab
+- [x] Interactive prompts work (Main focus + Agent tab; keyboard forwarded)
+- [x] Scrollback preserves history while scrolling
 - [ ] Resize propagates to PTY
-- [ ] Status bar reflects running state
-- [ ] Restart recovers from crash
+- [ ] Status bar reflects running state (heuristics — #25)
+- [ ] Restart recovers from crash (#26)

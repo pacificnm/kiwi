@@ -28,6 +28,16 @@ impl ScrollbackBuffer {
         self.lines.len()
     }
 
+    #[must_use]
+    pub fn has_pending_line(&self) -> bool {
+        !self.partial.is_empty()
+    }
+
+    #[must_use]
+    pub fn pending_display(&self) -> String {
+        normalize_for_display(self.partial.trim_end_matches('\r'))
+    }
+
     pub fn clear(&mut self) {
         self.lines.clear();
         self.partial.clear();
@@ -41,7 +51,7 @@ impl ScrollbackBuffer {
             let mut line = self.partial.drain(..=newline).collect::<String>();
             line.pop();
             line = line.trim_end_matches('\r').to_string();
-            self.push_line(strip_ansi(&line));
+            self.push_line(normalize_for_display(&line));
         }
     }
 
@@ -61,18 +71,39 @@ impl ScrollbackBuffer {
     }
 
     #[must_use]
-    pub fn visible_lines(
+    pub fn viewport_lines(
         &self,
         start: usize,
         visible_height: usize,
         max_width: usize,
+        include_pending: bool,
     ) -> Vec<String> {
-        self.lines
+        if visible_height == 0 || max_width == 0 {
+            return Vec::new();
+        }
+
+        let mut lines: Vec<String> = self
+            .lines
             .iter()
             .skip(start)
             .take(visible_height)
-            .map(|line| truncate_line(line, max_width))
-            .collect()
+            .map(|line| truncate_line(&normalize_for_display(line), max_width))
+            .collect();
+
+        if !include_pending {
+            return lines;
+        }
+
+        let pending = truncate_line(&self.pending_display(), max_width);
+        if pending.is_empty() {
+            return lines;
+        }
+
+        if lines.len() >= visible_height {
+            lines.pop();
+        }
+        lines.push(pending);
+        lines
     }
 
     fn push_line(&mut self, line: String) {
@@ -82,6 +113,14 @@ impl ScrollbackBuffer {
             self.lines.drain(0..overflow);
         }
     }
+}
+
+fn normalize_for_display(input: &str) -> String {
+    let mut line = strip_ansi(input);
+    if let Some(index) = line.rfind('\r') {
+        line = line[index + 1..].to_string();
+    }
+    line.replace('\t', "    ")
 }
 
 fn strip_ansi(input: &str) -> String {
@@ -160,7 +199,39 @@ mod tests {
     fn visible_lines_respects_viewport_and_width() {
         let mut buffer = ScrollbackBuffer::new();
         buffer.append_bytes(b"one\n two\nthree\n");
-        let lines = buffer.visible_lines(1, 2, 10);
+        let lines = buffer.viewport_lines(1, 2, 10, false);
         assert_eq!(lines, vec![" two".to_string(), "three".to_string()]);
+    }
+
+    #[test]
+    fn viewport_lines_includes_pending_prompt_without_newline() {
+        let mut buffer = ScrollbackBuffer::new();
+        buffer.append_bytes(b"user@host:~/kiwi$ ");
+        let lines = buffer.viewport_lines(0, 3, 40, true);
+        assert_eq!(lines, vec!["user@host:~/kiwi$ ".to_string()]);
+    }
+
+    #[test]
+    fn viewport_lines_replaces_last_row_with_pending_at_tail() {
+        let mut buffer = ScrollbackBuffer::new();
+        buffer.append_bytes(b"line1\nline2\n");
+        buffer.append_bytes(b"partial");
+        let lines = buffer.viewport_lines(0, 2, 20, true);
+        assert_eq!(lines, vec!["line1".to_string(), "partial".to_string()]);
+    }
+
+    #[test]
+    fn normalize_for_display_keeps_text_after_carriage_return() {
+        assert_eq!(normalize_for_display("prompt\rtyped"), "typed");
+    }
+
+    #[test]
+    fn normalize_for_display_expands_tabs() {
+        assert_eq!(normalize_for_display("a\tb"), "a    b");
+    }
+
+    #[test]
+    fn truncate_line_clips_to_width() {
+        assert_eq!(truncate_line("hello world", 5), "hell…");
     }
 }

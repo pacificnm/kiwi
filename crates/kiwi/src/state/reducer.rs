@@ -1,5 +1,4 @@
-use crate::layout::compute_layout;
-use crate::layout::shell_pty_size;
+use crate::layout::{agent_pty_size, compute_layout, shell_pty_size};
 use crate::navigation::{MainTab, NavCommand};
 
 use super::app_state::AppState;
@@ -19,6 +18,8 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
         }
         AppEvent::ShellOutput(data) => reduce_shell_output(state, data),
         AppEvent::ShellExited(_code) => reduce_shell_exited(state),
+        AppEvent::AgentOutput(data) => reduce_agent_output(state, data),
+        AppEvent::AgentExited(_code) => reduce_agent_exited(state),
     }
 }
 
@@ -35,6 +36,8 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         AppCommand::RequestGitRefresh => reduce_git_refresh_requested(state),
         AppCommand::ShellWrite(data) => vec![SideEffect::WriteShell(data)],
         AppCommand::ShellScroll(delta) => reduce_shell_scroll(state, delta),
+        AppCommand::AgentWrite(data) => vec![SideEffect::WriteAgent(data)],
+        AppCommand::AgentScroll(delta) => reduce_agent_scroll(state, delta),
     }
 }
 
@@ -113,6 +116,18 @@ fn reduce_shell_exited(state: &mut AppState) -> Vec<SideEffect> {
     Vec::new()
 }
 
+fn reduce_agent_output(state: &mut AppState, data: Vec<u8>) -> Vec<SideEffect> {
+    state.agent.scrollback.append_bytes(&data);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_agent_exited(state: &mut AppState) -> Vec<SideEffect> {
+    state.agent.running = false;
+    state.dirty = true;
+    Vec::new()
+}
+
 fn reduce_shell_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
     if delta == 0 {
         return Vec::new();
@@ -120,6 +135,17 @@ fn reduce_shell_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
 
     let (_, page_size) = shell_pty_size(&state.layout.rects);
     state.shell.scroll_by(delta, page_size);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_agent_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    if delta == 0 {
+        return Vec::new();
+    }
+
+    let (_, page_size) = agent_pty_size(&state.layout.rects);
+    state.agent.scroll_by(delta, page_size);
     state.dirty = true;
     Vec::new()
 }
@@ -326,6 +352,23 @@ mod tests {
     }
 
     #[test]
+    fn agent_output_appends_to_scrollback_and_sets_dirty() {
+        let mut state = test_state();
+        reduce(&mut state, AppEvent::AgentOutput(b"agent line\n".to_vec()));
+        assert_eq!(state.agent.scrollback.line_count(), 1);
+        assert!(state.dirty);
+    }
+
+    #[test]
+    fn agent_exited_clears_running_and_sets_dirty() {
+        let mut state = test_state();
+        state.agent.running = true;
+        reduce(&mut state, AppEvent::AgentExited(1));
+        assert!(!state.agent.running);
+        assert!(state.dirty);
+    }
+
+    #[test]
     fn shell_write_emits_side_effect() {
         let mut state = test_state();
         let effects = reduce(
@@ -333,6 +376,32 @@ mod tests {
             AppEvent::Command(AppCommand::ShellWrite(b"ls\n".to_vec())),
         );
         assert!(effects.contains(&SideEffect::WriteShell(b"ls\n".to_vec())));
+    }
+
+    #[test]
+    fn agent_write_emits_side_effect() {
+        let mut state = test_state();
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::AgentWrite(b"hello\n".to_vec())),
+        );
+        assert!(effects.contains(&SideEffect::WriteAgent(b"hello\n".to_vec())));
+    }
+
+    #[test]
+    fn agent_scroll_moves_viewport_and_clears_follow_tail() {
+        let mut state = test_state();
+        for index in 0..40 {
+            state
+                .agent
+                .scrollback
+                .append_bytes(format!("line {index}\n").as_bytes());
+        }
+
+        reduce(&mut state, AppEvent::Command(AppCommand::AgentScroll(-1)));
+
+        assert!(!state.agent.follow_tail);
+        assert!(state.dirty);
     }
 
     #[test]
