@@ -91,3 +91,10 @@ Future: `[watcher] debounce_ms = 300` (implemented; default 300ms)
 - [x] `.git/` internal paths ignored except `HEAD` and `index`
 - [x] Notify callback errors logged to stderr; spawn failure shows one-time in-app warning
 - [x] `AppEvent::FsChanged` emitted after debounce for workspace file changes
+
+## Acceptance criteria (path-targeted invalidation)
+
+- [x] File changes invalidate the parent directory cache when loaded in the tree
+- [x] Directory changes invalidate that directory's cache and its parent listing
+- [x] Expanded invalidated directories reload without clearing selection
+- [x] `.git/` internal paths do not invalidate the file tree

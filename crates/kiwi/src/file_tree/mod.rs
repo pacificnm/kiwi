@@ -1,4 +1,5 @@
 mod ignore;
+mod invalidation;
 mod io;
 mod loader;
 mod node;

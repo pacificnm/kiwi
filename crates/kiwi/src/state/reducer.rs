@@ -844,6 +844,16 @@ fn apply_cut_mutation(state: &mut AppState) {
 fn reduce_fs_changed(state: &mut AppState, paths: Vec<PathBuf>) -> Vec<SideEffect> {
     let mut effects = Vec::new();
 
+    let reload_dirs = state
+        .file_tree
+        .apply_fs_invalidation(&state.repo_root, &paths);
+    if !reload_dirs.is_empty() {
+        state.dirty = true;
+        for dir in reload_dirs {
+            effects.push(SideEffect::LoadDirectoryChildren(dir));
+        }
+    }
+
     if let Some(preview_path) = state.preview.path.clone() {
         if !state.preview.loading
             && crate::watcher::preview_reload_paths(&paths, &preview_path)
@@ -1969,6 +1979,51 @@ mod tests {
         assert!(effects
             .iter()
             .any(|effect| matches!(effect, SideEffect::CancelSearch)));
+    }
+
+    #[test]
+    fn fs_changed_invalidates_expanded_file_tree_directory() {
+        let root = PathBuf::from("/repo");
+        let mut state = test_state();
+        state.repo_root = root.clone();
+        state.file_tree = FileTreeState::at_root(root.clone());
+        let _ = state.file_tree.expand(&root);
+        state.file_tree.apply_children_loaded(
+            &root,
+            vec![DirectoryEntry {
+                path: root.join("src"),
+                name: "src".to_string(),
+                is_dir: true,
+            }],
+            None,
+        );
+        state
+            .file_tree
+            .nodes
+            .get_mut(&root.join("src"))
+            .expect("src")
+            .expanded = true;
+        state.file_tree.apply_children_loaded(
+            &root.join("src"),
+            vec![DirectoryEntry {
+                path: root.join("src/main.rs"),
+                name: "main.rs".to_string(),
+                is_dir: false,
+            }],
+            None,
+        );
+        state.file_tree.select(root.join("src/main.rs"));
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::FsChanged {
+                paths: vec![root.join("src/new.rs")],
+            },
+        );
+
+        assert!(effects.contains(&SideEffect::LoadDirectoryChildren(root.join("src"))));
+        assert!(!state.file_tree.nodes[&root.join("src")].children_loaded);
+        assert_eq!(state.file_tree.selected, Some(root.join("src/main.rs")));
     }
 
     #[test]

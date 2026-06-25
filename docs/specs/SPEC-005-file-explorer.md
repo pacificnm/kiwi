@@ -88,3 +88,4 @@ show_untracked = true
 - [x] Selection survives git status refresh
 - [x] Double-click opens preview (mouse)
 - [x] Git colors match theme roles
+- [x] Watcher invalidates affected directory caches (ADR-011)
