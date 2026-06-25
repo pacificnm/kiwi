@@ -166,6 +166,13 @@ Format for new entries:
 - **Files:** `git/`, `file_tree/node.rs`, `file_tree/state.rs`, `state/domains.rs`, `state/event.rs`, `state/reducer.rs`, `ui/file_tree.rs`, `ui/status_bar.rs`
 - **Verify:** `apply_git_statuses_sets_file_badges`, `git_status_refresh_preserves_file_tree_selection`, `modified_file_renders_git_badge`; `cargo test`.
 
+### File preview pane with virtualization (GitHub #34, SPEC-006)
+
+- **Symptom:** Preview main tab showed a placeholder line; no file content loading or scrolling.
+- **Fix:** Added `preview/` module (loader, async io, state); `ui/preview.rs` virtualized line rendering with optional gutter and status footer; `PreviewFile`/`PreviewScroll` commands and `PreviewLoaded` event; Files tab `Enter`/`p` opens preview and switches to Preview tab; `j`/`k`/`PgUp`/`PgDn` scroll when Preview focused.
+- **Files:** `preview/`, `ui/preview.rs`, `state/event.rs`, `state/reducer.rs`, `state/app_state.rs`, `app.rs`, `ui/render.rs`, `commands/mod.rs`
+- **Verify:** loader/reducer/render tests; `cargo test`, `cargo clippy -- -D warnings`.
+
 ---
 
 ## Reporting New Issues

@@ -164,9 +164,8 @@ fn editor_target(state: &AppState) -> Option<PathBuf> {
     state
         .preview
         .path
-        .as_deref()
-        .or(state.file_tree.selected_path_string().as_deref())
-        .map(PathBuf::from)
+        .clone()
+        .or_else(|| state.file_tree.selected.clone())
 }
 
 #[cfg(test)]

@@ -254,6 +254,7 @@ impl FileTreeState {
     }
 
     #[must_use]
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn selected_path_string(&self) -> Option<String> {
         self.selected
             .as_ref()

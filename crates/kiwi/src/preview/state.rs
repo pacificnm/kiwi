@@ -1,0 +1,103 @@
+use std::path::PathBuf;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PreviewState {
+    pub path: Option<PathBuf>,
+    pub lines: Vec<String>,
+    pub scroll_offset: usize,
+    pub cursor_line: usize,
+    pub truncated: bool,
+    pub oversize: bool,
+    pub binary: bool,
+    pub lossy_utf8: bool,
+    pub file_size: u64,
+    pub load_error: Option<String>,
+    pub loading: bool,
+}
+
+impl PreviewState {
+    pub fn begin_load(&mut self, path: PathBuf) {
+        self.path = Some(path);
+        self.lines.clear();
+        self.scroll_offset = 0;
+        self.cursor_line = 0;
+        self.truncated = false;
+        self.oversize = false;
+        self.binary = false;
+        self.lossy_utf8 = false;
+        self.file_size = 0;
+        self.load_error = None;
+        self.loading = true;
+    }
+
+    pub fn apply_loaded(&mut self, path: PathBuf, result: super::loader::PreviewLoadResult) {
+        self.loading = false;
+        self.path = Some(path);
+        self.lines = result.lines;
+        self.truncated = result.truncated;
+        self.oversize = result.oversize;
+        self.binary = result.binary;
+        self.lossy_utf8 = result.lossy_utf8;
+        self.file_size = result.file_size;
+        self.load_error = result.error;
+        self.scroll_offset = 0;
+        self.cursor_line = 0;
+    }
+
+    pub fn scroll(&mut self, delta: i32, viewport_rows: usize) {
+        if viewport_rows == 0 {
+            return;
+        }
+
+        let max_offset = self.lines.len().saturating_sub(viewport_rows);
+        let current = self.scroll_offset as i32;
+        let next = (current + delta).clamp(0, max_offset as i32);
+        self.scroll_offset = usize::try_from(next).unwrap_or(0);
+        self.cursor_line = self.scroll_offset;
+    }
+
+    pub fn page_scroll(&mut self, delta: i32, viewport_rows: usize) {
+        if viewport_rows == 0 {
+            return;
+        }
+        let page = i32::try_from(viewport_rows.saturating_sub(1).max(1)).unwrap_or(1);
+        self.scroll(delta * page, viewport_rows);
+    }
+
+    #[must_use]
+    pub fn line_count(&self) -> usize {
+        self.lines.len()
+    }
+
+    #[must_use]
+    pub fn path_display(&self) -> Option<String> {
+        self.path.as_ref().map(|path| path.display().to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scroll_clamps_to_visible_range() {
+        let mut state = PreviewState {
+            lines: (0..100).map(|index| format!("line {index}")).collect(),
+            ..PreviewState::default()
+        };
+        state.scroll(100, 10);
+        assert_eq!(state.scroll_offset, 90);
+        state.scroll(-100, 10);
+        assert_eq!(state.scroll_offset, 0);
+    }
+
+    #[test]
+    fn page_scroll_moves_by_viewport() {
+        let mut state = PreviewState {
+            lines: (0..100).map(|index| format!("line {index}")).collect(),
+            ..PreviewState::default()
+        };
+        state.page_scroll(1, 10);
+        assert_eq!(state.scroll_offset, 9);
+    }
+}

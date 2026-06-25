@@ -31,6 +31,7 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
             children,
             error,
         } => reduce_file_tree_children_loaded(state, parent, children, error),
+        AppEvent::PreviewLoaded { path, result } => reduce_preview_loaded(state, path, result),
     }
 }
 
@@ -64,6 +65,9 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         AppCommand::FileTreeSelect(path) => reduce_file_tree_select(state, path),
         AppCommand::FileTreeRefresh => reduce_file_tree_refresh(state),
         AppCommand::FileTreeMoveSelection(delta) => reduce_file_tree_move_selection(state, delta),
+        AppCommand::PreviewFile(path) => reduce_preview_file(state, path),
+        AppCommand::PreviewScroll(delta) => reduce_preview_scroll(state, delta),
+        AppCommand::PreviewPageScroll(delta) => reduce_preview_page_scroll(state, delta),
     }
 }
 
@@ -401,6 +405,58 @@ fn reduce_file_tree_children_loaded(
     Vec::new()
 }
 
+fn preview_viewport_rows(state: &AppState) -> usize {
+    state.layout.rects.main_content.height.saturating_sub(4) as usize
+}
+
+fn reduce_preview_file(state: &mut AppState, path: PathBuf) -> Vec<SideEffect> {
+    state.preview.begin_load(path.clone());
+    state
+        .navigation
+        .apply(NavCommand::SelectMainTab(MainTab::Preview));
+    state
+        .navigation
+        .apply(NavCommand::SetFocus(FocusTarget::Main));
+    state.dirty = true;
+    vec![SideEffect::LoadPreviewFile(path)]
+}
+
+fn reduce_preview_loaded(
+    state: &mut AppState,
+    path: PathBuf,
+    result: crate::preview::PreviewLoadResult,
+) -> Vec<SideEffect> {
+    if state.preview.path.as_ref() != Some(&path) {
+        return Vec::new();
+    }
+
+    state.preview.apply_loaded(path, result);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_preview_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    if delta == 0 {
+        return Vec::new();
+    }
+
+    state.preview.scroll(delta, preview_viewport_rows(state));
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_preview_page_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    if delta == 0 {
+        return Vec::new();
+    }
+
+    state
+        .preview
+        .page_scroll(delta, preview_viewport_rows(state));
+    state.dirty = true;
+    Vec::new()
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -416,9 +472,10 @@ mod tests {
 
     use super::*;
     use crate::file_tree::{DirectoryEntry, FileTreeState};
+    use crate::preview::{PreviewLoadResult, PreviewState};
     use crate::state::domains::{
-        AgentState, CommandPaletteState, DiffState, GitHubState, GitState, PreviewState,
-        SearchState, ShellState, StatusBarState, WorkspaceMeta,
+        AgentState, CommandPaletteState, DiffState, GitHubState, GitState, SearchState, ShellState,
+        StatusBarState, WorkspaceMeta,
     };
 
     fn test_state() -> AppState {
@@ -926,5 +983,62 @@ mod tests {
             AppEvent::Command(AppCommand::FileTreeMoveSelection(1)),
         );
         assert_eq!(state.file_tree.selected, Some(root.join("src")));
+    }
+
+    #[test]
+    fn preview_file_emits_load_side_effect_and_switches_tab() {
+        let mut state = test_state();
+        let path = PathBuf::from("src/main.rs");
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PreviewFile(path.clone())),
+        );
+        assert!(effects.contains(&SideEffect::LoadPreviewFile(path)));
+        assert_eq!(state.navigation.main_tab, MainTab::Preview);
+        assert_eq!(state.navigation.focus, FocusTarget::Main);
+        assert!(state.preview.loading);
+    }
+
+    #[test]
+    fn preview_loaded_applies_content() {
+        let mut state = test_state();
+        let path = PathBuf::from("README.md");
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PreviewFile(path.clone())),
+        );
+        reduce(
+            &mut state,
+            AppEvent::PreviewLoaded {
+                path: path.clone(),
+                result: PreviewLoadResult {
+                    lines: vec!["hello".to_string()],
+                    truncated: false,
+                    oversize: false,
+                    binary: false,
+                    lossy_utf8: false,
+                    file_size: 5,
+                    error: None,
+                },
+            },
+        );
+        assert!(!state.preview.loading);
+        assert_eq!(state.preview.lines, vec!["hello".to_string()]);
+    }
+
+    #[test]
+    fn preview_scroll_clamps_within_file() {
+        let mut state = test_state();
+        state.preview.lines = (0..100).map(|index| format!("line {index}")).collect();
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PreviewScroll(200)),
+        );
+        assert!(state.preview.scroll_offset > 0);
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PreviewScroll(-500)),
+        );
+        assert_eq!(state.preview.scroll_offset, 0);
     }
 }

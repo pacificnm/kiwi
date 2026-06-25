@@ -4,11 +4,6 @@ use crate::layout::FocusTarget;
 use crate::shell::ScrollbackBuffer;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct PreviewState {
-    pub path: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SearchState {
     pub query: String,
 }

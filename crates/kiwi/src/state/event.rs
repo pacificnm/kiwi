@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use crate::git::GitFileEntry;
 use crate::navigation::NavCommand;
+use crate::preview::PreviewLoadResult;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppEvent {
@@ -27,6 +28,10 @@ pub enum AppEvent {
         parent: PathBuf,
         children: Vec<crate::file_tree::DirectoryEntry>,
         error: Option<String>,
+    },
+    PreviewLoaded {
+        path: PathBuf,
+        result: PreviewLoadResult,
     },
 }
 
@@ -59,6 +64,9 @@ pub enum AppCommand {
     #[cfg_attr(not(test), allow(dead_code))]
     FileTreeRefresh,
     FileTreeMoveSelection(i32),
+    PreviewFile(PathBuf),
+    PreviewScroll(i32),
+    PreviewPageScroll(i32),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,6 +86,7 @@ pub enum SideEffect {
     SaveWorkspace,
     SavePaletteHistory,
     LoadDirectoryChildren(PathBuf),
+    LoadPreviewFile(PathBuf),
     #[cfg_attr(not(test), allow(dead_code))]
     LaunchEditor(PathBuf),
 }
