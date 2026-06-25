@@ -13,6 +13,7 @@ pub struct PreviewState {
     pub file_size: u64,
     pub load_error: Option<String>,
     pub loading: bool,
+    pub preserve_scroll_on_load: bool,
 }
 
 impl PreviewState {
@@ -28,9 +29,23 @@ impl PreviewState {
         self.file_size = 0;
         self.load_error = None;
         self.loading = true;
+        self.preserve_scroll_on_load = false;
     }
 
-    pub fn apply_loaded(&mut self, path: PathBuf, result: super::loader::PreviewLoadResult) {
+    pub fn begin_reload(&mut self) {
+        self.load_error = None;
+        self.loading = true;
+        self.preserve_scroll_on_load = true;
+    }
+
+    pub fn apply_loaded(
+        &mut self,
+        path: PathBuf,
+        result: super::loader::PreviewLoadResult,
+        viewport_rows: usize,
+    ) {
+        let preserve_scroll = self.preserve_scroll_on_load;
+        let previous_scroll = self.scroll_offset;
         self.loading = false;
         self.path = Some(path);
         self.lines = result.lines;
@@ -40,8 +55,14 @@ impl PreviewState {
         self.lossy_utf8 = result.lossy_utf8;
         self.file_size = result.file_size;
         self.load_error = result.error;
-        self.scroll_offset = 0;
-        self.cursor_line = 0;
+        if preserve_scroll {
+            let max_offset = self.lines.len().saturating_sub(viewport_rows.max(1));
+            self.scroll_offset = previous_scroll.min(max_offset);
+        } else {
+            self.scroll_offset = 0;
+        }
+        self.cursor_line = self.scroll_offset;
+        self.preserve_scroll_on_load = false;
     }
 
     pub fn scroll(&mut self, delta: i32, viewport_rows: usize) {
@@ -78,6 +99,30 @@ impl PreviewState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn apply_loaded_preserves_scroll_when_requested() {
+        let mut state = PreviewState {
+            lines: (0..100).map(|index| format!("line {index}")).collect(),
+            scroll_offset: 40,
+            preserve_scroll_on_load: true,
+            ..PreviewState::default()
+        };
+        state.apply_loaded(
+            PathBuf::from("/tmp/a.rs"),
+            super::super::loader::PreviewLoadResult {
+                lines: (0..120).map(|index| format!("line {index}")).collect(),
+                truncated: false,
+                oversize: false,
+                binary: false,
+                lossy_utf8: false,
+                file_size: 1,
+                error: None,
+            },
+            10,
+        );
+        assert_eq!(state.scroll_offset, 40);
+    }
 
     #[test]
     fn scroll_clamps_to_visible_range() {

@@ -49,6 +49,9 @@ pub enum AppEvent {
         error: String,
         show_modal: bool,
     },
+    FsChanged {
+        paths: Vec<PathBuf>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
