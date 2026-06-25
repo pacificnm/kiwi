@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use git2::{BranchType, ErrorCode, Repository};
+use git2::{BranchType, ErrorCode, Repository, Status, StatusOptions};
+
+use super::status::{GitFileEntry, GitFileStatus};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitBranchInfo {
@@ -10,9 +12,16 @@ pub struct GitBranchInfo {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitRepoSnapshot {
+    pub branch: GitBranchInfo,
+    pub file_entries: Vec<GitFileEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GitError {
     Open(String),
     Head(String),
+    Status(String),
 }
 
 impl std::fmt::Display for GitError {
@@ -20,15 +29,91 @@ impl std::fmt::Display for GitError {
         match self {
             Self::Open(message) => write!(f, "failed to open git repository: {message}"),
             Self::Head(message) => write!(f, "failed to read git HEAD: {message}"),
+            Self::Status(message) => write!(f, "failed to read git status: {message}"),
         }
     }
 }
 
 impl std::error::Error for GitError {}
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn load_branch_info(repo_root: &Path) -> Result<GitBranchInfo, GitError> {
     let repo = Repository::open(repo_root).map_err(|err| GitError::Open(err.to_string()))?;
     read_branch_info(&repo)
+}
+
+pub fn load_repo_snapshot(
+    repo_root: &Path,
+    show_untracked: bool,
+) -> Result<GitRepoSnapshot, GitError> {
+    let repo = Repository::open(repo_root).map_err(|err| GitError::Open(err.to_string()))?;
+    let branch = read_branch_info(&repo)?;
+    let file_entries = read_file_statuses(&repo, show_untracked)?;
+    Ok(GitRepoSnapshot {
+        branch,
+        file_entries,
+    })
+}
+
+fn read_file_statuses(
+    repo: &Repository,
+    show_untracked: bool,
+) -> Result<Vec<GitFileEntry>, GitError> {
+    let mut options = StatusOptions::new();
+    options
+        .include_untracked(show_untracked)
+        .recurse_untracked_dirs(show_untracked)
+        .renames_head_to_index(true)
+        .renames_index_to_workdir(true);
+
+    let statuses = repo
+        .statuses(Some(&mut options))
+        .map_err(|err| GitError::Status(err.to_string()))?;
+
+    let mut entries = Vec::new();
+    for entry in statuses.iter() {
+        let Some(path) = entry.path() else {
+            continue;
+        };
+        let Some(status) = map_git2_status(entry.status()) else {
+            continue;
+        };
+        entries.push(GitFileEntry {
+            path: path.replace('\\', "/"),
+            status,
+        });
+    }
+
+    entries.sort_by(|left, right| left.path.cmp(&right.path));
+    Ok(entries)
+}
+
+fn map_git2_status(status: Status) -> Option<GitFileStatus> {
+    if status.is_ignored() {
+        return None;
+    }
+
+    if status.is_wt_new() && !status.is_index_new() {
+        return Some(GitFileStatus::Untracked);
+    }
+    if status.is_index_new() {
+        return Some(GitFileStatus::Added);
+    }
+    if status.is_index_deleted() || status.is_wt_deleted() {
+        return Some(GitFileStatus::Deleted);
+    }
+    if status.is_index_modified()
+        || status.is_wt_modified()
+        || status.is_index_renamed()
+        || status.is_wt_renamed()
+    {
+        return Some(GitFileStatus::Modified);
+    }
+    if status.is_wt_new() {
+        return Some(GitFileStatus::Untracked);
+    }
+
+    None
 }
 
 fn read_branch_info(repo: &Repository) -> Result<GitBranchInfo, GitError> {
@@ -121,6 +206,7 @@ mod tests {
     use std::process::Command;
 
     use super::*;
+    use crate::git::{GitFileEntry, GitFileStatus};
 
     struct TempGitRepo {
         path: PathBuf,
@@ -161,6 +247,57 @@ mod tests {
             args,
             cwd.display()
         );
+    }
+
+    #[test]
+    fn load_file_statuses_lists_modified_and_untracked_files() {
+        let repo = TempGitRepo::new("file-status");
+        fs::write(repo.path.join("README.md"), "hello\n").expect("write");
+        run_git(&repo.path, &["add", "README.md"]);
+        run_git(&repo.path, &["commit", "-m", "initial"]);
+
+        fs::write(repo.path.join("README.md"), "changed\n").expect("modify");
+        fs::write(repo.path.join("new.txt"), "new\n").expect("write");
+
+        let git_repo = Repository::open(&repo.path).expect("open repo");
+        let entries = read_file_statuses(&git_repo, true).expect("statuses");
+        assert_eq!(
+            entries,
+            vec![
+                GitFileEntry {
+                    path: "README.md".to_string(),
+                    status: GitFileStatus::Modified,
+                },
+                GitFileEntry {
+                    path: "new.txt".to_string(),
+                    status: GitFileStatus::Untracked,
+                },
+            ]
+        );
+
+        let hidden = read_file_statuses(&git_repo, false).expect("statuses");
+        assert_eq!(
+            hidden,
+            vec![GitFileEntry {
+                path: "README.md".to_string(),
+                status: GitFileStatus::Modified,
+            }]
+        );
+    }
+
+    #[test]
+    fn load_repo_snapshot_includes_branch_and_file_entries() {
+        let repo = TempGitRepo::new("snapshot");
+        fs::write(repo.path.join("tracked.txt"), "one\n").expect("write");
+        run_git(&repo.path, &["add", "tracked.txt"]);
+        run_git(&repo.path, &["commit", "-m", "initial"]);
+        fs::write(repo.path.join("tracked.txt"), "two\n").expect("modify");
+
+        let snapshot = load_repo_snapshot(&repo.path, true).expect("snapshot");
+        assert!(!snapshot.branch.branch.is_empty());
+        assert!(snapshot.file_entries.iter().any(|entry| {
+            entry.path == "tracked.txt" && entry.status == GitFileStatus::Modified
+        }));
     }
 
     #[test]

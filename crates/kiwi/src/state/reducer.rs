@@ -4,7 +4,7 @@ use crate::agent::infer_status_from_scrollback;
 use crate::clipboard::{resolve_copy_text, PasteTarget};
 use crate::commands::{execute_command, history_input_for_id, refresh_matches};
 use crate::file_tree::ExpandAction;
-use crate::git::GitFileEntry;
+use crate::git::{patch_git_file_entries, GitFileEntry};
 use crate::layout::{agent_pty_size, compute_layout, shell_pty_size, FocusTarget};
 use crate::navigation::{LeftNavTab, MainTab, NavCommand};
 
@@ -179,7 +179,6 @@ fn reduce_git_status_updated(
     state.git.loading = false;
     state.git.ahead = ahead;
     state.git.behind = behind;
-    state.git.file_entries = file_entries;
 
     if let Some(message) = error {
         state.git.error = Some(message.clone());
@@ -189,6 +188,8 @@ fn reduce_git_status_updated(
     } else {
         state.git.error = None;
         state.git.branch = branch;
+        let file_patch = patch_git_file_entries(&mut state.git.file_entries, &file_entries);
+        sync_git_status_patch_to_file_tree(state, &file_patch);
     }
 
     if let Some(path) = git_selected {
@@ -204,8 +205,6 @@ fn reduce_git_status_updated(
         }
     }
 
-    sync_git_statuses_to_file_tree(state);
-
     if let Some(path) = tree_selected {
         if state.file_tree.nodes.contains_key(&path) {
             state.file_tree.selected = Some(path);
@@ -214,6 +213,21 @@ fn reduce_git_status_updated(
 
     state.dirty = true;
     Vec::new()
+}
+
+fn sync_git_status_patch_to_file_tree(
+    state: &mut AppState,
+    patch: &crate::git::GitFileStatusPatch,
+) {
+    if patch.is_empty() {
+        return;
+    }
+
+    state.file_tree.apply_git_status_patch(
+        &state.repo_root,
+        patch,
+        state.config.git.show_untracked,
+    );
 }
 
 fn sync_git_statuses_to_file_tree(state: &mut AppState) {
@@ -780,25 +794,24 @@ fn apply_cut_mutation(state: &mut AppState) {
 }
 
 fn reduce_fs_changed(state: &mut AppState, paths: Vec<PathBuf>) -> Vec<SideEffect> {
-    let Some(preview_path) = state.preview.path.clone() else {
-        return Vec::new();
-    };
+    let mut effects = Vec::new();
 
-    if state.preview.loading {
-        return Vec::new();
+    if let Some(preview_path) = state.preview.path.clone() {
+        if !state.preview.loading
+            && crate::watcher::preview_reload_paths(&paths, &preview_path)
+            && !preview_file_unchanged(&preview_path, state.preview.loaded_mtime)
+        {
+            state.preview.begin_reload();
+            state.dirty = true;
+            effects.push(SideEffect::LoadPreviewFile(preview_path));
+        }
     }
 
-    if !crate::watcher::preview_reload_paths(&paths, &preview_path) {
-        return Vec::new();
+    if state.workspace_meta.is_git_repo && state.config.git.watch {
+        effects.extend(reduce_git_refresh_requested(state));
     }
 
-    if preview_file_unchanged(&preview_path, state.preview.loaded_mtime) {
-        return Vec::new();
-    }
-
-    state.preview.begin_reload();
-    state.dirty = true;
-    vec![SideEffect::LoadPreviewFile(preview_path)]
+    effects
 }
 
 fn preview_file_unchanged(
@@ -1052,6 +1065,75 @@ mod tests {
         assert_eq!(state.git.branch, Some("main".to_string()));
         assert_eq!(state.git.error.as_deref(), Some("corrupt"));
         assert_eq!(state.logs.entries.len(), 1);
+    }
+
+    #[test]
+    fn git_status_updated_applies_incremental_file_patch() {
+        let mut state = test_state();
+        state.git.file_entries = vec![GitFileEntry {
+            path: "src/main.rs".to_string(),
+            status: GitFileStatus::Modified,
+        }];
+
+        reduce(
+            &mut state,
+            AppEvent::GitStatusUpdated {
+                branch: Some("main".to_string()),
+                ahead: 0,
+                behind: 0,
+                file_entries: vec![
+                    GitFileEntry {
+                        path: "src/main.rs".to_string(),
+                        status: GitFileStatus::Modified,
+                    },
+                    GitFileEntry {
+                        path: "src/new.rs".to_string(),
+                        status: GitFileStatus::Added,
+                    },
+                ],
+                error: None,
+            },
+        );
+
+        assert_eq!(state.git.file_entries.len(), 2);
+        assert!(state
+            .git
+            .file_entries
+            .iter()
+            .any(|entry| entry.path == "src/new.rs"));
+    }
+
+    #[test]
+    fn fs_changed_requests_git_refresh_when_watch_enabled() {
+        let mut state = test_state();
+        state.workspace_meta.is_git_repo = true;
+        state.config.git.watch = true;
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::FsChanged {
+                paths: vec![PathBuf::from("/tmp/repo/src/main.rs")],
+            },
+        );
+
+        assert!(effects.contains(&SideEffect::SpawnGitRefresh));
+        assert!(state.git.loading);
+    }
+
+    #[test]
+    fn fs_changed_skips_git_refresh_when_watch_disabled() {
+        let mut state = test_state();
+        state.workspace_meta.is_git_repo = true;
+        state.config.git.watch = false;
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::FsChanged {
+                paths: vec![PathBuf::from("/tmp/repo/src/main.rs")],
+            },
+        );
+
+        assert!(!effects.contains(&SideEffect::SpawnGitRefresh));
     }
 
     #[test]
