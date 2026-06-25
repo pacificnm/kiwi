@@ -108,4 +108,46 @@ mod tests {
         git_move_selection(&mut state, 1, 10, true);
         assert_eq!(state.selected_path.as_deref(), Some("b.rs"));
     }
+
+    #[test]
+    fn ensure_git_selection_preserves_scroll_when_path_remains() {
+        let mut state = GitState {
+            file_entries: vec![
+                GitFileEntry {
+                    path: "a.rs".to_string(),
+                    status: GitFileStatus::Modified,
+                },
+                GitFileEntry {
+                    path: "b.rs".to_string(),
+                    status: GitFileStatus::Modified,
+                },
+            ],
+            selected_path: Some("b.rs".to_string()),
+            scroll_offset: 7,
+            ..GitState::default()
+        };
+
+        ensure_git_selection(&mut state, true);
+
+        assert_eq!(state.selected_path.as_deref(), Some("b.rs"));
+        assert_eq!(state.scroll_offset, 7);
+    }
+
+    #[test]
+    fn ensure_git_selection_resets_scroll_when_selection_lost() {
+        let mut state = GitState {
+            file_entries: vec![GitFileEntry {
+                path: "other.rs".to_string(),
+                status: GitFileStatus::Modified,
+            }],
+            selected_path: Some("removed.rs".to_string()),
+            scroll_offset: 9,
+            ..GitState::default()
+        };
+
+        ensure_git_selection(&mut state, true);
+
+        assert_eq!(state.selected_path.as_deref(), Some("other.rs"));
+        assert_eq!(state.scroll_offset, 0);
+    }
 }

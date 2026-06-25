@@ -86,8 +86,8 @@ N/A
 
 ## Acceptance Criteria
 
-- [ ] Unit tests for reducers without terminal
-- [ ] Git refresh preserves file list selection
+- [x] Unit tests for reducers without terminal
+- [x] Git refresh preserves file list selection and scroll where paths remain
 - [ ] No Arc<Mutex> on render path
 - [ ] Side effects executed after reduce step
 - [ ] Event coalescing prevents refresh storm
