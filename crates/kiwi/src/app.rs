@@ -12,6 +12,7 @@ use crate::bootstrap::StartupContext;
 use crate::file_tree::spawn_directory_load;
 use crate::layout::{agent_pty_size, shell_pty_size, FocusTarget};
 use crate::navigation::{map_key, LeftNavTab, MainTab};
+use crate::preview::spawn_preview_load;
 use crate::shell::{encode_key, ShellOutputReader, ShellSession};
 use crate::shutdown;
 use crate::state::{
@@ -297,6 +298,13 @@ impl App {
                 SideEffect::LoadDirectoryChildren(path) => {
                     spawn_directory_load(path, self.events.sender());
                 }
+                SideEffect::LoadPreviewFile(path) => {
+                    spawn_preview_load(
+                        path,
+                        self.state.config.preview.max_size_bytes,
+                        self.events.sender(),
+                    );
+                }
             }
         }
         false
@@ -405,6 +413,10 @@ impl App {
             return self.handle_file_tree_key(key);
         }
 
+        if self.preview_input_active() {
+            return self.handle_preview_key(key);
+        }
+
         if self.agent_input_active() {
             return self.handle_agent_key(key);
         }
@@ -464,6 +476,11 @@ impl App {
             && self.state.navigation.left_tab == LeftNavTab::Files
     }
 
+    fn preview_input_active(&self) -> bool {
+        self.state.navigation.focus == FocusTarget::Main
+            && self.state.navigation.main_tab == MainTab::Preview
+    }
+
     fn handle_file_tree_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
         if !key.modifiers.is_empty() {
             return false;
@@ -489,6 +506,52 @@ impl App {
                 self.dispatch(AppEvent::Command(AppCommand::FileTreeCollapse(path)))
             }
             KeyCode::Char('r') => self.dispatch(AppEvent::Command(AppCommand::FileTreeRefresh)),
+            KeyCode::Char('p') => self.dispatch_preview_from_selection(),
+            KeyCode::Enter => self.handle_file_tree_enter(),
+            _ => false,
+        }
+    }
+
+    fn handle_file_tree_enter(&mut self) -> bool {
+        let Some(path) = self.state.file_tree.selected.clone() else {
+            return false;
+        };
+        let Some(node) = self.state.file_tree.nodes.get(&path) else {
+            return false;
+        };
+
+        if node.is_dir {
+            self.dispatch(AppEvent::Command(AppCommand::FileTreeExpand(path)))
+        } else {
+            self.dispatch(AppEvent::Command(AppCommand::PreviewFile(path)))
+        }
+    }
+
+    fn dispatch_preview_from_selection(&mut self) -> bool {
+        let Some(path) = self.state.file_tree.selected.clone() else {
+            return false;
+        };
+        let Some(node) = self.state.file_tree.nodes.get(&path) else {
+            return false;
+        };
+
+        if node.is_dir {
+            return false;
+        }
+
+        self.dispatch(AppEvent::Command(AppCommand::PreviewFile(path)))
+    }
+
+    fn handle_preview_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        if !key.modifiers.is_empty() {
+            return false;
+        }
+
+        match key.code {
+            KeyCode::Char('j') => self.dispatch(AppEvent::Command(AppCommand::PreviewScroll(1))),
+            KeyCode::Char('k') => self.dispatch(AppEvent::Command(AppCommand::PreviewScroll(-1))),
+            KeyCode::PageUp => self.dispatch(AppEvent::Command(AppCommand::PreviewPageScroll(-1))),
+            KeyCode::PageDown => self.dispatch(AppEvent::Command(AppCommand::PreviewPageScroll(1))),
             _ => false,
         }
     }

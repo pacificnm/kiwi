@@ -9,6 +9,7 @@ mod file_tree;
 mod git;
 mod layout;
 mod navigation;
+mod preview;
 mod repo;
 mod shell;
 mod shutdown;

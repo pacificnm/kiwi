@@ -13,6 +13,7 @@ use crate::theme::ThemePalette;
 use super::agent::render_agent_pane;
 use super::file_tree::render_file_tree_pane;
 use super::palette::render_palette_pane;
+use super::preview::render_preview_pane;
 use super::shell::render_shell_pane;
 use super::status_bar::render_status_bar;
 use super::tabs::tab_bar_line;
@@ -68,6 +69,14 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
             state.navigation.focus.is_focused(Region::MainContent),
             &state.theme,
             hint_style(&state.theme),
+            state,
+        );
+    } else if state.navigation.main_tab == MainTab::Preview {
+        render_preview_pane(
+            frame,
+            state.layout.rects.main_content,
+            state.navigation.focus.is_focused(Region::MainContent),
+            &state.theme,
             state,
         );
     } else {

@@ -76,8 +76,8 @@ wrap = false
 
 ## Acceptance Criteria
 
-- [ ] Selecting file + preview shows content
-- [ ] Scrolling works for 1000+ line file
+- [x] Selecting file + preview shows content
+- [x] Scrolling works for 1000+ line file
 - [ ] Watcher reload updates content without losing scroll if possible
-- [ ] Binary file shows appropriate message
+- [x] Binary file shows appropriate message
 - [ ] `e` launches editor

@@ -5,12 +5,13 @@ use crate::config::ResolvedConfig;
 use crate::file_tree::FileTreeState;
 use crate::layout::LayoutState;
 use crate::navigation::NavigationState;
+use crate::preview::PreviewState;
 use crate::shell::shell_launch_spec;
 use crate::theme::ThemePalette;
 
 use super::domains::{
-    AgentState, CommandPaletteState, DiffState, GitHubState, GitState, PreviewState, SearchState,
-    ShellState, StatusBarState, WorkspaceMeta,
+    AgentState, CommandPaletteState, DiffState, GitHubState, GitState, SearchState, ShellState,
+    StatusBarState, WorkspaceMeta,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]

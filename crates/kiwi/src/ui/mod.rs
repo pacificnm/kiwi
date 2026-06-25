@@ -2,6 +2,7 @@ mod agent;
 mod file_tree;
 mod mouse;
 mod palette;
+mod preview;
 mod render;
 mod scrollback;
 mod shell;
