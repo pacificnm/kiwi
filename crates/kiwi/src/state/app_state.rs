@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use crate::config::ResolvedConfig;
 use crate::layout::LayoutState;
 use crate::navigation::NavigationState;
+use crate::shell::shell_launch_spec;
 use crate::theme::ThemePalette;
 
 use super::domains::{
@@ -46,7 +47,7 @@ impl AppState {
             .unwrap_or("kiwi")
             .to_string();
 
-        let shell_command = config.shell.command.clone();
+        let shell_spec = shell_launch_spec(&config.shell);
 
         Self {
             config,
@@ -63,7 +64,9 @@ impl AppState {
             github: GitHubState::default(),
             agent: AgentState::default(),
             shell: ShellState {
-                command: shell_command,
+                command: shell_spec.command,
+                shell_name: shell_spec.shell_name,
+                ..ShellState::default()
             },
             palette: CommandPaletteState::default(),
             status_bar: StatusBarState { repo_name },
