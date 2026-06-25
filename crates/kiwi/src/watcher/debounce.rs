@@ -64,9 +64,19 @@ mod tests {
     }
 
     #[test]
-    fn ignores_git_paths() {
+    fn allows_git_metadata_paths_in_debouncer() {
         let mut debouncer = PathDebouncer::new(Duration::from_millis(1));
         debouncer.push(PathBuf::from("/repo/.git/index"));
+        debouncer.push(PathBuf::from("/repo/.git/HEAD"));
+        thread::sleep(Duration::from_millis(5));
+        let paths = debouncer.poll_ready().expect("ready");
+        assert_eq!(paths.len(), 2);
+    }
+
+    #[test]
+    fn ignores_other_git_paths() {
+        let mut debouncer = PathDebouncer::new(Duration::from_millis(1));
+        debouncer.push(PathBuf::from("/repo/.git/objects/pack/foo"));
         thread::sleep(Duration::from_millis(5));
         assert!(debouncer.poll_ready().is_none());
     }

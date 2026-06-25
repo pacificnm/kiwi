@@ -4,6 +4,23 @@ use notify::EventKind;
 
 pub const DEFAULT_DEBOUNCE_MS: u64 = 300;
 
+const GIT_METADATA_FILES: &[&str] = &["HEAD", "index"];
+
+/// Returns true for `.git/HEAD` and `.git/index`, which drive branch/status refresh per ADR-011.
+pub fn is_git_metadata_watch_path(path: &Path) -> bool {
+    let mut components = path.components();
+    while let Some(component) = components.next() {
+        if !matches!(component, Component::Normal(name) if name == ".git") {
+            continue;
+        }
+
+        return matches!(components.next(), Some(Component::Normal(name))
+            if name.to_str().is_some_and(|value| GIT_METADATA_FILES.contains(&value)));
+    }
+
+    false
+}
+
 /// Returns true when a notify event can change filesystem content visible to Kiwi.
 ///
 /// Access events (read/open/close) are excluded so preview loads do not retrigger reloads.
@@ -12,6 +29,10 @@ pub fn should_emit_fs_changed_event(kind: &EventKind) -> bool {
 }
 
 pub fn should_ignore_watch_path(path: &Path) -> bool {
+    if is_git_metadata_watch_path(path) {
+        return false;
+    }
+
     path.components()
         .any(|component| matches!(component, Component::Normal(name) if name == ".git"))
 }
@@ -59,8 +80,19 @@ mod tests {
     }
 
     #[test]
-    fn ignores_git_internal_paths() {
-        assert!(should_ignore_watch_path(Path::new("/repo/.git/index")));
+    fn allows_git_metadata_paths() {
+        assert!(!should_ignore_watch_path(Path::new("/repo/.git/HEAD")));
+        assert!(!should_ignore_watch_path(Path::new("/repo/.git/index")));
+        assert!(is_git_metadata_watch_path(Path::new("/repo/.git/HEAD")));
+    }
+
+    #[test]
+    fn ignores_other_git_internal_paths() {
+        assert!(should_ignore_watch_path(Path::new(
+            "/repo/.git/objects/pack/foo"
+        )));
+        assert!(should_ignore_watch_path(Path::new("/repo/.git/logs/HEAD")));
+        assert!(should_ignore_watch_path(Path::new("/repo/.git/index.lock")));
         assert!(!should_ignore_watch_path(Path::new("/repo/src/main.rs")));
     }
 

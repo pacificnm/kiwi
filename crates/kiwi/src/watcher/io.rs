@@ -24,8 +24,8 @@ impl RepoWatcher {
         let (raw_tx, raw_rx) = mpsc::channel();
 
         let mut watcher = RecommendedWatcher::new(
-            move |result: Result<notify::Event, notify::Error>| {
-                if let Ok(event) = result {
+            move |result: Result<notify::Event, notify::Error>| match result {
+                Ok(event) => {
                     if !should_emit_fs_changed_event(&event.kind) {
                         return;
                     }
@@ -34,6 +34,9 @@ impl RepoWatcher {
                             let _ = raw_tx.send(path);
                         }
                     }
+                }
+                Err(err) => {
+                    eprintln!("file watcher warning: {err}");
                 }
             },
             Config::default(),
@@ -92,6 +95,78 @@ mod tests {
 
     use super::*;
     use crate::state::EventChannel;
+
+    #[test]
+    fn watcher_emits_fs_changed_for_nested_file() {
+        let temp = std::env::temp_dir().join(format!("kiwi-watcher-nested-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp);
+        fs::create_dir_all(temp.join("src")).expect("mkdir");
+        let file = temp.join("src/nested.rs");
+
+        let mut channel = EventChannel::new();
+        let watcher = RepoWatcher::spawn(temp.clone(), channel.sender()).expect("spawn watcher");
+
+        fs::write(&file, "nested").expect("write");
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        let mut changed = None;
+        while std::time::Instant::now() < deadline {
+            for event in channel.drain_coalesced() {
+                if let AppEvent::FsChanged { paths } = event {
+                    if paths.iter().any(|path| path.ends_with("nested.rs")) {
+                        changed = Some(());
+                        break;
+                    }
+                }
+            }
+            if changed.is_some() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+
+        drop(watcher);
+        changed.expect("nested fs changed event");
+        let _ = fs::remove_dir_all(temp);
+    }
+
+    #[test]
+    fn watcher_emits_fs_changed_for_git_head() {
+        let temp = std::env::temp_dir().join(format!("kiwi-watcher-head-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp);
+        fs::create_dir_all(&temp).expect("mkdir");
+        let status = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&temp)
+            .status()
+            .expect("git init");
+        assert!(status.success(), "git init failed");
+
+        let head = temp.join(".git/HEAD");
+        let mut channel = EventChannel::new();
+        let watcher = RepoWatcher::spawn(temp.clone(), channel.sender()).expect("spawn watcher");
+
+        fs::write(&head, "ref: refs/heads/main\n").expect("write head");
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        let mut changed = None;
+        while std::time::Instant::now() < deadline {
+            for event in channel.drain_coalesced() {
+                if let AppEvent::FsChanged { paths } = event {
+                    if paths.iter().any(|path| path.ends_with(".git/HEAD")) {
+                        changed = Some(());
+                        break;
+                    }
+                }
+            }
+            if changed.is_some() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+
+        drop(watcher);
+        changed.expect("git head fs changed event");
+        let _ = fs::remove_dir_all(temp);
+    }
 
     #[test]
     fn watcher_emits_fs_changed_after_file_write() {
