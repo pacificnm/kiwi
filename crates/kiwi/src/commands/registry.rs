@@ -40,6 +40,13 @@ pub const COMMANDS: &[CommandDef] = &[
         action: PaletteAction::RequestGitRefresh,
     },
     CommandDef {
+        id: "diff.toggle_source",
+        title: "Diff: Toggle Staged/Unstaged View",
+        shortcut: Some("s"),
+        context: CommandContext::DiffTab,
+        action: PaletteAction::DiffToggleSource,
+    },
+    CommandDef {
         id: "github.refresh",
         title: "GitHub: Refresh Issues and PRs",
         shortcut: Some("R"),

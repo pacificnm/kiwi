@@ -22,11 +22,11 @@ pub fn load_file_diff(
     let diff = match source {
         DiffSource::Unstaged => {
             options.include_untracked(true);
-            let tree = match head_tree(&repo) {
-                Ok(tree) => tree,
+            let index = match repo.index() {
+                Ok(index) => index,
                 Err(err) => return FileDiffLoadResult::error(relative_path, err.to_string()),
             };
-            repo.diff_tree_to_workdir(Some(&tree), Some(&mut options))
+            repo.diff_index_to_workdir(Some(&index), Some(&mut options))
         }
         DiffSource::Staged => {
             let tree = match head_tree(&repo) {

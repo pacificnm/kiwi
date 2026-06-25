@@ -755,24 +755,24 @@ impl App {
             return self.dispatch(AppEvent::Command(AppCommand::Navigation(command)));
         }
 
-        if self.file_tree_input_active() {
-            return self.handle_file_tree_key(key);
+        if self.preview_keys_active() && self.handle_preview_key(key) {
+            return false;
         }
 
-        if self.git_input_active() {
-            return self.handle_git_key(key);
+        if self.diff_keys_active() && self.handle_diff_key(key) {
+            return false;
         }
 
-        if self.search_input_active() {
-            return self.handle_search_key(key);
+        if self.file_tree_input_active() && self.handle_file_tree_key(key) {
+            return false;
         }
 
-        if self.preview_input_active() {
-            return self.handle_preview_key(key);
+        if self.git_input_active() && self.handle_git_key(key) {
+            return false;
         }
 
-        if self.diff_input_active() {
-            return self.handle_diff_key(key);
+        if self.search_input_active() && self.handle_search_key(key) {
+            return false;
         }
 
         if self.agent_input_active() {
@@ -961,14 +961,77 @@ impl App {
         }))
     }
 
-    fn preview_input_active(&self) -> bool {
-        self.state.navigation.focus == FocusTarget::Main
-            && self.state.navigation.main_tab == MainTab::Preview
+    fn preview_keys_active(&self) -> bool {
+        self.state.navigation.main_tab == MainTab::Preview && !self.state.palette.open
     }
 
-    fn diff_input_active(&self) -> bool {
-        self.state.navigation.focus == FocusTarget::Main
-            && self.state.navigation.main_tab == MainTab::Diff
+    fn diff_keys_active(&self) -> bool {
+        self.state.navigation.main_tab == MainTab::Diff && !self.state.palette.open
+    }
+
+    fn handle_preview_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        if !key.modifiers.is_empty() {
+            return false;
+        }
+
+        match key.code {
+            KeyCode::Char('j') => {
+                self.dispatch(AppEvent::Command(AppCommand::PreviewScroll(1)));
+                true
+            }
+            KeyCode::Char('k') => {
+                self.dispatch(AppEvent::Command(AppCommand::PreviewScroll(-1)));
+                true
+            }
+            KeyCode::PageUp => {
+                self.dispatch(AppEvent::Command(AppCommand::PreviewPageScroll(-1)));
+                true
+            }
+            KeyCode::PageDown => {
+                self.dispatch(AppEvent::Command(AppCommand::PreviewPageScroll(1)));
+                true
+            }
+            KeyCode::Char('e') => self.dispatch_open_editor(),
+            _ => false,
+        }
+    }
+
+    fn handle_diff_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        if !key.modifiers.is_empty() {
+            return false;
+        }
+
+        match key.code {
+            KeyCode::Char('j') => {
+                self.dispatch(AppEvent::Command(AppCommand::DiffScroll(1)));
+                true
+            }
+            KeyCode::Char('k') => {
+                self.dispatch(AppEvent::Command(AppCommand::DiffScroll(-1)));
+                true
+            }
+            KeyCode::PageUp => {
+                self.dispatch(AppEvent::Command(AppCommand::DiffPageScroll(-1)));
+                true
+            }
+            KeyCode::PageDown => {
+                self.dispatch(AppEvent::Command(AppCommand::DiffPageScroll(1)));
+                true
+            }
+            KeyCode::Char('h') => {
+                self.dispatch(AppEvent::Command(AppCommand::DiffHorizontalScroll(-4)));
+                true
+            }
+            KeyCode::Char('l') => {
+                self.dispatch(AppEvent::Command(AppCommand::DiffHorizontalScroll(4)));
+                true
+            }
+            KeyCode::Char('s') => {
+                self.dispatch(AppEvent::Command(AppCommand::DiffToggleSource));
+                true
+            }
+            _ => false,
+        }
     }
 
     fn handle_file_tree_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
@@ -1037,41 +1100,6 @@ impl App {
             path,
             line: None,
         }))
-    }
-
-    fn handle_preview_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
-        if !key.modifiers.is_empty() {
-            return false;
-        }
-
-        match key.code {
-            KeyCode::Char('j') => self.dispatch(AppEvent::Command(AppCommand::PreviewScroll(1))),
-            KeyCode::Char('k') => self.dispatch(AppEvent::Command(AppCommand::PreviewScroll(-1))),
-            KeyCode::PageUp => self.dispatch(AppEvent::Command(AppCommand::PreviewPageScroll(-1))),
-            KeyCode::PageDown => self.dispatch(AppEvent::Command(AppCommand::PreviewPageScroll(1))),
-            KeyCode::Char('e') => self.dispatch_open_editor(),
-            _ => false,
-        }
-    }
-
-    fn handle_diff_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
-        if !key.modifiers.is_empty() {
-            return false;
-        }
-
-        match key.code {
-            KeyCode::Char('j') => self.dispatch(AppEvent::Command(AppCommand::DiffScroll(1))),
-            KeyCode::Char('k') => self.dispatch(AppEvent::Command(AppCommand::DiffScroll(-1))),
-            KeyCode::PageUp => self.dispatch(AppEvent::Command(AppCommand::DiffPageScroll(-1))),
-            KeyCode::PageDown => self.dispatch(AppEvent::Command(AppCommand::DiffPageScroll(1))),
-            KeyCode::Char('h') => {
-                self.dispatch(AppEvent::Command(AppCommand::DiffHorizontalScroll(-4)))
-            }
-            KeyCode::Char('l') => {
-                self.dispatch(AppEvent::Command(AppCommand::DiffHorizontalScroll(4)))
-            }
-            _ => false,
-        }
     }
 
     fn is_agent_restart_key(&self, key: crossterm::event::KeyEvent) -> bool {
@@ -1697,6 +1725,56 @@ mod tests {
             app.state().git.selected_path.as_deref(),
             Some("src/main.rs")
         );
+    }
+
+    #[test]
+    fn diff_toggle_source_key_works_on_main_diff_tab_with_shell_focus() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+        use crate::diff::DiffSource;
+        use crate::layout::FocusTarget;
+        use crate::navigation::{LeftNavTab, MainTab};
+
+        let mut app = App::new(test_context());
+        app.state_mut().navigation.main_tab = MainTab::Diff;
+        app.state_mut().navigation.left_tab = LeftNavTab::Git;
+        app.state_mut().navigation.focus = FocusTarget::Shell;
+        app.state_mut().diff.selected_path = Some("src/main.rs".to_string());
+        app.state_mut().diff.source = DiffSource::Unstaged;
+
+        let key = KeyEvent {
+            code: KeyCode::Char('s'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        };
+
+        assert!(!app.dispatch_key(key));
+        assert_eq!(app.state().diff.source, DiffSource::Staged);
+        assert!(app.state().diff.loading);
+    }
+
+    #[test]
+    fn diff_toggle_source_key_does_not_quit_app() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+        use crate::diff::DiffSource;
+        use crate::navigation::MainTab;
+
+        let mut app = App::new(test_context());
+        app.state_mut().navigation.main_tab = MainTab::Diff;
+        app.state_mut().diff.selected_path = Some("src/main.rs".to_string());
+        app.state_mut().diff.source = DiffSource::Unstaged;
+
+        let key = KeyEvent {
+            code: KeyCode::Char('s'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        };
+
+        assert!(!app.dispatch_key(key));
+        assert_eq!(app.state().diff.source, DiffSource::Staged);
     }
 }
 

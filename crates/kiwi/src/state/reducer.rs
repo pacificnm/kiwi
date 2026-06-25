@@ -96,6 +96,8 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         AppCommand::DiffScroll(delta) => reduce_diff_scroll(state, delta),
         AppCommand::DiffPageScroll(delta) => reduce_diff_page_scroll(state, delta),
         AppCommand::DiffHorizontalScroll(delta) => reduce_diff_horizontal_scroll(state, delta),
+        AppCommand::DiffToggleSource => reduce_diff_toggle_source(state),
+        AppCommand::DiffSetSource(source) => reduce_diff_set_source(state, source),
         AppCommand::SearchSetQuery(query) => reduce_search_set_query(state, query),
         AppCommand::SearchAppendChar(ch) => reduce_search_append_char(state, ch),
         AppCommand::SearchBackspace => reduce_search_backspace(state),
@@ -492,6 +494,9 @@ fn reduce_git_open_selected(state: &mut AppState) -> Vec<SideEffect> {
     let source = state.diff.source;
     state.diff.begin_load(path.clone());
     apply_navigation(state, NavCommand::SelectMainTab(MainTab::Diff));
+    state
+        .navigation
+        .apply(NavCommand::SetFocus(FocusTarget::Main));
     state.dirty = true;
     vec![SideEffect::LoadFileDiff { path, source }]
 }
@@ -503,6 +508,37 @@ fn reduce_diff_loaded(
     state.diff.apply_loaded(result);
     state.dirty = true;
     Vec::new()
+}
+
+fn reduce_diff_toggle_source(state: &mut AppState) -> Vec<SideEffect> {
+    diff_set_source_effects(state, state.diff.source.toggle())
+}
+
+pub fn diff_set_source_effects(
+    state: &mut AppState,
+    source: crate::diff::DiffSource,
+) -> Vec<SideEffect> {
+    if state.diff.source == source {
+        return Vec::new();
+    }
+
+    let Some(path) = state.diff.selected_path.clone() else {
+        state.diff.source = source;
+        state.dirty = true;
+        return Vec::new();
+    };
+
+    state.diff.source = source;
+    state.diff.begin_source_reload();
+    state.dirty = true;
+    vec![SideEffect::LoadFileDiff { path, source }]
+}
+
+fn reduce_diff_set_source(
+    state: &mut AppState,
+    source: crate::diff::DiffSource,
+) -> Vec<SideEffect> {
+    diff_set_source_effects(state, source)
 }
 
 fn reduce_file_tree_refresh(state: &mut AppState) -> Vec<SideEffect> {
@@ -1329,6 +1365,7 @@ mod tests {
         let effects = reduce(&mut state, AppEvent::Command(AppCommand::GitOpenSelected));
 
         assert_eq!(state.navigation.main_tab, MainTab::Diff);
+        assert_eq!(state.navigation.focus, FocusTarget::Main);
         assert_eq!(state.diff.selected_path.as_deref(), Some("src/main.rs"));
         assert!(state.diff.loading);
         assert!(
@@ -1384,6 +1421,49 @@ mod tests {
 
         reduce(&mut state, AppEvent::Command(AppCommand::DiffScroll(-20)));
         assert_eq!(state.diff.scroll_offset, 0);
+    }
+
+    #[test]
+    fn diff_toggle_source_switches_and_reloads() {
+        let mut state = test_state();
+        state.diff.selected_path = Some("src/main.rs".to_string());
+        state.diff.source = crate::diff::DiffSource::Unstaged;
+
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::DiffToggleSource));
+
+        assert_eq!(state.diff.source, crate::diff::DiffSource::Staged);
+        assert!(state.diff.loading);
+        assert!(effects.iter().any(|effect| matches!(
+            effect,
+            SideEffect::LoadFileDiff { path, source }
+                if path == "src/main.rs" && *source == crate::diff::DiffSource::Staged
+        )));
+    }
+
+    #[test]
+    fn diff_set_source_noop_when_unchanged() {
+        let mut state = test_state();
+        state.diff.selected_path = Some("src/main.rs".to_string());
+        state.diff.source = crate::diff::DiffSource::Staged;
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::DiffSetSource(crate::diff::DiffSource::Staged)),
+        );
+
+        assert!(effects.is_empty());
+        assert!(!state.diff.loading);
+    }
+
+    #[test]
+    fn diff_toggle_source_without_file_updates_source_only() {
+        let mut state = test_state();
+        state.diff.source = crate::diff::DiffSource::Unstaged;
+
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::DiffToggleSource));
+
+        assert_eq!(state.diff.source, crate::diff::DiffSource::Staged);
+        assert!(effects.is_empty());
     }
 
     #[test]
