@@ -8,6 +8,7 @@ use super::browser::{open_in_browser, GitHubBrowserTarget};
 use super::detail::load_issue_detail;
 use super::issue::load_issue_list;
 use super::labels::load_repo_labels;
+use super::pr::load_pr_list;
 use super::pr_create::{create_pull_request, PrCreateRequest};
 use super::pr_detail::load_pr_detail;
 
@@ -15,6 +16,13 @@ pub fn spawn_github_auth_check(command: String, sender: EventSender) {
     std::thread::spawn(move || {
         let result = check_github_auth(&command);
         let _ = sender.send(AppEvent::GitHubAuthChecked { result });
+    });
+}
+
+pub fn spawn_github_pr_list_load(repo_root: PathBuf, command: String, sender: EventSender) {
+    std::thread::spawn(move || {
+        let result = load_pr_list(&repo_root, &command);
+        let _ = sender.send(AppEvent::GitHubPrsLoaded { result });
     });
 }
 

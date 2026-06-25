@@ -1,6 +1,7 @@
 use crate::state::GitHubState;
 
 use super::issue::Issue;
+use super::pr::PullRequest;
 
 pub fn ensure_issue_selection(state: &mut GitHubState) {
     if state.issues.is_empty() {
@@ -69,6 +70,71 @@ pub fn issue_selected_row_index(state: &GitHubState) -> Option<usize> {
         .issues
         .iter()
         .position(|issue| u64::from(issue.number) == number)
+}
+
+pub fn ensure_pr_selection(state: &mut GitHubState) {
+    if state.prs.is_empty() {
+        state.selected_pr = None;
+        state.prs_scroll_offset = 0;
+        return;
+    }
+
+    if let Some(number) = state.selected_pr {
+        if state.prs.iter().any(|pr| u64::from(pr.number) == number) {
+            return;
+        }
+    }
+
+    state.selected_pr = Some(u64::from(state.prs[0].number));
+    state.prs_scroll_offset = 0;
+}
+
+pub fn pr_move_selection(state: &mut GitHubState, delta: i32, viewport_rows: usize) {
+    if state.prs.is_empty() || viewport_rows == 0 {
+        return;
+    }
+
+    let current_index = state
+        .selected_pr
+        .and_then(|number| {
+            state
+                .prs
+                .iter()
+                .position(|pr| u64::from(pr.number) == number)
+        })
+        .unwrap_or(0);
+
+    let next_index =
+        (current_index as i32 + delta).clamp(0, state.prs.len().saturating_sub(1) as i32) as usize;
+    let pr = &state.prs[next_index];
+    state.selected_pr = Some(u64::from(pr.number));
+    state.prs_scroll_offset =
+        scroll_offset_for_row(next_index, state.prs_scroll_offset, viewport_rows);
+}
+
+pub fn pr_select_row(state: &mut GitHubState, row_index: usize, viewport_rows: usize) {
+    if state.prs.get(row_index).is_none() {
+        return;
+    }
+
+    let pr = &state.prs[row_index];
+    state.selected_pr = Some(u64::from(pr.number));
+    state.prs_scroll_offset =
+        scroll_offset_for_row(row_index, state.prs_scroll_offset, viewport_rows);
+}
+
+pub fn pr_at_viewport(state: &GitHubState, viewport_index: usize) -> Option<&PullRequest> {
+    state
+        .prs
+        .get(state.prs_scroll_offset.saturating_add(viewport_index))
+}
+
+pub fn pr_selected_row_index(state: &GitHubState) -> Option<usize> {
+    let number = state.selected_pr?;
+    state
+        .prs
+        .iter()
+        .position(|pr| u64::from(pr.number) == number)
 }
 
 pub fn scroll_offset_for_row(

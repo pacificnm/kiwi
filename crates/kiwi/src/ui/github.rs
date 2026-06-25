@@ -5,8 +5,8 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 
 use crate::github::{
-    issue_at_viewport, issue_selected_row_index, GitHubAuthErrorKind, GitHubLeftPane, Issue,
-    IssueState, PrState,
+    issue_at_viewport, issue_selected_row_index, pr_at_viewport, pr_selected_row_index,
+    GitHubAuthErrorKind, GitHubLeftPane, Issue, IssueState, PrState, PullRequest,
 };
 use crate::selection::{line_spans_with_selection, SelectionPane};
 use crate::state::AppState;
@@ -37,6 +37,60 @@ pub fn issue_detail_viewport_rows(area: Rect) -> usize {
 
 pub fn pr_detail_viewport_rows(area: Rect) -> usize {
     issue_detail_viewport_rows(area)
+}
+
+pub fn prs_viewport_rows(area: Rect) -> usize {
+    issues_viewport_rows(area)
+}
+
+pub fn github_pr_interaction_at(
+    state: &AppState,
+    area: Rect,
+    column: u16,
+    row: u16,
+) -> Option<usize> {
+    if state.github.left_pane != GitHubLeftPane::Prs {
+        return None;
+    }
+
+    if state.github.loading && !state.github.auth_checked {
+        return None;
+    }
+
+    if github_auth_message(state).is_some() {
+        return None;
+    }
+
+    if area.width == 0 || area.height == 0 {
+        return None;
+    }
+
+    if column < area.x
+        || column >= area.x.saturating_add(area.width)
+        || row < area.y
+        || row >= area.y.saturating_add(area.height)
+    {
+        return None;
+    }
+
+    let list_area = github_issues_list_area(area)?;
+    if column < list_area.x
+        || column >= list_area.x.saturating_add(list_area.width)
+        || row < list_area.y
+        || row >= list_area.y.saturating_add(list_area.height)
+    {
+        return None;
+    }
+
+    let viewport_index = usize::from(row.saturating_sub(list_area.y));
+    pr_at_viewport(&state.github, viewport_index)?;
+
+    Some(
+        state
+            .github
+            .prs_scroll_offset
+            .saturating_add(viewport_index),
+    )
 }
 
 pub fn github_issue_interaction_at(
@@ -201,7 +255,7 @@ pub fn render_github_left_pane(
             GitHubLeftPane::Issues => {
                 render_issue_list(frame, list_area, focused, theme, state);
             }
-            GitHubLeftPane::Prs => render_pr_list_placeholder(frame, list_area, theme, state),
+            GitHubLeftPane::Prs => render_pr_list(frame, list_area, focused, theme, state),
         }
     }
 
@@ -210,7 +264,7 @@ pub fn render_github_left_pane(
             GitHubLeftPane::Issues => {
                 render_issues_list_status_line(frame, status_area, state, theme);
             }
-            GitHubLeftPane::Prs => render_prs_list_status_line(frame, status_area, theme),
+            GitHubLeftPane::Prs => render_prs_list_status_line(frame, status_area, state, theme),
         }
     }
 }
@@ -392,7 +446,15 @@ fn github_hub_label(state: &AppState, pane: GitHubLeftPane) -> String {
             }
             label
         }
-        GitHubLeftPane::Prs => String::from("PRs"),
+        GitHubLeftPane::Prs => {
+            let mut label = String::from("PRs");
+            if state.github.prs_loading {
+                label.push_str(" …");
+            } else if !state.github.prs.is_empty() {
+                label.push_str(&format!(" · {}", state.github.prs.len()));
+            }
+            label
+        }
     }
 }
 
@@ -430,33 +492,111 @@ fn render_github_hub_line(
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
-fn render_pr_list_placeholder(
+fn render_pr_list(
     frame: &mut Frame<'_>,
     area: Rect,
+    focused: bool,
     theme: &ThemePalette,
     state: &AppState,
 ) {
-    let message = if state.github.auth_ok {
-        "PR list loads in a later milestone (#59).\n\nPress Enter to open the PRs main tab."
+    let viewport_rows = area.height as usize;
+    let max_width = area.width as usize;
+    let selected_row = pr_selected_row_index(&state.github);
+    let mut lines = Vec::new();
+
+    for viewport_index in 0..viewport_rows {
+        let Some(pr) = pr_at_viewport(&state.github, viewport_index) else {
+            break;
+        };
+        let row_index = state.github.prs_scroll_offset + viewport_index;
+        lines.push(render_pr_line(
+            pr,
+            row_index,
+            selected_row,
+            max_width,
+            focused,
+            theme,
+        ));
+    }
+
+    if lines.is_empty() {
+        let hint = if state.github.prs_loading {
+            "Loading pull requests…"
+        } else if let Some(error) = &state.github.prs_error {
+            error.as_str()
+        } else {
+            "No open pull requests · R refresh"
+        };
+        lines.push(Line::from(Span::styled(
+            truncate_line(hint, max_width),
+            theme.get(SemanticRole::Muted),
+        )));
+    }
+
+    frame.render_widget(Paragraph::new(lines), area);
+}
+
+fn render_pr_line(
+    pr: &PullRequest,
+    row_index: usize,
+    selected_row: Option<usize>,
+    max_width: usize,
+    focused: bool,
+    theme: &ThemePalette,
+) -> Line<'static> {
+    let selected = focused && selected_row == Some(row_index);
+    let state_style = match pr.state {
+        PrState::Open => theme.get(SemanticRole::PrOpen),
+        PrState::Draft => theme.get(SemanticRole::PrDraft),
+        PrState::Merged => theme.get(SemanticRole::PrMerged),
+        PrState::Closed => theme.get(SemanticRole::PrClosed),
+    };
+
+    let mut spans = vec![
+        Span::styled(format!("#{} ", pr.number), state_style),
+        Span::styled(
+            truncate_line(&pr.title, max_width.saturating_sub(8)),
+            if selected {
+                theme.get(SemanticRole::Accent)
+            } else {
+                theme.get(SemanticRole::Fg)
+            },
+        ),
+    ];
+
+    if pr.state != PrState::Open {
+        spans.push(Span::styled(
+            format!(" [{}]", pr.state.label()),
+            state_style,
+        ));
+    }
+
+    let mut line = Line::from(spans);
+    if selected {
+        line = line.style(Style::default().add_modifier(Modifier::BOLD));
+    }
+    line
+}
+
+fn render_prs_list_status_line(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &AppState,
+    theme: &ThemePalette,
+) {
+    let status = if state.github.prs_loading {
+        "Loading pull requests…"
+    } else if state.github.prs_error.is_some() {
+        "j/k move · R refresh"
+    } else if state.github.prs.is_empty() {
+        "R refresh"
     } else {
-        "Authenticate with gh to browse pull requests."
+        "j/k move · Enter view · i/p switch · R refresh"
     };
 
     frame.render_widget(
-        Paragraph::new(message)
-            .style(theme.get(SemanticRole::Muted))
-            .wrap(Wrap { trim: false }),
-        area,
-    );
-}
-
-fn render_prs_list_status_line(frame: &mut Frame<'_>, area: Rect, theme: &ThemePalette) {
-    frame.render_widget(
-        Paragraph::new(truncate_line(
-            "i/p switch · Enter main · R refresh · palette: Create PR",
-            area.width as usize,
-        ))
-        .style(theme.get(SemanticRole::Muted)),
+        Paragraph::new(truncate_line(status, area.width as usize))
+            .style(theme.get(SemanticRole::Muted)),
         area,
     );
 }
@@ -979,6 +1119,7 @@ mod tests {
     use crate::config::ResolvedConfig;
     use crate::github::{
         GitHubAuthErrorKind, GitHubLeftPane, Issue, IssueDetail, IssueState, PrDetail, PrState,
+        PullRequest,
     };
     use crate::layout::compute_layout;
     use crate::navigation::{LeftNavTab, MainTab};
@@ -1034,6 +1175,71 @@ mod tests {
     }
 
     #[test]
+    fn github_pr_interaction_at_selects_pr_row() {
+        let mut state = test_state();
+        state.github.auth_checked = true;
+        state.github.auth_ok = true;
+        state.github.prs = vec![
+            PullRequest {
+                number: 59,
+                title: "PR list via gh json".to_string(),
+                state: PrState::Open,
+                author: "octocat".to_string(),
+                is_draft: false,
+            },
+            PullRequest {
+                number: 60,
+                title: "PR detail view".to_string(),
+                state: PrState::Open,
+                author: "hubot".to_string(),
+                is_draft: false,
+            },
+        ];
+        state.github.left_pane = GitHubLeftPane::Prs;
+
+        let area = Rect::new(0, 0, 60, 12);
+        let row = (area.y..area.y.saturating_add(area.height))
+            .find(|row| github_pr_interaction_at(&state, area, area.x + 2, *row).is_some())
+            .expect("pr row");
+        let index = github_pr_interaction_at(&state, area, area.x + 2, row).expect("index");
+        assert_eq!(index, 0);
+    }
+
+    #[test]
+    fn github_left_pane_renders_prs_list_when_selected() {
+        let mut state = test_state();
+        state.navigation.left_tab = LeftNavTab::Gh;
+        state.github.auth_checked = true;
+        state.github.auth_ok = true;
+        state.github.prs = vec![PullRequest {
+            number: 59,
+            title: "PR list via gh json".to_string(),
+            state: PrState::Open,
+            author: "octocat".to_string(),
+            is_draft: false,
+        }];
+        state.github.left_pane = GitHubLeftPane::Prs;
+
+        let backend = TestBackend::new(60, 12);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| {
+                render_github_left_pane(frame, frame.area(), true, &state.theme, &state);
+            })
+            .expect("draw");
+
+        let content = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(content.contains("PRs · 1"));
+        assert!(content.contains("#59"));
+    }
+
+    #[test]
     fn github_left_pane_renders_issues_and_prs_hub() {
         let mut state = test_state();
         state.navigation.left_tab = LeftNavTab::Gh;
@@ -1066,32 +1272,6 @@ mod tests {
         assert!(content.contains("Issues · 1"));
         assert!(content.contains("PRs"));
         assert!(content.contains("#55"));
-    }
-
-    #[test]
-    fn github_left_pane_shows_prs_placeholder_when_selected() {
-        let mut state = test_state();
-        state.navigation.left_tab = LeftNavTab::Gh;
-        state.github.auth_checked = true;
-        state.github.auth_ok = true;
-        state.github.left_pane = GitHubLeftPane::Prs;
-
-        let backend = TestBackend::new(60, 12);
-        let mut terminal = Terminal::new(backend).expect("terminal");
-        terminal
-            .draw(|frame| {
-                render_github_left_pane(frame, frame.area(), true, &state.theme, &state);
-            })
-            .expect("draw");
-
-        let content = terminal
-            .backend()
-            .buffer()
-            .content
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect::<String>();
-        assert!(content.contains("PR list loads"));
     }
 
     #[test]
