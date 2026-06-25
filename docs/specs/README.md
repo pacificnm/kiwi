@@ -16,10 +16,10 @@ Specifications define behavioral contracts for Kiwi components. Each SPEC is imp
 | [SPEC-008](./SPEC-008-git-service.md) | Git Service | M4 | ADR-010, ADR-011 |
 | [SPEC-009](./SPEC-009-github-service.md) | GitHub Service | M5 | ADR-012 |
 | [SPEC-010](./SPEC-010-agent-service.md) | Agent Service | M2 | ADR-006, ADR-017 |
-| [SPEC-011](./SPEC-011-shell-service.md) | Shell Service | M2 | ADR-006 |
+| [SPEC-011](./SPEC-011-shell-service.md) | Shell Service | M2 | ADR-006, ADR-019 |
 | [SPEC-012](./SPEC-012-diff-viewer.md) | Diff Viewer | M4 | ADR-010 |
 | [SPEC-013](./SPEC-013-command-palette.md) | Command Palette | M2 | ADR-014 |
-| [SPEC-014](./SPEC-014-mouse-support.md) | Mouse Support | M1–M3 | ADR-015 |
+| [SPEC-014](./SPEC-014-mouse-support.md) | Mouse Support | M1–M3 | ADR-015, ADR-019 |
 | [SPEC-015](./SPEC-015-editor-launcher.md) | Editor Launcher | M3 | ADR-013 |
 | [SPEC-016](./SPEC-016-state-management.md) | State Management | M1 | ADR-007 |
 | [SPEC-017](./SPEC-017-workspace-persistence.md) | Workspace Persistence | M6 | ADR-016 |

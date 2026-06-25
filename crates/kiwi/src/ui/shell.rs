@@ -2,6 +2,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::Frame;
 
+use crate::selection::SelectionPane;
 use crate::state::AppState;
 use crate::theme::ThemePalette;
 
@@ -38,6 +39,8 @@ pub fn render_shell_pane(
                 Some("Click or Tab to focus shell")
             },
             footer: None,
+            selection_pane: Some(SelectionPane::Shell),
         },
+        &state.text_selection,
     );
 }

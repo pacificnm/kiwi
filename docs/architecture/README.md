@@ -36,7 +36,7 @@ Kiwi is a single-process Rust application with an event-driven core, a ratatui r
 
 | Layer | Responsibility | Key ADRs |
 |-------|----------------|----------|
-| Presentation | TUI layout, themes, mouse, keyboard | ADR-002, ADR-003, ADR-004, ADR-015 |
+| Presentation | TUI layout, themes, mouse, keyboard, clipboard | ADR-002, ADR-003, ADR-004, ADR-015, ADR-019 |
 | Application | Navigation, command palette, state | ADR-007, ADR-014, ADR-016 |
 | Domain services | Git, GitHub, files, search, agents | ADR-008–ADR-012, ADR-017 |
 | Infrastructure | Config, PTY, file watcher, plugins | ADR-005, ADR-006, ADR-011, ADR-018 |

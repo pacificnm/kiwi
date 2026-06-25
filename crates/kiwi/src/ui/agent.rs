@@ -2,6 +2,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::Frame;
 
+use crate::selection::SelectionPane;
 use crate::state::AppState;
 use crate::theme::ThemePalette;
 
@@ -30,6 +31,8 @@ pub fn render_agent_pane(
             spawn_error: None,
             idle_hint: None,
             footer: state.agent.restart_hint.as_deref(),
+            selection_pane: Some(SelectionPane::Agent),
         },
+        &state.text_selection,
     );
 }

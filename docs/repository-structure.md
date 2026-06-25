@@ -97,7 +97,8 @@ crates/kiwi_tui/
     ├── input/
     │   ├── mod.rs
     │   ├── keyboard.rs
-    │   └── mouse.rs           # SPEC-014
+    │   ├── mouse.rs           # SPEC-014
+    │   └── mouse_clicks.rs    # double-click synthesis
     └── render/
         └── mod.rs
 ```
@@ -119,29 +120,23 @@ If `kiwi_tui` is deferred, use:
 ```text
 crates/kiwi/src/
 ├── main.rs
-├── app/
-│   ├── mod.rs
-│   ├── loop.rs
-│   └── reducer.rs
-├── services/
-│   ├── mod.rs
-│   ├── shell.rs               # SPEC-011
-│   ├── agent.rs               # SPEC-010
-│   ├── git.rs                 # SPEC-008
-│   ├── github.rs              # SPEC-009
-│   ├── search.rs              # SPEC-007
-│   ├── editor.rs              # SPEC-015
-│   ├── files.rs               # SPEC-005
-│   └── watcher.rs             # ADR-011
+├── app.rs                     # event loop, mouse, clipboard wiring
+├── clipboard/                 # ADR-019
+├── selection/                 # ADR-015 in-app text selection
+├── commands/                  # SPEC-013
+├── shell/                     # SPEC-011
+├── agent/                     # SPEC-010
+├── file_tree/                 # SPEC-005
+├── preview/                   # SPEC-006
+├── search/                    # SPEC-007
 ├── ui/
-│   ├── mod.rs
-│   ├── layout.rs
-│   ├── navigation.rs
-│   └── widgets/
-└── util/
-    ├── paths.rs
-    └── pty.rs
+│   ├── mouse.rs               # SPEC-014 hit tests
+│   ├── mouse_clicks.rs        # double-click synthesis
+│   └── …
+└── …
 ```
+
+Older aspirational layout (`app/`, `services/`) may be refactored later; see live tree under `crates/kiwi/src/`.
 
 ## Service Architecture
 

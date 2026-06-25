@@ -28,6 +28,7 @@ Provide read-only file content preview in the main Preview tab for quick inspect
 5. Reload on file watcher event if same file changed.
 6. Status line: path, line count, encoding assumption (UTF-8 with lossy fallback).
 7. `e` opens file in external editor at current line (if line tracking supported).
+8. Copy via `Ctrl+C` or mouse selection + `Ctrl+C` (ADR-019).
 
 ## Non-Functional Requirements
 

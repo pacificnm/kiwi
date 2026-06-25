@@ -10,7 +10,7 @@ use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use crate::state::{AppEvent, EventSender};
 
 use super::debounce::PathDebouncer;
-use super::paths::{should_ignore_watch_path, DEFAULT_DEBOUNCE_MS};
+use super::paths::{should_emit_fs_changed_event, should_ignore_watch_path, DEFAULT_DEBOUNCE_MS};
 
 pub struct RepoWatcher {
     shutdown: Arc<AtomicBool>,
@@ -26,6 +26,9 @@ impl RepoWatcher {
         let mut watcher = RecommendedWatcher::new(
             move |result: Result<notify::Event, notify::Error>| {
                 if let Ok(event) = result {
+                    if !should_emit_fs_changed_event(&event.kind) {
+                        return;
+                    }
                     for path in event.paths {
                         if !should_ignore_watch_path(&path) {
                             let _ = raw_tx.send(path);

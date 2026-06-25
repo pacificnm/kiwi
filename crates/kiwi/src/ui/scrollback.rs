@@ -4,7 +4,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
-use crate::ansi::{ansi_line, pty_base_style};
+use crate::ansi::{ansi_line, pty_base_style, strip_ansi};
+use crate::selection::{line_spans_with_selection, SelectionPane};
 use crate::shell::ScrollbackBuffer;
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
@@ -16,8 +17,10 @@ pub struct ScrollbackPane<'a> {
     pub spawn_error: Option<&'a str>,
     pub idle_hint: Option<&'a str>,
     pub footer: Option<&'a str>,
+    pub selection_pane: Option<SelectionPane>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_scrollback_pane(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -26,6 +29,7 @@ pub fn render_scrollback_pane(
     theme: &ThemePalette,
     hint_style: Style,
     pane: ScrollbackPane<'_>,
+    selection: &crate::selection::TextSelection,
 ) {
     if area.width == 0 || area.height == 0 {
         return;
@@ -79,7 +83,16 @@ pub fn render_scrollback_pane(
     }
 
     for (row, line) in lines.iter().enumerate().take(visible_height) {
-        render_pty_line(frame, inner, row, line, max_width);
+        render_pty_line(
+            frame,
+            inner,
+            row,
+            line,
+            max_width,
+            pane.selection_pane,
+            selection,
+            theme,
+        );
     }
 
     if let Some(footer) = pane.footer {
@@ -93,7 +106,17 @@ pub fn render_scrollback_pane(
     }
 }
 
-fn render_pty_line(frame: &mut Frame<'_>, inner: Rect, row: usize, text: &str, max_width: usize) {
+#[allow(clippy::too_many_arguments)]
+fn render_pty_line(
+    frame: &mut Frame<'_>,
+    inner: Rect,
+    row: usize,
+    text: &str,
+    max_width: usize,
+    selection_pane: Option<SelectionPane>,
+    selection: &crate::selection::TextSelection,
+    theme: &ThemePalette,
+) {
     if row >= inner.height as usize {
         return;
     }
@@ -105,6 +128,28 @@ fn render_pty_line(frame: &mut Frame<'_>, inner: Rect, row: usize, text: &str, m
         height: 1,
     };
     frame.render_widget(Clear, row_area);
+
+    if let Some(pane) = selection_pane {
+        if selection.applies_to(pane) {
+            let plain = strip_ansi(text);
+            let truncated = if plain.chars().count() > max_width {
+                plain.chars().take(max_width).collect::<String>()
+            } else {
+                plain
+            };
+            let line = line_spans_with_selection(
+                &truncated,
+                row,
+                pane,
+                selection,
+                pty_base_style(),
+                theme,
+            );
+            frame.render_widget(Paragraph::new(line), row_area);
+            return;
+        }
+    }
+
     frame.render_widget(
         Paragraph::new(ansi_line(text, max_width)).style(pty_base_style()),
         row_area,

@@ -2,19 +2,23 @@
 
 ## Purpose
 
-Implement configurable mouse interactions per ADR-015 without breaking terminal text selection.
+Implement configurable mouse interactions per ADR-015 without breaking terminal-native text selection.
 
 ## Scope
 
 ### In scope
 
-- Click, scroll, focus, paste routing
+- Click, focus, tab switching, list/tree selection
+- Double-click preview from Files tree and Search results
+- In-app text selection (left drag) in Preview, Agent, Shell
 - crossterm mouse capture
+- Shift+mouse passthrough for terminal selection
 
 ### Out of scope
 
-- In-app text selection
 - Drag resize
+- Right-click context menus (planned)
+- Native double-click events (synthesized via click timing)
 
 ## Functional Requirements
 
@@ -22,33 +26,46 @@ Implement configurable mouse interactions per ADR-015 without breaking terminal 
 2. `mode = "hybrid"`: handle clicks and scroll in Kiwi regions; shift+selection handled by terminal.
 3. `mode = "disabled"`: no mouse capture.
 4. Map click coordinates to widget via layout rects: tabs, lists, panes.
-5. Wheel scroll: adjust scroll offset of focused scrollable under cursor (or focused pane if not hit).
-6. Double-click file in tree: open editor.
-7. Middle-click paste: send to focused input (shell, palette, agent).
+5. Wheel scroll: adjust scroll offset of focused scrollable under cursor (or focused pane if not hit) — partial implementation.
+6. **Single click** on file tree or search row: select row.
+7. **Double click** (500ms, same target) on file tree file or search result: open Preview tab (`Enter` / `p` keyboard equivalents); double-click directory expands.
+8. **Left drag** in Preview, Agent, or Shell: text selection for clipboard copy (ADR-019).
+9. Middle-click / `Event::Paste`: route to focused input (shell, palette, agent) per ADR-019.
 
 ## Non-Functional Requirements
 
 - Hit test < 1ms
-- No duplicate click events
+- Double-click tracker clears after successful double-click
 
 ## Data Structures
 
 ```rust
-struct MouseState {
-    enabled: bool,
-    mode: MouseMode,
-    last_click: Option<(Instant, RectId)>,
+struct DoubleClickTracker {
+    last: Option<(DoubleClickTarget, Instant)>,
 }
 
-enum MouseMode { Hybrid, Disabled }
+enum DoubleClickTarget {
+    FileTree(PathBuf),
+    SearchResult(usize),
+}
+
+struct TextSelection {
+    pane: Option<SelectionPane>,
+    anchor: TextPosition,
+    cursor: TextPosition,
+    dragging: bool,
+}
 ```
 
 ## Events / Commands
 
 ```rust
-// Crossterm → translated
-AppEvent::MouseClick { x, y, button }
-AppEvent::MouseScroll { x, y, delta }
+AppCommand::SelectionBegin { pane, line, col }
+AppCommand::SelectionExtend { line, col }
+AppCommand::SelectionEnd
+AppCommand::SelectionClear
+// Crossterm → app loop
+Event::Mouse(MouseEvent)
 ```
 
 ## Configuration Options
@@ -66,8 +83,13 @@ mode = "hybrid"
 
 ## Acceptance Criteria
 
-- [ ] Click switches tabs
+- [x] Click switches tabs and moves focus
+- [x] Single click selects file tree row
+- [x] Single click selects search result row
+- [x] Double-click file opens Preview tab
+- [x] Double-click search result opens Preview at line (content hits)
+- [x] Left drag highlights text in Preview, Agent, Shell
+- [x] Shift+drag not captured by Kiwi (terminal selection)
 - [ ] Wheel scrolls file tree when over left panel
-- [ ] Double-click opens editor
-- [ ] Mouse disabled via config
-- [ ] Terminal shift+drag selection still copies text from PTY
+- [x] Mouse disabled via config
+- [ ] Terminal shift+drag selection still copies text from PTY (manual terminal check)

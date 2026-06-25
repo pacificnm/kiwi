@@ -25,8 +25,9 @@ Enable file name and content search across the repository with results navigable
 4. **Content search**: run `rg --json` or `rg -n` if json unavailable; stream results.
 5. Debounce input 200ms before search execution.
 6. `Enter` on result: open Preview; `e` open editor; content results jump to line.
-7. `Esc` clear query.
-8. Cancel previous search when query changes.
+7. Double-click result row: open Preview (same as `Enter`; ADR-015).
+8. `Esc` clear query.
+9. Cancel previous search when query changes.
 
 ## Non-Functional Requirements
 
@@ -89,4 +90,5 @@ debounce_ms = 200
 - [x] Content search finds string in repo
 - [x] Debounce prevents search storm while typing
 - [x] Selection opens correct file/line
+- [x] Double-click result opens Preview at file/line
 - [x] Ignore dirs excluded from file search

@@ -26,6 +26,8 @@ Embed an interactive user shell in the bottom-right pane for commands, git opera
 5. Scrollback 10_000 lines; scroll when shell focused.
 6. Resize PTY on layout change.
 7. Click shell pane focuses shell (mouse).
+8. `Ctrl+V` and `Event::Paste` paste into PTY via ADR-019 (`pty_paste_bytes`).
+9. `Ctrl+C` interrupts when no shell text selection; copies when selection highlighted.
 
 ## Non-Functional Requirements
 
@@ -70,6 +72,7 @@ args = ["-l"]    # login shell optional
 
 - [x] bash/zsh interactive prompt works (prompt visible; `-i` for bash)
 - [ ] `git commit`, `npm test` run successfully (manual verification)
-- [x] Ctrl+C interrupts running command (shell focus)
-- [ ] Paste multi-line script works with bracketed paste
+- [x] Ctrl+C interrupts running command (shell focus, no selection)
+- [x] Ctrl+V pastes single-line text into shell
+- [ ] Paste multi-line script works with bracketed paste (manual verification)
 - [x] Focus indicator shows when shell active (accent border)

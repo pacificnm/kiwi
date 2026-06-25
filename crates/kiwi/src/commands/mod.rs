@@ -1,6 +1,7 @@
 mod fuzzy;
 mod registry;
 
+use crate::clipboard::resolve_copy_text_for_focus;
 use crate::editor::resolve_editor_target;
 use crate::navigation::{MainTab, NavCommand};
 use crate::state::{AppState, SideEffect};
@@ -27,6 +28,9 @@ pub enum PaletteAction {
     Navigation(NavCommand),
     NavigationChain(&'static [NavCommand]),
     LaunchEditor,
+    ClipboardCopy,
+    ClipboardCut,
+    ClipboardPaste,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,6 +102,17 @@ pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideE
         return Vec::new();
     }
 
+    let palette_clipboard_text = match command.action {
+        PaletteAction::ClipboardCopy | PaletteAction::ClipboardCut if state.palette.open => {
+            if state.palette.input.is_empty() {
+                resolve_copy_text_for_focus(state, state.palette.focus_before_open)
+            } else {
+                Some(state.palette.input.clone())
+            }
+        }
+        _ => None,
+    };
+
     state.palette.record_history(command.id);
     state.palette.close(&mut state.navigation.focus);
 
@@ -133,6 +148,16 @@ pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideE
                 line: target.line,
             }]
         }
+        PaletteAction::ClipboardCopy => {
+            clipboard_palette_effects_from_text(state, palette_clipboard_text, true)
+        }
+        PaletteAction::ClipboardCut => {
+            clipboard_palette_effects_from_text(state, palette_clipboard_text, false)
+        }
+        PaletteAction::ClipboardPaste => {
+            state.dirty = true;
+            vec![SideEffect::PasteFromClipboard]
+        }
     };
 
     if state.config.workspace.persist {
@@ -160,6 +185,29 @@ fn apply_navigation_chain(state: &mut AppState, chain: &[NavCommand]) -> Vec<Sid
         state.dirty = true;
     }
     crate::state::agent_spawn_effects_if_needed(state)
+}
+
+fn clipboard_palette_effects_from_text(
+    state: &mut AppState,
+    text: Option<String>,
+    copy_only: bool,
+) -> Vec<SideEffect> {
+    let Some(text) = text.filter(|value| !value.is_empty()) else {
+        state.notifications.show_toast(if copy_only {
+            "Nothing to copy"
+        } else {
+            "Nothing to cut"
+        });
+        state.dirty = true;
+        return Vec::new();
+    };
+
+    if !copy_only {
+        refresh_matches(state);
+    }
+
+    state.dirty = true;
+    vec![SideEffect::CopyToClipboard(text)]
 }
 
 #[cfg(test)]

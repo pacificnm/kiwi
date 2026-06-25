@@ -12,6 +12,7 @@ use ratatui::Terminal;
 
 use crate::agent::{AgentOutputReader, AgentSession};
 use crate::bootstrap::StartupContext;
+use crate::clipboard::{clipboard_op_from_key, clipboard_shortcut_allowed, ClipboardOp, ClipboardService};
 use crate::editor::{
     launch_gui_editor, prepare_editor_launch, resolve_editor_target, run_terminal_editor,
     EditorLaunchMode,
@@ -21,6 +22,7 @@ use crate::layout::{agent_pty_size, shell_pty_size, FocusTarget};
 use crate::navigation::{map_key, LeftNavTab, MainTab, NavCommand};
 use crate::preview::spawn_preview_load;
 use crate::search::{spawn_search, DebounceTimer, SearchCancelHandle, SearchJob, SearchMode};
+use crate::selection::{hit_test_text, SelectionPane};
 use crate::shell::{encode_key, ShellOutputReader, ShellSession};
 use crate::shutdown;
 use crate::state::{
@@ -28,7 +30,8 @@ use crate::state::{
 };
 use crate::ui::{
     draw_frame, file_tree_interaction_at, map_mouse_click, mouse_interactions_enabled,
-    palette_match_at, search_interaction_at, FileTreeMouseAction,
+    palette_match_at, search_interaction_at, DoubleClickTarget, DoubleClickTracker,
+    FileTreeMouseAction,
 };
 use crate::watcher::RepoWatcher;
 use crate::workspace::{load_palette_history, save_palette_history};
@@ -49,11 +52,12 @@ pub struct App {
     agent: Option<AgentSession>,
     agent_io: Option<AgentOutputReader>,
     last_shell_interrupt: Option<Instant>,
-    last_agent_interrupt: Option<Instant>,
     search_debounce: DebounceTimer,
     search_cancel: SearchCancelHandle,
     search_live_generation: Arc<AtomicU64>,
     pending_editor_launch: Option<PendingEditorLaunch>,
+    clipboard: ClipboardService,
+    double_click: DoubleClickTracker,
     _repo_watcher: Option<RepoWatcher>,
 }
 
@@ -115,11 +119,12 @@ impl App {
             agent: None,
             agent_io: None,
             last_shell_interrupt: None,
-            last_agent_interrupt: None,
             search_debounce: DebounceTimer::default(),
             search_cancel: SearchCancelHandle::default(),
             search_live_generation: Arc::new(AtomicU64::new(0)),
             pending_editor_launch: None,
+            clipboard: ClipboardService::new(),
+            double_click: DoubleClickTracker::default(),
             _repo_watcher: repo_watcher,
         };
         let spawn_effects = agent_spawn_effects_if_needed(&mut app.state);
@@ -462,6 +467,25 @@ impl App {
                         self.search_cancel.clone(),
                     );
                 }
+                SideEffect::CopyToClipboard(text) => {
+                    if let Err(err) = self.clipboard.write_text(&text) {
+                        self.state
+                            .notifications
+                            .show_toast(format!("Copy failed: {err}"));
+                        self.state.dirty = true;
+                    }
+                }
+                SideEffect::PasteFromClipboard => match self.clipboard.read_text() {
+                    Ok(text) => {
+                        let _ = self.dispatch(AppEvent::Command(AppCommand::PasteText(text)));
+                    }
+                    Err(err) => {
+                        self.state
+                            .notifications
+                            .show_toast(format!("Paste failed: {err}"));
+                        self.state.dirty = true;
+                    }
+                },
             }
         }
         false
@@ -479,6 +503,7 @@ impl App {
                 self.handle_key(key)
             }
             Event::Mouse(mouse) => self.handle_mouse(mouse),
+            Event::Paste(text) => self.dispatch(AppEvent::Command(AppCommand::PasteText(text))),
             _ => false,
         }
     }
@@ -492,10 +517,70 @@ impl App {
             return false;
         }
 
-        if !matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
+        match mouse.kind {
+            MouseEventKind::Down(MouseButton::Left) => self.handle_mouse_left_down(mouse),
+            MouseEventKind::Drag(MouseButton::Left) => self.handle_mouse_left_drag(mouse),
+            MouseEventKind::Up(MouseButton::Left) => {
+                self.dispatch(AppEvent::Command(AppCommand::SelectionEnd))
+            }
+            _ => false,
+        }
+    }
+
+    fn handle_mouse_left_down(&mut self, mouse: MouseEvent) -> bool {
+        if let Some((pane, pos)) = hit_test_text(&self.state, mouse.column, mouse.row) {
+            self.apply_selection_focus(pane);
+            return self.dispatch(AppEvent::Command(AppCommand::SelectionBegin {
+                pane,
+                line: pos.line,
+                col: pos.col,
+            }));
+        }
+
+        let _ = self.dispatch(AppEvent::Command(AppCommand::SelectionClear));
+        self.handle_mouse_click(mouse)
+    }
+
+    fn handle_mouse_left_drag(&mut self, mouse: MouseEvent) -> bool {
+        if !self.state.text_selection.dragging {
             return false;
         }
 
+        let Some(active_pane) = self.state.text_selection.pane else {
+            return false;
+        };
+
+        if let Some((pane, pos)) = hit_test_text(&self.state, mouse.column, mouse.row) {
+            if pane == active_pane {
+                return self.dispatch(AppEvent::Command(AppCommand::SelectionExtend {
+                    line: pos.line,
+                    col: pos.col,
+                }));
+            }
+        }
+
+        false
+    }
+
+    fn apply_selection_focus(&mut self, pane: SelectionPane) {
+        let commands = match pane {
+            SelectionPane::Preview => vec![
+                NavCommand::SelectMainTab(MainTab::Preview),
+                NavCommand::SetFocus(FocusTarget::Main),
+            ],
+            SelectionPane::Agent => vec![
+                NavCommand::SelectMainTab(MainTab::Agent),
+                NavCommand::SetFocus(FocusTarget::Main),
+            ],
+            SelectionPane::Shell => vec![NavCommand::SetFocus(FocusTarget::Shell)],
+        };
+
+        for command in commands {
+            let _ = self.dispatch(AppEvent::Command(AppCommand::Navigation(command)));
+        }
+    }
+
+    fn handle_mouse_click(&mut self, mouse: MouseEvent) -> bool {
         if let Some(match_index) = palette_match_at(
             &self.state,
             self.state.layout.rects.palette,
@@ -519,6 +604,9 @@ impl App {
                 )));
                 return match action {
                     FileTreeMouseAction::Select(path) => {
+                        if self.double_click.register(DoubleClickTarget::FileTree(path.clone())) {
+                            return self.dispatch_file_tree_open(path);
+                        }
                         self.dispatch(AppEvent::Command(AppCommand::FileTreeSelect(path)))
                     }
                     FileTreeMouseAction::Expand(path) => {
@@ -541,6 +629,13 @@ impl App {
                 let _ = self.dispatch(AppEvent::Command(AppCommand::Navigation(
                     crate::navigation::NavCommand::SetFocus(FocusTarget::Left),
                 )));
+                if self
+                    .double_click
+                    .register(DoubleClickTarget::SearchResult(index))
+                {
+                    let _ = self.dispatch(AppEvent::Command(AppCommand::SearchSelect(index)));
+                    return self.dispatch_preview_for_search_index(index);
+                }
                 return self.dispatch(AppEvent::Command(AppCommand::SearchSelect(index)));
             }
         }
@@ -572,6 +667,18 @@ impl App {
 
         if self.is_search_focus_key(key) {
             return self.dispatch_search_focus();
+        }
+
+        if let Some(op) = clipboard_op_from_key(key) {
+            let shell_focused =
+                self.state.navigation.focus == FocusTarget::Shell && self.state.shell.running;
+            let shell_has_selection = self
+                .state
+                .text_selection
+                .applies_to(SelectionPane::Shell);
+            if clipboard_shortcut_allowed(op, shell_focused, shell_has_selection) {
+                return self.dispatch_clipboard_op(op);
+            }
         }
 
         if self.state.palette.open {
@@ -620,6 +727,15 @@ impl App {
         }
 
         false
+    }
+
+    fn dispatch_clipboard_op(&mut self, op: ClipboardOp) -> bool {
+        let command = match op {
+            ClipboardOp::Copy => AppCommand::ClipboardCopy,
+            ClipboardOp::Cut => AppCommand::ClipboardCut,
+            ClipboardOp::Paste => AppCommand::ClipboardPaste,
+        };
+        self.dispatch(AppEvent::Command(command))
     }
 
     fn is_focus_cycle_key(&self, key: crossterm::event::KeyEvent) -> bool {
@@ -702,14 +818,34 @@ impl App {
             && matches!(key.code, KeyCode::Char('m' | 'M') | KeyCode::Enter)
     }
 
-    fn dispatch_preview_from_search_selection(&mut self) -> bool {
-        let Some(result) = self.state.search.results.get(self.state.search.selected) else {
+    fn dispatch_preview_for_search_index(&mut self, index: usize) -> bool {
+        let Some(result) = self.state.search.results.get(index) else {
             return false;
         };
         self.dispatch(AppEvent::Command(AppCommand::PreviewFile {
             path: result.path.clone(),
             line: result.line,
         }))
+    }
+
+    fn dispatch_file_tree_open(&mut self, path: PathBuf) -> bool {
+        let Some(node) = self.state.file_tree.nodes.get(&path) else {
+            return false;
+        };
+
+        if node.is_dir {
+            return self.dispatch(AppEvent::Command(AppCommand::FileTreeExpand(path)));
+        }
+
+        let _ = self.dispatch(AppEvent::Command(AppCommand::FileTreeSelect(path.clone())));
+        self.dispatch(AppEvent::Command(AppCommand::PreviewFile {
+            path,
+            line: None,
+        }))
+    }
+
+    fn dispatch_preview_from_search_selection(&mut self) -> bool {
+        self.dispatch_preview_for_search_index(self.state.search.selected)
     }
 
     fn dispatch_search_focus(&mut self) -> bool {
@@ -841,7 +977,6 @@ impl App {
 
     fn is_global_quit(&self, key: crossterm::event::KeyEvent) -> bool {
         matches!(key.code, KeyCode::Char('q'))
-            || (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL))
     }
 
     fn agent_input_active(&self) -> bool {
@@ -851,21 +986,6 @@ impl App {
     }
 
     fn handle_agent_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
-        if key.modifiers.contains(KeyModifiers::CONTROL)
-            && matches!(key.code, KeyCode::Char('c' | 'C'))
-        {
-            let now = Instant::now();
-            if self
-                .last_agent_interrupt
-                .is_some_and(|earlier| now.duration_since(earlier) <= SHELL_FORCE_QUIT_WINDOW)
-            {
-                return self.dispatch(AppEvent::Command(AppCommand::Quit));
-            }
-            self.last_agent_interrupt = Some(now);
-        } else {
-            self.last_agent_interrupt = None;
-        }
-
         match key.code {
             KeyCode::PageUp => self.dispatch(AppEvent::Command(AppCommand::AgentScroll(-1))),
             KeyCode::PageDown => self.dispatch(AppEvent::Command(AppCommand::AgentScroll(1))),
@@ -1034,6 +1154,33 @@ mod tests {
         };
         assert!(!app.dispatch_key(key));
 
+        let letter = KeyEvent {
+            code: KeyCode::Char('a'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        };
+        assert!(!app.dispatch_key(letter));
+    }
+
+    #[test]
+    fn agent_focus_ctrl_c_does_not_quit() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+        use crate::layout::FocusTarget;
+        use crate::navigation::{MainTab, NavCommand};
+        use crate::state::AppCommand;
+
+        let mut app = App::new(test_context());
+        app.state_mut().navigation.main_tab = MainTab::Agent;
+        app.state_mut().agent.running = true;
+        app.event_sender()
+            .send(AppEvent::Command(AppCommand::Navigation(
+                NavCommand::SetFocus(FocusTarget::Main),
+            )))
+            .expect("send");
+        app.process_pending_events();
+
         let ctrl_c = KeyEvent {
             code: KeyCode::Char('c'),
             modifiers: KeyModifiers::CONTROL,
@@ -1041,7 +1188,6 @@ mod tests {
             state: KeyEventState::NONE,
         };
         assert!(!app.dispatch_key(ctrl_c));
-        assert!(app.dispatch_key(ctrl_c));
     }
 
     #[test]
@@ -1295,6 +1441,104 @@ mod tests {
         };
         assert!(!app.dispatch_key(key));
         assert_eq!(app.state().file_tree.selected, Some(root.join("src")));
+    }
+
+    #[test]
+    fn double_click_file_tree_file_opens_preview_tab() {
+        use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+
+        use crate::file_tree::DirectoryEntry;
+        use crate::navigation::{LeftNavTab, MainTab, NavCommand};
+        use crate::state::{AppCommand, AppEvent};
+
+        let mut app = App::new(test_context());
+        let root = app.state().file_tree.root.clone();
+        app.event_sender()
+            .send(AppEvent::Command(AppCommand::Navigation(
+                NavCommand::SelectLeftTab(LeftNavTab::Files),
+            )))
+            .expect("send");
+        app.event_sender()
+            .send(AppEvent::Command(AppCommand::FileTreeExpand(root.clone())))
+            .expect("send");
+        app.event_sender()
+            .send(AppEvent::FileTreeChildrenLoaded {
+                parent: root.clone(),
+                children: vec![DirectoryEntry {
+                    path: root.join("README.md"),
+                    name: "README.md".to_string(),
+                    is_dir: false,
+                }],
+                error: None,
+            })
+            .expect("send");
+        app.process_pending_events();
+
+        let area = app.state().layout.rects.left_content;
+        let row = area.y + 2;
+        let mouse = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: area.x + 4,
+            row,
+            modifiers: KeyModifiers::empty(),
+        };
+
+        app.dispatch_mouse(mouse);
+        app.dispatch_mouse(mouse);
+        assert_eq!(app.state().navigation.main_tab, MainTab::Preview);
+        assert_eq!(app.state().file_tree.selected, Some(root.join("README.md")));
+        assert_eq!(app.state().preview.path, Some(root.join("README.md")));
+    }
+
+    #[test]
+    fn double_click_search_result_opens_preview_tab() {
+        use std::path::PathBuf;
+
+        use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+
+        use crate::navigation::{LeftNavTab, MainTab, NavCommand};
+        use crate::search::{SearchMode, SearchResult, SearchState};
+        use crate::state::{AppCommand, AppEvent};
+
+        let mut app = App::new(test_context());
+        app.state_mut().search = SearchState {
+            mode: SearchMode::Content,
+            query: "main".to_string(),
+            results: vec![SearchResult::content(
+                PathBuf::from("src/main.rs"),
+                12,
+                "fn main()".to_string(),
+            )],
+            ..SearchState::default()
+        };
+        app.event_sender()
+            .send(AppEvent::Command(AppCommand::Navigation(
+                NavCommand::SelectLeftTab(LeftNavTab::Search),
+            )))
+            .expect("send");
+        app.process_pending_events();
+
+        let area = app.state().layout.rects.left_content;
+        let row = (area.y..area.y.saturating_add(area.height))
+            .find(|row| {
+                crate::ui::search_interaction_at(app.state(), area, area.x + 2, *row) == Some(0)
+            })
+            .expect("search result row");
+        let mouse = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: area.x + 2,
+            row,
+            modifiers: KeyModifiers::empty(),
+        };
+
+        app.dispatch_mouse(mouse);
+        app.dispatch_mouse(mouse);
+        assert_eq!(app.state().navigation.main_tab, MainTab::Preview);
+        assert_eq!(
+            app.state().preview.path,
+            Some(PathBuf::from("src/main.rs"))
+        );
+        assert_eq!(app.state().search.selected, 0);
     }
 }
 

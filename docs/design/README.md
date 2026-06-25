@@ -10,7 +10,7 @@ UX and interaction design for Kiwi. These documents describe how the product sho
 | [navigation.md](./navigation.md) | Tab model, focus, and pane behavior |
 | [../development/pty-panes.md](../development/pty-panes.md) | Agent and shell PTY focus, scrollback, quit |
 | [themes.md](./themes.md) | Visual design, colors, and built-in themes |
-| [mouse-interaction.md](./mouse-interaction.md) | Mouse affordances and terminal selection |
+| [mouse-interaction.md](./mouse-interaction.md) | Mouse affordances, double-click preview, in-app selection |
 | [keyboard-shortcuts.md](./keyboard-shortcuts.md) | Default keybindings reference |
 | [workflows.md](./workflows.md) | Issue-driven, AI-driven, and traditional flows |
 

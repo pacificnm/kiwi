@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use crate::agent::infer_status_from_scrollback;
+use crate::clipboard::{resolve_copy_text, PasteTarget};
 use crate::commands::{execute_command, history_input_for_id, refresh_matches};
 use crate::file_tree::ExpandAction;
 use crate::git::GitFileEntry;
@@ -92,6 +93,16 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         AppCommand::SearchSelect(index) => reduce_search_select(state, index),
         AppCommand::OpenEditor { path, line } => reduce_open_editor(state, path, line),
         AppCommand::ModalDismiss => reduce_modal_dismiss(state),
+        AppCommand::ClipboardCopy => reduce_clipboard_copy(state),
+        AppCommand::ClipboardCut => reduce_clipboard_cut(state),
+        AppCommand::ClipboardPaste => reduce_clipboard_paste(state),
+        AppCommand::PasteText(text) => reduce_paste_text(state, text),
+        AppCommand::SelectionBegin { pane, line, col } => {
+            reduce_selection_begin(state, pane, line, col)
+        }
+        AppCommand::SelectionExtend { line, col } => reduce_selection_extend(state, line, col),
+        AppCommand::SelectionEnd => reduce_selection_end(state),
+        AppCommand::SelectionClear => reduce_selection_clear(state),
     }
 }
 
@@ -629,6 +640,119 @@ fn reduce_editor_launch_failed(
     Vec::new()
 }
 
+fn reduce_clipboard_copy(state: &mut AppState) -> Vec<SideEffect> {
+    let Some(text) = resolve_copy_text(state) else {
+        state.notifications.show_toast("Nothing to copy");
+        state.dirty = true;
+        return Vec::new();
+    };
+
+    state.dirty = true;
+    vec![SideEffect::CopyToClipboard(text)]
+}
+
+fn reduce_clipboard_cut(state: &mut AppState) -> Vec<SideEffect> {
+    let Some(text) = resolve_copy_text(state) else {
+        state.notifications.show_toast("Nothing to cut");
+        state.dirty = true;
+        return Vec::new();
+    };
+
+    apply_cut_mutation(state);
+    state.dirty = true;
+    vec![SideEffect::CopyToClipboard(text)]
+}
+
+fn reduce_clipboard_paste(state: &mut AppState) -> Vec<SideEffect> {
+    state.dirty = true;
+    vec![SideEffect::PasteFromClipboard]
+}
+
+fn reduce_paste_text(state: &mut AppState, text: String) -> Vec<SideEffect> {
+    if text.is_empty() {
+        return Vec::new();
+    }
+
+    state.dirty = true;
+    match crate::clipboard::resolve_paste_target(state) {
+        PasteTarget::PaletteInput => {
+            state.palette.history_cursor = None;
+            state.palette.input.push_str(&text);
+            refresh_matches(state);
+            Vec::new()
+        }
+        PasteTarget::SearchQuery => {
+            let mut query = state.search.query.clone();
+            query.push_str(&text);
+            reduce_search_set_query(state, query)
+        }
+        PasteTarget::ShellPty => vec![SideEffect::WriteShell(crate::clipboard::pty_paste_bytes(
+            &text,
+        ))],
+        PasteTarget::AgentPty => vec![SideEffect::WriteAgent(crate::clipboard::pty_paste_bytes(
+            &text,
+        ))],
+        PasteTarget::Unsupported => {
+            state
+                .notifications
+                .show_toast("Paste is not supported in this pane");
+            Vec::new()
+        }
+    }
+}
+
+fn reduce_selection_begin(
+    state: &mut AppState,
+    pane: crate::selection::SelectionPane,
+    line: usize,
+    col: usize,
+) -> Vec<SideEffect> {
+    state
+        .text_selection
+        .begin(pane, crate::selection::TextPosition { line, col });
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_selection_extend(state: &mut AppState, line: usize, col: usize) -> Vec<SideEffect> {
+    if state.text_selection.dragging {
+        state
+            .text_selection
+            .extend(crate::selection::TextPosition { line, col });
+        state.dirty = true;
+    }
+    Vec::new()
+}
+
+fn reduce_selection_end(state: &mut AppState) -> Vec<SideEffect> {
+    state.text_selection.end_drag();
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_selection_clear(state: &mut AppState) -> Vec<SideEffect> {
+    if state.text_selection.pane.is_some() {
+        state.text_selection.clear();
+        state.dirty = true;
+    }
+    Vec::new()
+}
+
+fn apply_cut_mutation(state: &mut AppState) {
+    if state.palette.open {
+        state.palette.input.clear();
+        refresh_matches(state);
+        return;
+    }
+
+    if state.navigation.focus == FocusTarget::Left
+        && state.navigation.left_tab == LeftNavTab::Search
+        && state.search.results.is_empty()
+    {
+        state.search.query.clear();
+    }
+}
+
 fn reduce_fs_changed(state: &mut AppState, paths: Vec<PathBuf>) -> Vec<SideEffect> {
     let Some(preview_path) = state.preview.path.clone() else {
         return Vec::new();
@@ -642,9 +766,26 @@ fn reduce_fs_changed(state: &mut AppState, paths: Vec<PathBuf>) -> Vec<SideEffec
         return Vec::new();
     }
 
+    if preview_file_unchanged(&preview_path, state.preview.loaded_mtime) {
+        return Vec::new();
+    }
+
     state.preview.begin_reload();
     state.dirty = true;
     vec![SideEffect::LoadPreviewFile(preview_path)]
+}
+
+fn preview_file_unchanged(
+    path: &std::path::Path,
+    loaded_mtime: Option<std::time::SystemTime>,
+) -> bool {
+    let Some(loaded_mtime) = loaded_mtime else {
+        return false;
+    };
+    std::fs::metadata(path)
+        .ok()
+        .and_then(|metadata| metadata.modified().ok())
+        .is_some_and(|modified| modified == loaded_mtime)
 }
 
 #[cfg(test)]
@@ -694,6 +835,7 @@ mod tests {
             notifications: crate::state::domains::NotificationState::default(),
             status_bar: StatusBarState::default(),
             workspace_meta: WorkspaceMeta::default(),
+            text_selection: crate::selection::TextSelection::default(),
         }
     }
 
@@ -1217,6 +1359,7 @@ mod tests {
                     binary: false,
                     lossy_utf8: false,
                     file_size: 5,
+                    modified_at: None,
                     error: None,
                 },
             },
@@ -1247,6 +1390,7 @@ mod tests {
                     binary: false,
                     lossy_utf8: false,
                     file_size: 1,
+                    modified_at: None,
                     error: None,
                 },
             },
@@ -1402,6 +1546,101 @@ mod tests {
     }
 
     #[test]
+    fn clipboard_paste_into_agent_emits_write_side_effect() {
+        let mut state = test_state();
+        state.agent.running = true;
+        state
+            .navigation
+            .apply(NavCommand::SelectMainTab(MainTab::Agent));
+        state
+            .navigation
+            .apply(NavCommand::SetFocus(FocusTarget::Main));
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PasteText("hello".to_string())),
+        );
+        assert!(effects.iter().any(|effect| {
+            matches!(
+                effect,
+                SideEffect::WriteAgent(bytes) if bytes == b"hello"
+            )
+        }));
+    }
+
+    #[test]
+    fn clipboard_paste_multiline_into_agent_uses_bracketed_paste() {
+        let mut state = test_state();
+        state.agent.running = true;
+        state
+            .navigation
+            .apply(NavCommand::SelectMainTab(MainTab::Agent));
+        state
+            .navigation
+            .apply(NavCommand::SetFocus(FocusTarget::Main));
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PasteText("line\n".to_string())),
+        );
+        assert!(effects.iter().any(|effect| {
+            matches!(
+                effect,
+                SideEffect::WriteAgent(bytes) if bytes.starts_with(b"\x1b[200~")
+            )
+        }));
+    }
+
+    #[test]
+    fn clipboard_copy_prefers_mouse_selection() {
+        use crate::selection::{SelectionPane, TextPosition, TextSelection};
+
+        let mut state = test_state();
+        state.preview.lines = vec!["selected text".to_string()];
+        state.text_selection = TextSelection {
+            pane: Some(SelectionPane::Preview),
+            anchor: TextPosition { line: 0, col: 0 },
+            cursor: TextPosition { line: 0, col: 8 },
+            dragging: false,
+        };
+        state
+            .navigation
+            .apply(NavCommand::SelectMainTab(MainTab::Preview));
+
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::ClipboardCopy));
+        assert!(effects.contains(&SideEffect::CopyToClipboard("selected".to_string())));
+    }
+
+    #[test]
+    fn clipboard_copy_emits_side_effect_for_preview_line() {
+        let mut state = test_state();
+        state.preview.lines = vec!["line one".to_string()];
+        state
+            .navigation
+            .apply(NavCommand::SelectMainTab(MainTab::Preview));
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::ClipboardCopy));
+        assert!(effects.contains(&SideEffect::CopyToClipboard("line one".to_string())));
+    }
+
+    #[test]
+    fn clipboard_paste_into_search_query_schedules_search() {
+        let mut state = test_state();
+        state
+            .navigation
+            .apply(NavCommand::SetFocus(FocusTarget::Left));
+        state
+            .navigation
+            .apply(NavCommand::SelectLeftTab(LeftNavTab::Search));
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PasteText("main".to_string())),
+        );
+        assert_eq!(state.search.query, "main");
+        assert!(state.search.debounce_scheduled);
+        assert!(effects
+            .iter()
+            .any(|effect| matches!(effect, SideEffect::CancelSearch)));
+    }
+
+    #[test]
     fn fs_changed_reloads_matching_preview_file() {
         let mut state = test_state();
         let path = PathBuf::from("/tmp/repo/src/main.rs");
@@ -1421,6 +1660,52 @@ mod tests {
         assert!(state.preview.preserve_scroll_on_load);
         assert_eq!(state.preview.scroll_offset, 5);
         assert_eq!(state.navigation.main_tab, MainTab::Agent);
+    }
+
+    #[test]
+    fn fs_changed_skips_reload_when_mtime_unchanged() {
+        use std::fs;
+        use std::time::SystemTime;
+
+        let temp = std::env::temp_dir().join(format!("kiwi-fs-changed-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp);
+        fs::create_dir_all(&temp).expect("mkdir");
+        let file = temp.join("main.rs");
+        fs::write(&file, "unchanged").expect("write");
+        let mtime = fs::metadata(&file).expect("metadata").modified().ok();
+
+        let mut state = test_state();
+        state.preview.path = Some(file.clone());
+        state.preview.lines = vec!["unchanged".to_string()];
+        state.preview.loaded_mtime = mtime;
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::FsChanged {
+                paths: vec![file.clone()],
+            },
+        );
+
+        assert!(effects.is_empty());
+        assert!(!state.preview.loading);
+
+        fs::write(&file, "changed").expect("rewrite");
+        // Ensure mtime advances on platforms with coarse timestamps.
+        if let Ok(updated) = fs::metadata(&file).and_then(|metadata| metadata.modified()) {
+            if updated == mtime.unwrap_or(SystemTime::UNIX_EPOCH) {
+                std::thread::sleep(std::time::Duration::from_millis(1100));
+            }
+        }
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::FsChanged {
+                paths: vec![file.clone()],
+            },
+        );
+
+        assert!(effects.contains(&SideEffect::LoadPreviewFile(file)));
+        let _ = fs::remove_dir_all(temp);
     }
 
     #[test]

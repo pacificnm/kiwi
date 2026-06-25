@@ -4,6 +4,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
+use crate::selection::{line_spans_with_selection, SelectionPane};
 use crate::state::AppState;
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
@@ -63,7 +64,7 @@ pub fn render_preview_pane(
         height: footer_row,
     };
 
-    if state.preview.loading {
+    if state.preview.loading && state.preview.lines.is_empty() {
         render_message(
             frame,
             content_area,
@@ -158,7 +159,15 @@ fn render_virtualized_lines(
             let number = format!("{:>width$} ", line_index + 1, width = gutter_width - 1);
             spans.push(Span::styled(number, gutter));
         }
-        spans.push(Span::styled(display, fg));
+        let text_line = line_spans_with_selection(
+            &display,
+            line_index,
+            SelectionPane::Preview,
+            &state.text_selection,
+            fg,
+            theme,
+        );
+        spans.extend(text_line.spans);
 
         let row_area = Rect {
             x: area.x,
@@ -202,8 +211,15 @@ fn render_message(frame: &mut Frame<'_>, area: Rect, message: &str, style: Style
 
 fn format_preview_status(state: &AppState) -> String {
     let preview = &state.preview;
-    if preview.loading {
+    if preview.loading && preview.lines.is_empty() {
         return "Loading…".to_string();
+    }
+
+    if preview.loading {
+        let path = preview
+            .path_display()
+            .unwrap_or_else(|| "No file selected".to_string());
+        return format!("{path} | reloading…");
     }
 
     let path = preview

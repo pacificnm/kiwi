@@ -124,9 +124,12 @@ Left → Main → Command Palette → Shell → Left
 - Click tab labels to switch tabs **and move focus** (left tabs → Left focus, main tabs → Main focus)
 - Click inside the agent pane (Agent tab) to focus Main
 - Click inside the shell pane to focus Shell
-- Click list row to select
+- **Single click** list/tree row to select
+- **Double click** file in Files tab → Preview tab; double click folder → expand
+- **Double click** search result → Preview tab (content hits jump to line)
+- **Left drag** in Preview, Agent, or Shell to highlight text for copy (`Ctrl+C`)
 
-See [mouse-interaction.md](./mouse-interaction.md).
+See [mouse-interaction.md](./mouse-interaction.md) and [keyboard-shortcuts.md](./keyboard-shortcuts.md).
 
 ## Related
 

@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
+use std::time::SystemTime;
 
 pub const BINARY_SAMPLE_BYTES: usize = 8_192;
 
@@ -12,6 +13,7 @@ pub struct PreviewLoadResult {
     pub binary: bool,
     pub lossy_utf8: bool,
     pub file_size: u64,
+    pub modified_at: Option<SystemTime>,
     pub error: Option<String>,
 }
 
@@ -24,6 +26,7 @@ impl PreviewLoadResult {
             binary: false,
             lossy_utf8: false,
             file_size: 0,
+            modified_at: None,
             error: Some(message),
         }
     }
@@ -40,6 +43,7 @@ pub fn load_preview_file(path: &Path, max_size_bytes: u64) -> PreviewLoadResult 
     }
 
     let file_size = metadata.len();
+    let modified_at = metadata.modified().ok();
     if file_size > max_size_bytes {
         return PreviewLoadResult {
             lines: Vec::new(),
@@ -48,6 +52,7 @@ pub fn load_preview_file(path: &Path, max_size_bytes: u64) -> PreviewLoadResult 
             binary: false,
             lossy_utf8: false,
             file_size,
+            modified_at,
             error: Some(format!(
                 "File too large to preview ({file_size} bytes > {max_size_bytes} byte limit)"
             )),
@@ -62,11 +67,12 @@ pub fn load_preview_file(path: &Path, max_size_bytes: u64) -> PreviewLoadResult 
             binary: true,
             lossy_utf8: false,
             file_size,
+            modified_at,
             error: None,
         };
     }
 
-    read_text_lines(path, file_size, max_size_bytes)
+    read_text_lines(path, file_size, max_size_bytes, modified_at)
 }
 
 fn is_likely_binary(path: &Path, file_size: u64) -> bool {
@@ -86,7 +92,12 @@ fn is_likely_binary(path: &Path, file_size: u64) -> bool {
     sample.contains(&0)
 }
 
-fn read_text_lines(path: &Path, file_size: u64, max_size_bytes: u64) -> PreviewLoadResult {
+fn read_text_lines(
+    path: &Path,
+    file_size: u64,
+    max_size_bytes: u64,
+    modified_at: Option<SystemTime>,
+) -> PreviewLoadResult {
     let file = match File::open(path) {
         Ok(file) => file,
         Err(err) => return PreviewLoadResult::error(err.to_string()),
@@ -131,6 +142,7 @@ fn read_text_lines(path: &Path, file_size: u64, max_size_bytes: u64) -> PreviewL
         binary: false,
         lossy_utf8,
         file_size,
+        modified_at,
         error: None,
     }
 }

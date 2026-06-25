@@ -229,6 +229,30 @@ Format for new entries:
 - **Files:** `ui/search.rs`, `app.rs`, `preview/state.rs`, `state/event.rs`, `state/reducer.rs`, keyboard-shortcuts.md, SPEC-007
 - **Verify:** preview line scroll + search selection reducer tests, search render tests; manual: `/` opens Search, pick content result with Enter, confirm Preview jumps to match line.
 
+### System clipboard integration (ADR-019)
+
+- **Symptom:** No cross-pane or OS copy/paste; Linux copy crashed or corrupted TUI (`Clipboard was dropped very quickly`).
+- **Cause:** No clipboard module; ephemeral `arboard::Clipboard` per operation dropped before Wayland/X11 managers could read data; stderr warning drew over alternate screen.
+- **Fix:** `clipboard/` module with session `ClipboardService`, `Ctrl+C/V/X`, palette commands, paste routing to shell/agent/search/palette; `pty_paste_bytes` (raw single-line, bracketed multiline); shell `Ctrl+C`/`Ctrl+X` respect text selection.
+- **Files:** `clipboard/`, `app.rs`, `state/reducer.rs`, `commands/registry.rs`, `docs/architecture/adr/ADR-019-system-clipboard-integration.md`
+- **Verify:** `clipboard::*` tests, reducer paste/copy tests; manual copy between preview and shell.
+
+### In-app mouse text selection (ADR-015)
+
+- **Symptom:** Users could not highlight PTY/preview text for copy with mouse.
+- **Cause:** Hybrid mouse only handled clicks; no selection state or render path.
+- **Fix:** `selection/` module (hit test, extract, highlight render); left drag in Preview, Agent, Shell; Shift+mouse ignored; copy prefers selection via `resolve_copy_text`.
+- **Files:** `selection/`, `ui/scrollback.rs`, `ui/preview.rs`, `app.rs`, `clipboard/target.rs`
+- **Verify:** `clipboard_copy_prefers_mouse_selection`, scrollback selection render; manual drag + `Ctrl+C` in shell.
+
+### Double-click preview from Files and Search (ADR-015, SPEC-005, SPEC-007)
+
+- **Symptom:** Mouse could select file tree and search rows but not open Preview like `Enter`.
+- **Cause:** No double-click synthesis; design doc still listed editor on double-click.
+- **Fix:** `DoubleClickTracker` in `ui/mouse_clicks.rs`; double-click file → Preview tab; double-click folder → expand; double-click search result → Preview with line.
+- **Files:** `ui/mouse_clicks.rs`, `app.rs`, `docs/design/mouse-interaction.md`, SPEC-005/007/014
+- **Verify:** `double_click_file_tree_file_opens_preview_tab`, `double_click_search_result_opens_preview_tab`.
+
 ---
 
 ## Reporting New Issues

@@ -7,6 +7,7 @@ use crate::layout::LayoutState;
 use crate::navigation::NavigationState;
 use crate::preview::PreviewState;
 use crate::search::SearchState;
+use crate::selection::TextSelection;
 use crate::shell::shell_launch_spec;
 use crate::theme::ThemePalette;
 
@@ -36,6 +37,7 @@ pub struct AppState {
     pub notifications: NotificationState,
     pub status_bar: StatusBarState,
     pub workspace_meta: WorkspaceMeta,
+    pub text_selection: TextSelection,
 }
 
 impl AppState {
@@ -89,6 +91,7 @@ impl AppState {
                 repo_root: repo_root.display().to_string(),
                 is_git_repo,
             },
+            text_selection: TextSelection::default(),
         }
     }
 

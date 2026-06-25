@@ -25,3 +25,4 @@ toml.workspace = true
 portable-pty.workspace = true
 signal-hook.workspace = true
 notify.workspace = true
+arboard.workspace = true

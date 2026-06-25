@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PreviewState {
@@ -11,6 +12,7 @@ pub struct PreviewState {
     pub binary: bool,
     pub lossy_utf8: bool,
     pub file_size: u64,
+    pub loaded_mtime: Option<SystemTime>,
     pub load_error: Option<String>,
     pub loading: bool,
     pub preserve_scroll_on_load: bool,
@@ -28,6 +30,7 @@ impl PreviewState {
         self.binary = false;
         self.lossy_utf8 = false;
         self.file_size = 0;
+        self.loaded_mtime = None;
         self.load_error = None;
         self.loading = true;
         self.preserve_scroll_on_load = false;
@@ -57,6 +60,7 @@ impl PreviewState {
         self.binary = result.binary;
         self.lossy_utf8 = result.lossy_utf8;
         self.file_size = result.file_size;
+        self.loaded_mtime = result.modified_at;
         self.load_error = result.error;
         if preserve_scroll {
             let max_offset = self.lines.len().saturating_sub(viewport_rows.max(1));
@@ -120,6 +124,7 @@ mod tests {
                 binary: false,
                 lossy_utf8: false,
                 file_size: 1,
+                modified_at: None,
                 error: None,
             },
             10,
@@ -144,6 +149,7 @@ mod tests {
                 binary: false,
                 lossy_utf8: false,
                 file_size: 1,
+                modified_at: None,
                 error: None,
             },
             10,
