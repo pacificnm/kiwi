@@ -60,7 +60,7 @@ pub fn spawn_search(
                         results: Vec::new(),
                         truncated: false,
                         error: Some(
-                            "ripgrep (`rg`) not found. Install ripgrep or set [search].command."
+                            "ripgrep (`rg`) and grep not found. Install ripgrep or set [search].command."
                                 .to_string(),
                         ),
                     },
@@ -163,6 +163,66 @@ mod tests {
         let events = channel.drain_coalesced();
         assert!(events.is_empty());
 
+        let _ = fs::remove_dir_all(temp);
+    }
+
+    #[test]
+    fn spawn_search_enqueues_content_results() {
+        if std::process::Command::new("rg")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+
+        let temp =
+            std::env::temp_dir().join(format!("kiwi-search-content-io-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp);
+        fs::create_dir_all(&temp).expect("mkdir");
+        fs::write(temp.join("sample.txt"), "searchable kiwi token\n").expect("write");
+
+        let mut channel = EventChannel::new();
+        let generation = Arc::new(AtomicU64::new(1));
+        spawn_search(
+            SearchJob {
+                mode: SearchMode::Content,
+                query: "kiwi token".to_string(),
+                generation: 1,
+                repo_root: temp.clone(),
+                rg_command: "rg".to_string(),
+            },
+            channel.sender(),
+            generation,
+            SearchCancelHandle::default(),
+        );
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        let mut completed = false;
+        while std::time::Instant::now() < deadline {
+            for event in channel.drain_coalesced() {
+                if let AppEvent::SearchCompleted {
+                    generation,
+                    results,
+                    error,
+                    ..
+                } = event
+                {
+                    assert_eq!(generation, 1);
+                    assert!(error.is_none());
+                    assert_eq!(results.len(), 1);
+                    assert!(results[0].preview.contains("kiwi token"));
+                    completed = true;
+                    break;
+                }
+            }
+            if completed {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+
+        assert!(completed);
         let _ = fs::remove_dir_all(temp);
     }
 }

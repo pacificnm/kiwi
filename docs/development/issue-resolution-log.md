@@ -215,6 +215,13 @@ Format for new entries:
 - **Files:** `search/file.rs`, `commands/fuzzy.rs` (shared scorer), SPEC-007
 - **Verify:** `search_files_*` unit tests; manual: Search tab → Files mode, type partial path/filename, confirm best matches appear first and ignored dirs (e.g. `node_modules`) are excluded.
 
+### Ripgrep content search subprocess (GitHub #39, SPEC-007, ADR-009)
+
+- **Symptom:** Content search mode needed a proper ripgrep subprocess with JSON output, exit-code handling, and fallback when `rg` is unavailable.
+- **Fix:** `search/content.rs` runs `rg --json -F` (line-number fallback when `--json` unsupported), treats exit code 1 as empty results and exit code 2 as error, and falls back to `grep -r -n -H -F` when the configured ripgrep command is missing. Results include path, line, and preview snippet up to 10_000 hits.
+- **Files:** `search/content.rs`, `search/io.rs`, SPEC-007
+- **Verify:** JSON/line parser tests, ripgrep/grep integration tests when tools installed; manual: Search tab → Content mode (`Ctrl+M`), search for a string, confirm matches with line previews.
+
 ---
 
 ## Reporting New Issues
