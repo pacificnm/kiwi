@@ -85,6 +85,6 @@ show_untracked = true
 - [x] Large repo opens instantly showing root only
 - [x] Expand loads children
 - [x] Ignored dirs not shown
-- [ ] Selection survives git status refresh
+- [x] Selection survives git status refresh
 - [ ] Double-click opens editor (mouse)
-- [ ] Git colors match theme roles
+- [x] Git colors match theme roles

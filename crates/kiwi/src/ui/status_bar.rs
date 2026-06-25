@@ -24,7 +24,7 @@ pub struct StatusBarSnapshot {
 }
 
 pub fn compute_status_bar(state: &AppState) -> StatusBarSnapshot {
-    let git_modified = !state.git.modified_files.is_empty();
+    let git_modified = state.git.changed_count() > 0;
 
     StatusBarSnapshot {
         repo_name: state.status_bar.repo_name.clone(),
@@ -55,7 +55,7 @@ fn agent_label(state: &AppState) -> String {
 }
 
 fn git_label(state: &AppState) -> String {
-    let count = state.git.modified_files.len();
+    let count = state.git.changed_count();
     match count {
         0 => "Clean".to_string(),
         1 => "1 Modified".to_string(),
@@ -277,6 +277,7 @@ mod tests {
 
     use crate::agent::AgentStatus;
     use crate::config::ResolvedConfig;
+    use crate::git::{GitFileEntry, GitFileStatus};
     use crate::layout::compute_layout;
     use crate::state::AppState;
     use crate::theme::capabilities::TerminalCapabilities;
@@ -312,7 +313,20 @@ mod tests {
     fn compute_status_bar_reflects_git_agent_and_issue_state() {
         let mut state = test_state();
         state.git.branch = Some("feature/42".to_string());
-        state.git.modified_files = vec!["a.rs".to_string(), "b.rs".to_string(), "c.rs".to_string()];
+        state.git.file_entries = vec![
+            GitFileEntry {
+                path: "a.rs".to_string(),
+                status: GitFileStatus::Modified,
+            },
+            GitFileEntry {
+                path: "b.rs".to_string(),
+                status: GitFileStatus::Added,
+            },
+            GitFileEntry {
+                path: "c.rs".to_string(),
+                status: GitFileStatus::Untracked,
+            },
+        ];
         state.agent.running = true;
         state.agent.status = AgentStatus::Executing;
         state.github.selected_issue = Some(42);
@@ -389,7 +403,16 @@ mod tests {
         let mut state = test_state();
         state.status_bar.repo_name = "cityartwalks".to_string();
         state.git.branch = Some("feature/very-long-branch-name".to_string());
-        state.git.modified_files = vec!["a.rs".to_string(), "b.rs".to_string()];
+        state.git.file_entries = vec![
+            GitFileEntry {
+                path: "a.rs".to_string(),
+                status: GitFileStatus::Modified,
+            },
+            GitFileEntry {
+                path: "b.rs".to_string(),
+                status: GitFileStatus::Modified,
+            },
+        ];
         state.agent.running = true;
         state.agent.status = AgentStatus::Executing;
         state.github.selected_issue = Some(99);

@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use crate::git::GitFileEntry;
 use crate::navigation::NavCommand;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -12,7 +13,7 @@ pub enum AppEvent {
     GitRefreshRequested,
     #[cfg_attr(not(test), allow(dead_code))]
     GitStatusUpdated {
-        modified_files: Vec<String>,
+        file_entries: Vec<GitFileEntry>,
     },
     #[cfg_attr(not(test), allow(dead_code))]
     Quit,

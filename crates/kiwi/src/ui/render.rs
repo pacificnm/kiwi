@@ -201,6 +201,7 @@ mod tests {
     use ratatui::Terminal;
 
     use crate::config::ResolvedConfig;
+    use crate::git::GitFileStatus;
     use crate::layout::compute_layout;
     use crate::navigation::{LeftNavTab, MainTab, NavCommand};
     use crate::state::AppState;
@@ -258,7 +259,10 @@ mod tests {
     fn draw_frame_status_bar_reflects_git_and_agent_updates() {
         let mut state = test_state();
         state.git.branch = Some("main".to_string());
-        state.git.modified_files = vec!["src/lib.rs".to_string()];
+        state.git.file_entries = vec![crate::git::GitFileEntry {
+            path: "src/lib.rs".to_string(),
+            status: GitFileStatus::Modified,
+        }];
         state.agent.running = true;
         state.github.selected_issue = Some(7);
 
@@ -281,7 +285,16 @@ mod tests {
         let mut state = test_state();
         state.status_bar.repo_name = "cityartwalks".to_string();
         state.git.branch = Some("feature/very-long-branch-name".to_string());
-        state.git.modified_files = vec!["a.rs".to_string(), "b.rs".to_string()];
+        state.git.file_entries = vec![
+            crate::git::GitFileEntry {
+                path: "a.rs".to_string(),
+                status: GitFileStatus::Modified,
+            },
+            crate::git::GitFileEntry {
+                path: "b.rs".to_string(),
+                status: GitFileStatus::Modified,
+            },
+        ];
         state.agent.running = true;
         state.github.selected_issue = Some(99);
 
@@ -308,7 +321,16 @@ mod tests {
         reduce(
             &mut state,
             AppEvent::GitStatusUpdated {
-                modified_files: vec!["src/main.rs".to_string(), "src/lib.rs".to_string()],
+                file_entries: vec![
+                    crate::git::GitFileEntry {
+                        path: "src/main.rs".to_string(),
+                        status: GitFileStatus::Modified,
+                    },
+                    crate::git::GitFileEntry {
+                        path: "src/lib.rs".to_string(),
+                        status: GitFileStatus::Modified,
+                    },
+                ],
             },
         );
 

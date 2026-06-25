@@ -137,9 +137,24 @@ fn render_row_line(
 
     let indent = "  ".repeat(tree_row.depth);
     let glyph = row_glyph(&state.file_tree, node);
-    let label = truncate_line(&format!("{indent}{glyph}{}", node.name), max_width);
 
-    Some(Line::from(Span::styled(label, style)))
+    if node.is_dir || node.git_status.is_none() {
+        let label = truncate_line(&format!("{indent}{glyph}{}", node.name), max_width);
+        return Some(Line::from(Span::styled(label, style)));
+    }
+
+    let status = node.git_status.expect("checked above");
+    let status_style = theme.get(status.semantic_role());
+    let prefix = format!("{indent}{glyph}");
+    let badge = format!(" {}", status.badge());
+    let name_budget = max_width.saturating_sub(prefix.chars().count() + badge.chars().count());
+    let name = truncate_line(&node.name, name_budget);
+
+    Some(Line::from(vec![
+        Span::styled(prefix, style),
+        Span::styled(name, status_style),
+        Span::styled(badge, status_style),
+    ]))
 }
 
 fn row_glyph(tree: &FileTreeState, node: &crate::file_tree::FileNode) -> &'static str {
@@ -177,6 +192,7 @@ mod tests {
 
     use crate::config::ResolvedConfig;
     use crate::file_tree::DirectoryEntry;
+    use crate::git::GitFileStatus;
     use crate::layout::compute_layout;
     use crate::state::AppState;
     use crate::theme::capabilities::TerminalCapabilities;
@@ -217,6 +233,27 @@ mod tests {
         state.file_tree.collapse(&root);
         state.file_tree.ensure_selection();
         state
+    }
+
+    #[test]
+    fn modified_file_renders_git_badge() {
+        let mut state = test_state_with_tree();
+        let root = state.file_tree.root.clone();
+        state.file_tree.expand(&root).expect("expand");
+        state
+            .file_tree
+            .nodes
+            .get_mut(&root.join("README.md"))
+            .expect("readme")
+            .git_status = Some(GitFileStatus::Modified);
+
+        let area = Rect::new(0, 0, 40, 8);
+        let block = Block::default().title("Files").borders(Borders::ALL);
+        let inner = block.inner(area);
+        let line = render_row_line(&state, &state.theme, 2, inner.width as usize, true)
+            .expect("readme row");
+        assert_eq!(line.spans.len(), 3);
+        assert!(line.spans[2].content.contains('M'));
     }
 
     #[test]

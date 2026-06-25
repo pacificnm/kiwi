@@ -1,4 +1,5 @@
 use crate::agent::AgentStatus;
+use crate::git::GitFileEntry;
 use crate::layout::FocusTarget;
 use crate::shell::ScrollbackBuffer;
 
@@ -16,7 +17,14 @@ pub struct SearchState {
 pub struct GitState {
     pub branch: Option<String>,
     pub selected_path: Option<String>,
-    pub modified_files: Vec<String>,
+    pub file_entries: Vec<GitFileEntry>,
+}
+
+impl GitState {
+    #[must_use]
+    pub fn changed_count(&self) -> usize {
+        self.file_entries.len()
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
