@@ -433,11 +433,7 @@ fn preview_viewport_rows(state: &AppState) -> usize {
     state.layout.rects.main_content.height.saturating_sub(4) as usize
 }
 
-fn reduce_preview_file(
-    state: &mut AppState,
-    path: PathBuf,
-    line: Option<u32>,
-) -> Vec<SideEffect> {
+fn reduce_preview_file(state: &mut AppState, path: PathBuf, line: Option<u32>) -> Vec<SideEffect> {
     state.preview.begin_load(path.clone(), line);
     state
         .navigation
