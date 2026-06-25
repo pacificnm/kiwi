@@ -138,12 +138,14 @@ When the agent process exits, the pane footer shows the exit code and the restar
 | `Tab` / `Shift+Tab` | Cycle focus (not forwarded to PTY) |
 | `Ctrl+Q` | Quit Kiwi |
 
-## GitHub (Issues/PRs main tab)
+## GitHub (GH left pane + Issues/PRs main tab)
+
+Pair **GH** left (`Alt+4`) with **Issues** main (`2`), or use palette **Go to GitHub Issues** to select both and focus left.
 
 | Key | Action |
 |-----|--------|
-| `j` / `k` | List navigation |
-| `Enter` | Open detail |
+| `j` / `k` | Issue list navigation (GH left pane, left focus) |
+| `Enter` | Open selected issue in Issues main tab |
 | `c` | Comment (opens palette prompt) |
 | `o` | Open in browser |
 | `R` | Refresh list |

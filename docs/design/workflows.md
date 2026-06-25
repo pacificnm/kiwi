@@ -19,7 +19,7 @@ flowchart LR
 
 ### Step-by-step
 
-1. **Open GitHub Issue** — Main tab `Issues`; select issue or search in GH left tab.
+1. **Open GitHub Issue** — Left tab `GH` for the issue list; main tab `Issues` for detail. Palette **Go to GitHub Issues** selects both. Use `j`/`k` on the left list, `Enter` to open detail.
 2. **Create branch** — Command palette: `Issue: Create Branch` → runs `gh issue develop`.
 3. **Launch AI Agent** — Main tab `Agent`; give instructions referencing issue number.
 4. **Implement changes** — Agent edits files; user may `e` open files in external editor.
@@ -32,7 +32,7 @@ flowchart LR
 
 | Step | Left Tab | Main Tab | Other |
 |------|----------|----------|-------|
-| Issue | GH / — | Issues | Status bar issue # |
+| Issue | GH | Issues | Status bar issue # |
 | Branch | Git | — | Shell |
 | Agent | Files | Agent | — |
 | Review | Git, Diff | Diff | Preview |

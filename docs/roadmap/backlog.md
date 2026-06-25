@@ -181,7 +181,7 @@ Prioritized work items mapped to GitHub issues. Use labels: `milestone-1` … `m
 | #60 | PR detail view | SPEC-009 |
 | #61 | PR create workflow | SPEC-009 |
 | #62 | Open in browser command | SPEC-009 |
-| #63 | GH left hub tab | design/navigation |
+| #63 | GH left issue list pane | design/navigation |
 
 ---
 

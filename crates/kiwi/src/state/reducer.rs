@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 use crate::agent::infer_status_from_scrollback;
 use crate::clipboard::{resolve_copy_text, PasteTarget};
@@ -7,6 +8,9 @@ use crate::file_tree::ExpandAction;
 use crate::git::{
     adjacent_changed_file, build_panel_rows, changed_file_paths, ensure_git_selection,
     git_move_selection, git_select_row, patch_git_file_entries, row_for_path, GitFileEntry,
+};
+use crate::github::{
+    ensure_issue_selection, issue_move_selection, IssueListLoadResult, ISSUE_LIST_CACHE_SECS,
 };
 use crate::layout::{agent_pty_size, compute_layout, shell_pty_size, FocusTarget};
 use crate::navigation::{LeftNavTab, MainTab, NavCommand};
@@ -55,6 +59,7 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
         AppEvent::FsChanged { paths } => reduce_fs_changed(state, paths),
         AppEvent::DiffLoaded { result } => reduce_diff_loaded(state, result),
         AppEvent::GitHubAuthChecked { result } => reduce_github_auth_checked(state, result),
+        AppEvent::GitHubIssuesLoaded { result } => reduce_github_issues_loaded(state, result),
     }
 }
 
@@ -64,6 +69,7 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
             apply_navigation(state, nav);
             let mut effects = agent_spawn_effects_if_needed(state);
             effects.extend(github_first_access_effects(state));
+            effects.extend(github_issue_list_access_effects(state, false));
             effects
         }
         AppCommand::Quit => {
@@ -72,6 +78,10 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         }
         AppCommand::RequestGitRefresh => reduce_git_refresh_requested(state),
         AppCommand::GitHubRefresh => reduce_github_refresh_requested(state),
+        AppCommand::GitHubMoveIssueSelection(delta) => {
+            reduce_github_move_issue_selection(state, delta)
+        }
+        AppCommand::GitHubOpenSelected => reduce_github_open_selected(state),
         AppCommand::ShellWrite(data) => vec![SideEffect::WriteShell(data)],
         AppCommand::ShellScroll(delta) => reduce_shell_scroll(state, delta),
         AppCommand::AgentWrite(data) => vec![SideEffect::WriteAgent(data)],
@@ -193,6 +203,7 @@ pub fn github_refresh_effects(state: &mut AppState) -> Vec<SideEffect> {
     state.dirty = true;
     state.github.loading = true;
     state.github.auth_checked = false;
+    state.github.issues_loaded_at = None;
     vec![SideEffect::SpawnGitHubAuthCheck]
 }
 
@@ -210,9 +221,51 @@ pub fn github_first_access_effects(state: &mut AppState) -> Vec<SideEffect> {
     vec![SideEffect::SpawnGitHubAuthCheck]
 }
 
+pub fn github_issue_list_effects(state: &mut AppState, force: bool) -> Vec<SideEffect> {
+    if !state.github.auth_ok {
+        return Vec::new();
+    }
+
+    if !github_issue_list_surface_active(state) {
+        return Vec::new();
+    }
+
+    if state.github.issues_loading {
+        return Vec::new();
+    }
+
+    if !force && issue_list_cache_fresh(&state.github) {
+        return Vec::new();
+    }
+
+    state.github.issues_loading = true;
+    state.github.issues_error = None;
+    state.dirty = true;
+    vec![SideEffect::SpawnGitHubIssueList]
+}
+
+pub fn github_issue_list_access_effects(state: &mut AppState, force: bool) -> Vec<SideEffect> {
+    github_issue_list_effects(state, force)
+}
+
 fn github_surface_active(state: &AppState) -> bool {
     state.navigation.left_tab == LeftNavTab::Gh
         || matches!(state.navigation.main_tab, MainTab::Issues | MainTab::Prs)
+}
+
+fn github_issue_list_surface_active(state: &AppState) -> bool {
+    state.navigation.main_tab == MainTab::Issues || state.navigation.left_tab == LeftNavTab::Gh
+}
+
+fn issue_list_cache_fresh(github: &crate::state::GitHubState) -> bool {
+    let Some(loaded_at) = github.issues_loaded_at else {
+        return false;
+    };
+
+    loaded_at
+        .elapsed()
+        .map(|elapsed| elapsed.as_secs() < ISSUE_LIST_CACHE_SECS)
+        .unwrap_or(false)
 }
 
 fn reduce_github_refresh_requested(state: &mut AppState) -> Vec<SideEffect> {
@@ -232,6 +285,48 @@ fn reduce_github_auth_checked(
     } else {
         Some(result.message)
     };
+    state.dirty = true;
+
+    if result.auth_ok {
+        github_issue_list_effects(state, true)
+    } else {
+        Vec::new()
+    }
+}
+
+fn reduce_github_issues_loaded(
+    state: &mut AppState,
+    result: IssueListLoadResult,
+) -> Vec<SideEffect> {
+    state.github.issues_loading = false;
+    state.github.issues = result.issues;
+    state.github.issues_error = result.error;
+    state.github.issues_loaded_at = Some(SystemTime::now());
+    ensure_issue_selection(&mut state.github);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_github_move_issue_selection(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    let viewport_rows = issues_viewport_rows(state);
+    issue_move_selection(&mut state.github, delta, viewport_rows);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn issues_viewport_rows(state: &AppState) -> usize {
+    crate::ui::issues_viewport_rows(state.layout.rects.left_content)
+}
+
+fn reduce_github_open_selected(state: &mut AppState) -> Vec<SideEffect> {
+    if state.github.selected_issue.is_none() {
+        return Vec::new();
+    }
+
+    state.navigation.apply(NavCommand::SelectMainTab(MainTab::Issues));
+    state
+        .navigation
+        .apply(NavCommand::SetFocus(FocusTarget::Main));
     state.dirty = true;
     Vec::new()
 }
@@ -1674,6 +1769,7 @@ mod tests {
     #[test]
     fn github_refresh_rechecks_auth() {
         let mut state = test_state();
+        state.navigation.main_tab = MainTab::Issues;
         state.github.auth_checked = true;
         state.github.auth_ok = true;
 
@@ -1682,6 +1778,91 @@ mod tests {
         assert!(!state.github.auth_checked);
         assert!(state.github.loading);
         assert!(effects.contains(&SideEffect::SpawnGitHubAuthCheck));
+    }
+
+    #[test]
+    fn github_auth_success_on_issues_tab_loads_issue_list() {
+        use crate::github::{GitHubAuthCheckResult, GitHubAuthErrorKind};
+
+        let mut state = test_state();
+        state.navigation.main_tab = MainTab::Issues;
+        state.github.loading = true;
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::GitHubAuthChecked {
+                result: GitHubAuthCheckResult {
+                    auth_ok: true,
+                    error_kind: None,
+                    message: String::new(),
+                },
+            },
+        );
+
+        assert!(state.github.auth_ok);
+        assert!(state.github.issues_loading);
+        assert!(effects.contains(&SideEffect::SpawnGitHubIssueList));
+    }
+
+    #[test]
+    fn github_issues_loaded_populates_list_and_selection() {
+        use crate::github::{Issue, IssueListLoadResult, IssueState};
+
+        let mut state = test_state();
+        state.github.issues_loading = true;
+
+        reduce(
+            &mut state,
+            AppEvent::GitHubIssuesLoaded {
+                result: IssueListLoadResult {
+                    issues: vec![Issue {
+                        number: 55,
+                        title: "Issue list".to_string(),
+                        state: IssueState::Open,
+                        labels: Vec::new(),
+                        assignees: Vec::new(),
+                    }],
+                    error: None,
+                },
+            },
+        );
+
+        assert!(!state.github.issues_loading);
+        assert_eq!(state.github.issues.len(), 1);
+        assert_eq!(state.github.selected_issue, Some(55));
+        assert!(state.github.issues_loaded_at.is_some());
+    }
+
+    #[test]
+    fn github_issue_list_cache_skips_reload_within_sixty_seconds() {
+        let mut state = test_state();
+        state.navigation.left_tab = LeftNavTab::Gh;
+        state.github.auth_ok = true;
+        state.github.auth_checked = true;
+        state.github.issues_loaded_at = Some(SystemTime::now());
+        state.github.issues = vec![crate::github::Issue {
+            number: 1,
+            title: "Cached".to_string(),
+            state: crate::github::IssueState::Open,
+            labels: Vec::new(),
+            assignees: Vec::new(),
+        }];
+
+        let effects = super::github_issue_list_access_effects(&mut state, false);
+
+        assert!(effects.is_empty());
+        assert!(!state.github.issues_loading);
+    }
+
+    #[test]
+    fn github_open_selected_focuses_main_issues_tab() {
+        let mut state = test_state();
+        state.github.selected_issue = Some(42);
+
+        reduce(&mut state, AppEvent::Command(AppCommand::GitHubOpenSelected));
+
+        assert_eq!(state.navigation.main_tab, MainTab::Issues);
+        assert_eq!(state.navigation.focus, FocusTarget::Main);
     }
 
     #[test]

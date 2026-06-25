@@ -44,7 +44,7 @@ Status Bar
 |---------|-------|
 | Terminal-native developer | Vim/Neovim, keyboard shortcuts, no mouse required |
 | AI-assisted builder | Agent tab, issue linking, diff review |
-| OSS maintainer | Issues, PRs, `gh` workflows in one place |
+| OSS maintainer | GH left issue list + Issues detail, PRs, `gh` workflows in one place |
 
 ## Related
 

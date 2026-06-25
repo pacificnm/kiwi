@@ -144,7 +144,7 @@ SPEC-008, SPEC-012 criteria; no polling in codebase.
 ### Epics
 
 1. **GitHub service** — SPEC-009
-2. **Issues UI** — list + detail
+2. **Issues UI** — GH left list + Issues main detail
 3. **PRs UI** — list + detail + create
 4. **Workflow commands** — branch from issue, open browser
 
@@ -157,8 +157,8 @@ SPEC-008, SPEC-012 criteria; no polling in codebase.
 
 ### Deliverables
 
-- Issues and PRs main tabs
-- GH left hub tab
+- Issues list (GH left) and detail (Issues main tab)
+- PRs main tab
 - Palette GitHub commands
 
 ### Acceptance

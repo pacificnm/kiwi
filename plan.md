@@ -139,7 +139,7 @@ Diff navigation.
 
 ### GH
 
-GitHub navigation.
+GitHub issue list (navigate here; detail in main Issues tab).
 
 ### Search
 
@@ -155,7 +155,7 @@ AI Agent session.
 
 ### Issues
 
-GitHub Issues.
+GitHub issue detail (select from GH left tab).
 
 ### PRs
 

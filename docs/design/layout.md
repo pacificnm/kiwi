@@ -43,7 +43,7 @@ Scrollable list or tree depending on tab:
 | Files | Tree view with indent guides |
 | Git | Flat list grouped by status |
 | Diff | Changed files list |
-| GH | Quick links + issue/PR counts |
+| GH | Issue list (select → main Issues detail) |
 | Search | Input + results list |
 
 Left content scrolls independently of main content.
@@ -55,7 +55,8 @@ Left content scrolls independently of main content.
 **Agent | Issues | PRs | Diff | Preview | Logs**
 
 - Agent: full PTY viewport (ANSI rendered)
-- Issues/PRs: master-detail or list + detail split within main (list 40% / detail 60% when width ≥ 100)
+- Issues: issue detail (paired with GH left issue list; same pattern as Git left + Diff main)
+- PRs: list and detail in main tab (PR list in GH left planned)
 - Diff: unified diff with gutter
 - Preview: read-only buffer with line numbers
 - Logs: structured app log lines (timestamp, level, message)

@@ -27,6 +27,8 @@ Integrate GitHub Issues and Pull Requests via `gh` CLI for list, view, and commo
 4. Actions: comment (prompt in palette), assign self, add label (multi-select TUI).
 5. Create branch from issue: `gh issue develop <n>` + checkout feedback.
 
+**UI layout:** Issue list renders in the **GH** left navigation pane; issue detail renders in the main **Issues** tab (orthogonal tabs, same pattern as Git left + Diff main). List navigation (`j`/`k`, `Enter`) requires left focus on the GH tab.
+
 ### Pull Requests
 
 1. List PRs: number, title, state (open/draft/merged/closed), author.
