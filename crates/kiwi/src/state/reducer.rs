@@ -1,6 +1,6 @@
 use crate::layout::compute_layout;
 use crate::layout::shell_pty_size;
-use crate::navigation::NavCommand;
+use crate::navigation::{MainTab, NavCommand};
 
 use super::app_state::AppState;
 use super::event::{AppCommand, AppEvent, SideEffect};
@@ -26,7 +26,7 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
     match command {
         AppCommand::Navigation(nav) => {
             apply_navigation(state, nav);
-            Vec::new()
+            agent_spawn_effects_if_needed(state)
         }
         AppCommand::Quit => {
             state.dirty = true;
@@ -44,6 +44,15 @@ fn apply_navigation(state: &mut AppState, command: NavCommand) {
     if state.navigation != before {
         state.dirty = true;
     }
+}
+
+pub fn agent_spawn_effects_if_needed(state: &mut AppState) -> Vec<SideEffect> {
+    if state.navigation.main_tab != MainTab::Agent || state.agent.spawned {
+        return Vec::new();
+    }
+
+    state.dirty = true;
+    vec![SideEffect::SpawnAgent]
 }
 
 fn reduce_terminal_resize(state: &mut AppState, width: u16, height: u16) -> Vec<SideEffect> {
@@ -247,6 +256,44 @@ mod tests {
         );
         assert_ne!(state.layout, before);
         assert!(state.dirty);
+    }
+
+    #[test]
+    fn agent_spawn_not_requested_off_agent_tab() {
+        let mut state = test_state();
+        state.navigation.main_tab = MainTab::Issues;
+        let effects = agent_spawn_effects_if_needed(&mut state);
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn agent_spawn_requested_on_agent_tab() {
+        let mut state = test_state();
+        state.navigation.main_tab = MainTab::Agent;
+        state.agent.spawned = false;
+        let effects = agent_spawn_effects_if_needed(&mut state);
+        assert!(effects.contains(&SideEffect::SpawnAgent));
+    }
+
+    #[test]
+    fn agent_spawn_requested_only_once() {
+        let mut state = test_state();
+        state.agent.spawned = true;
+        let effects = agent_spawn_effects_if_needed(&mut state);
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn selecting_agent_tab_emits_spawn_side_effect() {
+        let mut state = test_state();
+        state.navigation.main_tab = MainTab::Issues;
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::Navigation(NavCommand::SelectMainTab(
+                MainTab::Agent,
+            ))),
+        );
+        assert!(effects.contains(&SideEffect::SpawnAgent));
     }
 
     #[test]

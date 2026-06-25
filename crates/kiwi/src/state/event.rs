@@ -35,6 +35,7 @@ pub enum AppCommand {
 pub enum SideEffect {
     Quit,
     SpawnGitRefresh,
+    SpawnAgent,
     WriteShell(Vec<u8>),
     ResizeShell {
         cols: u16,

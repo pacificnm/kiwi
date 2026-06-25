@@ -132,6 +132,12 @@ pub fn compute_layout(
 
 #[must_use]
 #[cfg_attr(not(test), allow(dead_code))]
+pub fn agent_pty_size(rects: &LayoutRects) -> (u16, u16) {
+    pty_dimensions(rects.main_content)
+}
+
+#[must_use]
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn shell_pty_size(rects: &LayoutRects) -> (u16, u16) {
     pty_dimensions(rects.shell)
 }
