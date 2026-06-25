@@ -332,6 +332,85 @@ impl CommandPaletteState {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogLevel {
+    Info,
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogEntry {
+    pub level: LogLevel,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LogsState {
+    pub entries: Vec<LogEntry>,
+}
+
+impl LogsState {
+    const MAX_ENTRIES: usize = 500;
+
+    pub fn push_info(&mut self, message: impl Into<String>) {
+        self.push(LogLevel::Info, message);
+    }
+
+    pub fn push_error(&mut self, message: impl Into<String>) {
+        self.push(LogLevel::Error, message);
+    }
+
+    fn push(&mut self, level: LogLevel, message: impl Into<String>) {
+        self.entries.push(LogEntry {
+            level,
+            message: message.into(),
+        });
+        if self.entries.len() > Self::MAX_ENTRIES {
+            let overflow = self.entries.len() - Self::MAX_ENTRIES;
+            self.entries.drain(0..overflow);
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ToastState {
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModalState {
+    pub title: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NotificationState {
+    pub toast: ToastState,
+    pub modal: Option<ModalState>,
+}
+
+impl NotificationState {
+    pub fn show_toast(&mut self, message: impl Into<String>) {
+        self.toast.message = Some(message.into());
+    }
+
+    pub fn show_modal(&mut self, title: impl Into<String>, message: impl Into<String>) {
+        self.modal = Some(ModalState {
+            title: title.into(),
+            message: message.into(),
+        });
+    }
+
+    pub fn dismiss_modal(&mut self) {
+        self.modal = None;
+    }
+
+    #[allow(dead_code)]
+    pub fn clear_toast(&mut self) {
+        self.toast.message = None;
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StatusBarState {
     pub repo_name: String,

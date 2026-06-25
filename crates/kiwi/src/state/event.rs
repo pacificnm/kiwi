@@ -40,6 +40,15 @@ pub enum AppEvent {
         truncated: bool,
         error: Option<String>,
     },
+    EditorLaunched {
+        path: PathBuf,
+        command: String,
+    },
+    EditorLaunchFailed {
+        path: PathBuf,
+        error: String,
+        show_modal: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,6 +94,12 @@ pub enum AppCommand {
     SearchCancel,
     SearchMoveSelection(i32),
     SearchSelect(usize),
+    #[cfg_attr(not(test), allow(dead_code))]
+    OpenEditor {
+        path: PathBuf,
+        line: Option<u32>,
+    },
+    ModalDismiss,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -112,7 +127,10 @@ pub enum SideEffect {
         generation: u64,
     },
     #[cfg_attr(not(test), allow(dead_code))]
-    LaunchEditor(PathBuf),
+    LaunchEditor {
+        path: PathBuf,
+        line: Option<u32>,
+    },
 }
 
 impl AppCommand {

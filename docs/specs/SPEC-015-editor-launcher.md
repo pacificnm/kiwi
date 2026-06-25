@@ -9,22 +9,24 @@ Resolve and spawn external editor for file paths per ADR-013.
 ### In scope
 
 - Command resolution chain
-- Detached spawn
+- Terminal suspend/resume for TUI editors
+- Detached spawn for GUI editors
 - Absolute path argument
 
 ### Out of scope
 
-- Wait for editor close
 - Diff editor (git mergetool)
 
 ## Functional Requirements
 
 1. Resolution order: config → `$VISUAL` → `$EDITOR` → `nano`.
 2. Accept absolute `PathBuf`; error if not exists.
-3. Spawn detached process; do not block TUI.
-4. Log launch to Logs tab at info level.
-5. Optional line number: pass `+N` for vim family when `line` provided.
-6. Palette command: "Open in Editor" uses current selection path.
+3. **GUI editors** (`code`, `cursor`, `zed`, …): spawn detached; Kiwi stays responsive.
+4. **Terminal editors** (`vim`, `nvim`, `nano`, …): suspend Kiwi TUI, run editor on controlling TTY, wait for exit, resume Kiwi.
+5. Optional `[editor] terminal` config overrides auto-detection.
+6. Log launch to Logs tab at info level.
+7. Optional line number: pass `+N` for vim family when `line` provided.
+8. Palette command: "Open in Editor" uses current selection path.
 
 ## Non-Functional Requirements
 
@@ -69,8 +71,9 @@ command = "nvim"
 
 ## Acceptance Criteria
 
-- [ ] `nvim` opens with file when configured
-- [ ] Falls back to EDITOR env
-- [ ] Falls back to nano when unset
-- [ ] Kiwi remains responsive after launch
+- [x] `nvim` opens with file when configured
+- [x] Falls back to EDITOR env
+- [x] Falls back to nano when unset
+- [x] Kiwi remains responsive after GUI editor launch
+- [x] Terminal editors run on the TTY while Kiwi is suspended
 - [ ] Works from file tree, preview, search results

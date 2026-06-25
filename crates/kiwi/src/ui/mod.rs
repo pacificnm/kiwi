@@ -1,6 +1,8 @@
 mod agent;
 mod file_tree;
+mod logs;
 mod mouse;
+mod notifications;
 mod palette;
 mod preview;
 mod render;

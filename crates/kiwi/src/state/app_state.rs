@@ -11,8 +11,8 @@ use crate::shell::shell_launch_spec;
 use crate::theme::ThemePalette;
 
 use super::domains::{
-    AgentState, CommandPaletteState, DiffState, GitHubState, GitState, ShellState, StatusBarState,
-    WorkspaceMeta,
+    AgentState, CommandPaletteState, DiffState, GitHubState, GitState, LogsState,
+    NotificationState, ShellState, StatusBarState, WorkspaceMeta,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,6 +32,8 @@ pub struct AppState {
     pub agent: AgentState,
     pub shell: ShellState,
     pub palette: CommandPaletteState,
+    pub logs: LogsState,
+    pub notifications: NotificationState,
     pub status_bar: StatusBarState,
     pub workspace_meta: WorkspaceMeta,
 }
@@ -80,6 +82,8 @@ impl AppState {
                 ..ShellState::default()
             },
             palette: CommandPaletteState::default(),
+            logs: LogsState::default(),
+            notifications: NotificationState::default(),
             status_bar: StatusBarState { repo_name },
             workspace_meta: WorkspaceMeta {
                 repo_root: repo_root.display().to_string(),

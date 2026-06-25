@@ -130,7 +130,7 @@ mod tests {
 
         assert_eq!(config.app.left_width, 30);
         assert_eq!(config.theme.name, "kiwi-dark");
-        assert_eq!(config.editor.command, "nvim");
+        assert_eq!(config.editor.configured_command, None);
     }
 
     #[test]
@@ -157,7 +157,7 @@ mod tests {
         let config =
             load_config_with_home(&cli, &repo, Some(home.home.clone())).expect("load config");
 
-        assert_eq!(config.editor.command, "nvim");
+        assert_eq!(config.editor.configured_command, Some("nvim".to_string()));
         assert_eq!(config.theme.name, "project-theme");
     }
 
