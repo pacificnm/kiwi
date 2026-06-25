@@ -80,4 +80,4 @@ wrap = false
 - [x] Scrolling works for 1000+ line file
 - [ ] Watcher reload updates content without losing scroll if possible
 - [x] Binary file shows appropriate message
-- [ ] `e` launches editor
+- [x] `e` launches editor
