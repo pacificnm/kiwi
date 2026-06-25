@@ -4,7 +4,9 @@ mod registry;
 use crate::clipboard::resolve_copy_text_for_focus;
 use crate::editor::resolve_editor_target;
 use crate::navigation::{MainTab, NavCommand};
-use crate::state::{diff_set_source_effects, git_refresh_effects, AppState, SideEffect};
+use crate::state::{
+    diff_move_file_effects, diff_set_source_effects, git_refresh_effects, AppState, SideEffect,
+};
 
 pub use fuzzy::{best_fuzzy_score, filter_ranked};
 pub use registry::COMMANDS;
@@ -33,6 +35,8 @@ pub enum PaletteAction {
     ClipboardCut,
     ClipboardPaste,
     DiffToggleSource,
+    DiffNextFile,
+    DiffPrevFile,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -161,6 +165,8 @@ pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideE
         PaletteAction::DiffToggleSource => {
             diff_set_source_effects(state, state.diff.source.toggle())
         }
+        PaletteAction::DiffNextFile => diff_move_file_effects(state, 1),
+        PaletteAction::DiffPrevFile => diff_move_file_effects(state, -1),
     };
 
     if state.config.workspace.persist {

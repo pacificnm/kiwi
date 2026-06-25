@@ -65,6 +65,45 @@ pub fn path_for_row(rows: &[GitPanelRow], row_index: usize) -> Option<&str> {
     }
 }
 
+pub fn changed_file_paths(entries: &[GitFileEntry], show_untracked: bool) -> Vec<String> {
+    build_panel_rows(entries, show_untracked)
+        .into_iter()
+        .filter_map(|row| match row {
+            GitPanelRow::File { path, .. } => Some(path),
+            GitPanelRow::Header { .. } => None,
+        })
+        .collect()
+}
+
+pub fn adjacent_changed_file(
+    paths: &[String],
+    current: Option<&str>,
+    delta: i32,
+) -> Option<String> {
+    if paths.is_empty() {
+        return None;
+    }
+
+    let current_index = match current.and_then(|path| paths.iter().position(|candidate| candidate == path)) {
+        Some(index) => index,
+        None => {
+            return if delta >= 0 {
+                paths.first().cloned()
+            } else {
+                paths.last().cloned()
+            };
+        }
+    };
+
+    let next_index =
+        (current_index as i32 + delta).clamp(0, paths.len().saturating_sub(1) as i32) as usize;
+    if next_index == current_index {
+        return None;
+    }
+
+    paths.get(next_index).cloned()
+}
+
 pub fn scroll_offset_for_row(
     selected_row: usize,
     scroll_offset: usize,
@@ -137,5 +176,48 @@ mod tests {
 
         let rows = build_panel_rows(&entries, false);
         assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn changed_file_paths_follow_panel_order() {
+        let entries = vec![
+            GitFileEntry {
+                path: "b.rs".to_string(),
+                status: GitFileStatus::Added,
+            },
+            GitFileEntry {
+                path: "a.rs".to_string(),
+                status: GitFileStatus::Modified,
+            },
+        ];
+
+        let paths = changed_file_paths(&entries, true);
+        assert_eq!(paths, vec!["a.rs".to_string(), "b.rs".to_string()]);
+    }
+
+    #[test]
+    fn adjacent_changed_file_clamps_at_boundaries() {
+        let paths = vec!["a.rs".to_string(), "b.rs".to_string()];
+
+        assert_eq!(
+            adjacent_changed_file(&paths, Some("a.rs"), 1).as_deref(),
+            Some("b.rs")
+        );
+        assert!(adjacent_changed_file(&paths, Some("b.rs"), 1).is_none());
+        assert!(adjacent_changed_file(&paths, Some("a.rs"), -1).is_none());
+    }
+
+    #[test]
+    fn adjacent_changed_file_selects_first_or_last_without_current() {
+        let paths = vec!["a.rs".to_string(), "b.rs".to_string()];
+
+        assert_eq!(
+            adjacent_changed_file(&paths, None, 1).as_deref(),
+            Some("a.rs")
+        );
+        assert_eq!(
+            adjacent_changed_file(&paths, None, -1).as_deref(),
+            Some("b.rs")
+        );
     }
 }

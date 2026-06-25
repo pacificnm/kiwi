@@ -5,7 +5,8 @@ use crate::clipboard::{resolve_copy_text, PasteTarget};
 use crate::commands::{execute_command, history_input_for_id, refresh_matches};
 use crate::file_tree::ExpandAction;
 use crate::git::{
-    ensure_git_selection, git_move_selection, git_select_row, patch_git_file_entries, GitFileEntry,
+    adjacent_changed_file, build_panel_rows, changed_file_paths, ensure_git_selection,
+    git_move_selection, git_select_row, patch_git_file_entries, row_for_path, GitFileEntry,
 };
 use crate::layout::{agent_pty_size, compute_layout, shell_pty_size, FocusTarget};
 use crate::navigation::{LeftNavTab, MainTab, NavCommand};
@@ -98,6 +99,10 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         AppCommand::DiffHorizontalScroll(delta) => reduce_diff_horizontal_scroll(state, delta),
         AppCommand::DiffToggleSource => reduce_diff_toggle_source(state),
         AppCommand::DiffSetSource(source) => reduce_diff_set_source(state, source),
+        AppCommand::DiffNextFile => reduce_diff_move_file(state, 1),
+        AppCommand::DiffPrevFile => reduce_diff_move_file(state, -1),
+        #[cfg_attr(not(test), allow(dead_code))]
+        AppCommand::DiffSelectFile(path) => reduce_diff_select_file(state, path),
         AppCommand::SearchSetQuery(query) => reduce_search_set_query(state, query),
         AppCommand::SearchAppendChar(ch) => reduce_search_append_char(state, ch),
         AppCommand::SearchBackspace => reduce_search_backspace(state),
@@ -491,14 +496,55 @@ fn reduce_git_open_selected(state: &mut AppState) -> Vec<SideEffect> {
         return Vec::new();
     };
 
-    let source = state.diff.source;
-    state.diff.begin_load(path.clone());
     apply_navigation(state, NavCommand::SelectMainTab(MainTab::Diff));
     state
         .navigation
         .apply(NavCommand::SetFocus(FocusTarget::Main));
+    diff_select_file_effects(state, path)
+}
+
+fn sync_git_selection_for_path(state: &mut AppState, path: &str) {
+    let viewport_rows = git_viewport_rows(state);
+    let show_untracked = state.config.git.show_untracked;
+    let rows = build_panel_rows(&state.git.file_entries, show_untracked);
+    if let Some(row) = row_for_path(&rows, path) {
+        git_select_row(&mut state.git, row, viewport_rows, show_untracked);
+    } else {
+        state.git.selected_path = Some(path.to_string());
+    }
+}
+
+pub fn diff_select_file_effects(state: &mut AppState, path: String) -> Vec<SideEffect> {
+    if state.diff.selected_path.as_deref() == Some(path.as_str()) {
+        return Vec::new();
+    }
+
+    let source = state.diff.source;
+    state.diff.begin_load(path.clone());
+    sync_git_selection_for_path(state, &path);
     state.dirty = true;
     vec![SideEffect::LoadFileDiff { path, source }]
+}
+
+fn reduce_diff_select_file(state: &mut AppState, path: String) -> Vec<SideEffect> {
+    diff_select_file_effects(state, path)
+}
+
+fn reduce_diff_move_file(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    diff_move_file_effects(state, delta)
+}
+
+pub fn diff_move_file_effects(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    let paths = changed_file_paths(&state.git.file_entries, state.config.git.show_untracked);
+    let Some(path) = adjacent_changed_file(
+        &paths,
+        state.diff.selected_path.as_deref(),
+        delta,
+    ) else {
+        return Vec::new();
+    };
+
+    diff_select_file_effects(state, path)
 }
 
 fn reduce_diff_loaded(
@@ -1464,6 +1510,80 @@ mod tests {
 
         assert_eq!(state.diff.source, crate::diff::DiffSource::Staged);
         assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn diff_next_file_selects_next_changed_file_and_reloads() {
+        let mut state = test_state();
+        state.git.file_entries = vec![
+            GitFileEntry {
+                path: "a.rs".to_string(),
+                status: crate::git::GitFileStatus::Modified,
+            },
+            GitFileEntry {
+                path: "b.rs".to_string(),
+                status: crate::git::GitFileStatus::Modified,
+            },
+        ];
+        state.diff.selected_path = Some("a.rs".to_string());
+
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::DiffNextFile));
+
+        assert_eq!(state.diff.selected_path.as_deref(), Some("b.rs"));
+        assert_eq!(state.git.selected_path.as_deref(), Some("b.rs"));
+        assert!(state.diff.loading);
+        assert!(
+            effects
+                .iter()
+                .any(|effect| matches!(effect, SideEffect::LoadFileDiff { path, .. } if path == "b.rs"))
+        );
+    }
+
+    #[test]
+    fn diff_prev_file_clamps_at_first_file() {
+        let mut state = test_state();
+        state.git.file_entries = vec![
+            GitFileEntry {
+                path: "a.rs".to_string(),
+                status: crate::git::GitFileStatus::Modified,
+            },
+            GitFileEntry {
+                path: "b.rs".to_string(),
+                status: crate::git::GitFileStatus::Modified,
+            },
+        ];
+        state.diff.selected_path = Some("a.rs".to_string());
+
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::DiffPrevFile));
+
+        assert_eq!(state.diff.selected_path.as_deref(), Some("a.rs"));
+        assert!(effects.is_empty());
+        assert!(!state.diff.loading);
+    }
+
+    #[test]
+    fn diff_file_navigation_preserves_scroll_when_returning() {
+        let mut state = test_state();
+        state.git.file_entries = vec![
+            GitFileEntry {
+                path: "a.rs".to_string(),
+                status: crate::git::GitFileStatus::Modified,
+            },
+            GitFileEntry {
+                path: "b.rs".to_string(),
+                status: crate::git::GitFileStatus::Modified,
+            },
+        ];
+        state.diff.selected_path = Some("a.rs".to_string());
+        state.diff.scroll_offset = 42;
+        state.diff.horizontal_scroll_offset = 7;
+
+        reduce(&mut state, AppEvent::Command(AppCommand::DiffNextFile));
+        reduce(&mut state, AppEvent::Command(AppCommand::DiffPrevFile));
+
+        assert_eq!(state.diff.selected_path.as_deref(), Some("a.rs"));
+        assert_eq!(state.diff.scroll_offset, 42);
+        assert_eq!(state.diff.horizontal_scroll_offset, 7);
     }
 
     #[test]
