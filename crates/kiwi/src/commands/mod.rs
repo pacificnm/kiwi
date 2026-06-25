@@ -6,7 +6,7 @@ use crate::layout::FocusTarget;
 use crate::navigation::{LeftNavTab, MainTab, NavCommand};
 use crate::state::{AppState, SideEffect};
 
-pub use fuzzy::best_fuzzy_score;
+pub use fuzzy::{best_fuzzy_score, filter_ranked};
 
 pub const MAX_VISIBLE_MATCHES: usize = 10;
 
@@ -184,35 +184,27 @@ pub fn command_available(state: &AppState, command: &CommandDef) -> bool {
 
 pub fn refresh_matches(state: &mut AppState) {
     let input = state.palette.input.trim();
-    let mut scored = Vec::new();
 
     if input.is_empty() {
-        for (index, _command) in COMMANDS.iter().enumerate() {
-            scored.push((index, 0u32));
-        }
+        let mut matches: Vec<usize> = (0..COMMANDS.len()).collect();
         for command_id in state.palette.history.iter().rev() {
             if let Some(index) = COMMANDS.iter().position(|command| command.id == command_id) {
-                if let Some(position) = scored.iter().position(|(candidate, _)| *candidate == index)
-                {
-                    scored.remove(position);
-                }
-                scored.insert(0, (index, 0));
+                matches.retain(|candidate| *candidate != index);
+                matches.insert(0, index);
             }
         }
+        state.palette.matches = matches.into_iter().take(MAX_VISIBLE_MATCHES).collect();
     } else {
-        for (index, command) in COMMANDS.iter().enumerate() {
-            if let Some(score) = best_fuzzy_score(command.id, command.title, input) {
-                scored.push((index, score));
-            }
-        }
-        scored.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+        let ranked = filter_ranked(COMMANDS.len(), input, |index| {
+            let command = &COMMANDS[index];
+            best_fuzzy_score(command.id, command.title, input)
+        });
+        state.palette.matches = ranked
+            .into_iter()
+            .take(MAX_VISIBLE_MATCHES)
+            .map(|(index, _)| index)
+            .collect();
     }
-
-    state.palette.matches = scored
-        .into_iter()
-        .take(MAX_VISIBLE_MATCHES)
-        .map(|(index, _)| index)
-        .collect();
 
     if state.palette.selected >= state.palette.matches.len() {
         state.palette.selected = state.palette.matches.len().saturating_sub(1);

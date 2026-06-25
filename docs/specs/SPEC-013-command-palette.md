@@ -30,7 +30,7 @@ Provide fuzzy-searchable command execution interface in the bottom-left panel pe
 
 ## Non-Functional Requirements
 
-- Filter update < 5ms for 100 commands
+- Filter update < 5ms for 100 commands (see `commands::fuzzy` perf test)
 - Palette open does not lose shell scrollback state
 
 ## Data Structures
