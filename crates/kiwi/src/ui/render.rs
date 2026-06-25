@@ -11,6 +11,7 @@ use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
 
 use super::agent::render_agent_pane;
+use super::file_tree::render_file_tree_pane;
 use super::palette::render_palette_pane;
 use super::shell::render_shell_pane;
 use super::status_bar::render_status_bar;
@@ -39,15 +40,25 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
         chrome,
     );
 
-    render_pane(
-        frame,
-        state.layout.rects.left_content,
-        state.navigation.left_tab.label(),
-        state.navigation.focus.is_focused(Region::LeftContent),
-        &state.theme,
-        chrome,
-        Some(left_pane_line(state)),
-    );
+    if state.navigation.left_tab == LeftNavTab::Files {
+        render_file_tree_pane(
+            frame,
+            state.layout.rects.left_content,
+            state.navigation.focus.is_focused(Region::LeftContent),
+            &state.theme,
+            state,
+        );
+    } else {
+        render_pane(
+            frame,
+            state.layout.rects.left_content,
+            state.navigation.left_tab.label(),
+            state.navigation.focus.is_focused(Region::LeftContent),
+            &state.theme,
+            chrome,
+            Some(left_pane_line(state)),
+        );
+    }
     if state.navigation.main_tab == MainTab::Agent {
         let agent_title = format!("Agent: {}", state.agent.agent_name);
         render_agent_pane(
@@ -93,35 +104,12 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
 }
 
 fn left_pane_line(state: &AppState) -> Line<'_> {
-    if state.navigation.left_tab == LeftNavTab::Files {
-        return file_tree_summary_line(state);
-    }
-
     let slot = state.navigation.left_slot();
     Line::from(format!(
         "{} view (selection: {})",
         state.navigation.left_tab.label(),
         slot.selected_index
     ))
-}
-
-fn file_tree_summary_line(state: &AppState) -> Line<'_> {
-    let root = state.file_tree.nodes.get(&state.file_tree.root);
-    let root_name = root.map(|node| node.name.as_str()).unwrap_or(".");
-    let child_count = state
-        .file_tree
-        .children
-        .get(&state.file_tree.root)
-        .map_or(0, Vec::len);
-    let loading = state.file_tree.loading.contains(&state.file_tree.root);
-
-    if loading {
-        Line::from(format!("{root_name} (loading…)"))
-    } else if child_count == 0 && root.is_some_and(|node| !node.children_loaded) {
-        Line::from(format!("{root_name} (collapsed)"))
-    } else {
-        Line::from(format!("{root_name} ({child_count} entries)"))
-    }
 }
 
 fn main_pane_line(state: &AppState) -> Line<'_> {
@@ -259,7 +247,7 @@ mod tests {
         }
         assert!(content.contains("Shell: bash"));
         assert!(content.contains("Ctrl+P for commands"));
-        assert!(content.contains("(collapsed)"));
+        assert!(content.contains("▸") || content.contains("▾"));
         assert!(content.contains("Agent: agent"));
         assert!(content.contains("Kiwi |"));
         assert!(content.contains("Agent Idle"));

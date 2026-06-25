@@ -5,6 +5,12 @@ use super::loader::detect_symlink_loop;
 use super::node::{DirectoryEntry, FileNode};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VisibleTreeRow {
+    pub path: PathBuf,
+    pub depth: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileTreeState {
     pub root: PathBuf,
     pub nodes: HashMap<PathBuf, FileNode>,
@@ -84,6 +90,60 @@ impl FileTreeState {
         }
     }
 
+    pub fn ensure_selection(&mut self) {
+        if self.selected.is_none() {
+            if let Some(row) = self.visible_rows().first() {
+                self.selected = Some(row.path.clone());
+            }
+        }
+    }
+
+    pub fn visible_rows(&self) -> Vec<VisibleTreeRow> {
+        let mut rows = Vec::new();
+        self.collect_visible_rows(&self.root, 0, &mut rows);
+        rows
+    }
+
+    pub fn selected_row_index(&self) -> Option<usize> {
+        let selected = self.selected.as_ref()?;
+        self.visible_rows()
+            .iter()
+            .position(|row| &row.path == selected)
+    }
+
+    pub fn move_selection(&mut self, delta: i32, viewport_rows: usize) {
+        self.ensure_selection();
+        let rows = self.visible_rows();
+        if rows.is_empty() {
+            return;
+        }
+
+        let current = self.selected_row_index().unwrap_or(0);
+        let len = rows.len() as i32;
+        let next = (current as i32 + delta).clamp(0, len - 1) as usize;
+        self.selected = Some(rows[next].path.clone());
+        self.scroll_offset = self.scroll_offset_for_row(next, viewport_rows);
+    }
+
+    pub fn scroll_offset_for_row(&self, row_index: usize, viewport_rows: usize) -> usize {
+        if viewport_rows == 0 {
+            return 0;
+        }
+        if row_index < self.scroll_offset {
+            row_index
+        } else if row_index >= self.scroll_offset.saturating_add(viewport_rows) {
+            row_index.saturating_sub(viewport_rows.saturating_sub(1))
+        } else {
+            self.scroll_offset
+        }
+    }
+
+    pub fn row_at_viewport_index(&self, viewport_index: usize) -> Option<VisibleTreeRow> {
+        self.visible_rows()
+            .into_iter()
+            .nth(self.scroll_offset.saturating_add(viewport_index))
+    }
+
     pub fn apply_children_loaded(
         &mut self,
         parent: &Path,
@@ -140,27 +200,23 @@ impl FileTreeState {
         self.loading.remove(path);
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub fn visible_entries(&self) -> Vec<&FileNode> {
-        let mut visible = Vec::new();
-        self.collect_visible(&self.root, &mut visible);
-        visible
-    }
-
-    #[cfg_attr(not(test), allow(dead_code))]
-    fn collect_visible<'a>(&'a self, path: &Path, visible: &mut Vec<&'a FileNode>) {
+    fn collect_visible_rows(&self, path: &Path, depth: usize, rows: &mut Vec<VisibleTreeRow>) {
         let Some(node) = self.nodes.get(path) else {
             return;
         };
 
-        visible.push(node);
+        rows.push(VisibleTreeRow {
+            path: path.to_path_buf(),
+            depth,
+        });
+
         if !node.expanded || !node.children_loaded {
             return;
         }
 
         if let Some(children) = self.children.get(path) {
             for child in children {
-                self.collect_visible(child, visible);
+                self.collect_visible_rows(child, depth + 1, rows);
             }
         }
     }
@@ -235,12 +291,37 @@ mod tests {
     }
 
     #[test]
-    fn visible_entries_flattens_expanded_tree() {
+    fn move_selection_updates_selected_path_and_scroll() {
         let root = PathBuf::from("/tmp/kiwi");
         let mut state = FileTreeState::at_root(root.clone());
-        let _ = state.expand(&root);
+        populate_two_level_tree(&mut state, &root);
+
+        state.move_selection(1, 2);
+        assert_eq!(state.selected, Some(root.join("src")));
+        assert_eq!(state.scroll_offset, 0);
+
+        state.move_selection(1, 1);
+        assert_eq!(state.selected, Some(root.join("src/main.rs")));
+        assert_eq!(state.scroll_offset, 2);
+    }
+
+    #[test]
+    fn visible_rows_flattens_expanded_tree_with_depth() {
+        let root = PathBuf::from("/tmp/kiwi");
+        let mut state = FileTreeState::at_root(root.clone());
+        populate_two_level_tree(&mut state, &root);
+
+        let rows = state.visible_rows();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].depth, 0);
+        assert_eq!(rows[1].depth, 1);
+        assert_eq!(rows[2].depth, 2);
+    }
+
+    fn populate_two_level_tree(state: &mut FileTreeState, root: &Path) {
+        let _ = state.expand(root);
         state.apply_children_loaded(
-            &root,
+            root,
             vec![DirectoryEntry {
                 path: root.join("src"),
                 name: "src".to_string(),
@@ -262,11 +343,19 @@ mod tests {
             }],
             None,
         );
+        state.ensure_selection();
+    }
+
+    #[test]
+    fn visible_entries_flattens_expanded_tree() {
+        let root = PathBuf::from("/tmp/kiwi");
+        let mut state = FileTreeState::at_root(root.clone());
+        populate_two_level_tree(&mut state, &root);
 
         let names: Vec<_> = state
-            .visible_entries()
+            .visible_rows()
             .iter()
-            .map(|node| node.name.as_str())
+            .map(|row| state.nodes[&row.path].name.as_str())
             .collect();
         assert_eq!(names, vec!["kiwi", "src", "main.rs"]);
     }

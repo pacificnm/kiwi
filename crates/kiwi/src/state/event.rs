@@ -57,6 +57,7 @@ pub enum AppCommand {
     FileTreeSelect(PathBuf),
     #[cfg_attr(not(test), allow(dead_code))]
     FileTreeRefresh,
+    FileTreeMoveSelection(i32),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
