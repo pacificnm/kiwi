@@ -70,6 +70,18 @@ impl ScrollbackBuffer {
         }
     }
 
+    /// Last `max_lines` completed lines plus any pending partial line, normalized for display.
+    #[must_use]
+    pub fn recent_text(&self, max_lines: usize) -> String {
+        let start = self.lines.len().saturating_sub(max_lines);
+        let mut parts: Vec<&str> = self.lines[start..].iter().map(String::as_str).collect();
+        let pending = self.pending_display();
+        if !pending.is_empty() {
+            parts.push(&pending);
+        }
+        parts.join("\n")
+    }
+
     #[must_use]
     pub fn viewport_lines(
         &self,
@@ -228,6 +240,15 @@ mod tests {
     #[test]
     fn normalize_for_display_expands_tabs() {
         assert_eq!(normalize_for_display("a\tb"), "a    b");
+    }
+
+    #[test]
+    fn recent_text_includes_pending_partial_line() {
+        let mut buffer = ScrollbackBuffer::new();
+        buffer.append_bytes(b"line1\n");
+        buffer.append_bytes(b"Running tool: ls");
+
+        assert!(buffer.recent_text(8).contains("Running tool: ls"));
     }
 
     #[test]

@@ -81,5 +81,5 @@ show_issue = true
 - [ ] All segments visible at 120 cols
 - [ ] Truncation works at 80 cols
 - [ ] Modified count updates on file save
-- [ ] Agent state changes reflect immediately
+- [x] Agent state changes reflect immediately
 - [ ] Issue number shows when issue selected
