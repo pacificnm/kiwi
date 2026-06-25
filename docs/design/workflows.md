@@ -92,7 +92,11 @@ Without agent or GitHub focus:
 
 Kiwi never edits in-place. Resolution: config → `$VISUAL` → `$EDITOR` → `nano`.
 
-Terminal editors (vim) may occupy the terminal; recommended: GUI editor or run Kiwi in a multiplexer split.
+**Terminal editors** (vim, nvim, nano): Kiwi suspends its TUI, runs the editor on your terminal, then resumes when you quit the editor.
+
+**GUI editors** (Cursor, VS Code, Zed): open in a separate window; Kiwi keeps running.
+
+Override detection with `[editor] terminal = true|false` in config.
 
 ### Git refresh
 

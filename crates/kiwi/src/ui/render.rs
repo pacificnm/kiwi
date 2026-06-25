@@ -12,6 +12,8 @@ use crate::theme::ThemePalette;
 
 use super::agent::render_agent_pane;
 use super::file_tree::render_file_tree_pane;
+use super::logs::render_logs_pane;
+use super::notifications::render_notifications;
 use super::palette::render_palette_pane;
 use super::preview::render_preview_pane;
 use super::search::render_search_pane;
@@ -88,6 +90,14 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
             &state.theme,
             state,
         );
+    } else if state.navigation.main_tab == MainTab::Logs {
+        render_logs_pane(
+            frame,
+            state.layout.rects.main_content,
+            state.navigation.focus.is_focused(Region::MainContent),
+            &state.theme,
+            state,
+        );
     } else {
         render_pane(
             frame,
@@ -119,6 +129,7 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
     );
 
     render_status_bar(frame, state.layout.rects.status_bar, state);
+    render_notifications(frame, state.layout.rects.status_bar, state);
 }
 
 fn left_pane_line(state: &AppState) -> Line<'_> {

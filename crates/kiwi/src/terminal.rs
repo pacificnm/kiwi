@@ -39,6 +39,7 @@ impl std::error::Error for TerminalError {}
 
 pub struct TerminalGuard {
     active: bool,
+    suspended: bool,
     mouse_enabled: bool,
 }
 
@@ -68,6 +69,7 @@ impl TerminalGuard {
 
         Ok(Self {
             active: true,
+            suspended: false,
             mouse_enabled,
         })
     }
@@ -77,12 +79,71 @@ impl TerminalGuard {
     pub fn inactive() -> Self {
         Self {
             active: false,
+            suspended: false,
             mouse_enabled: false,
         }
     }
 
+    /// Release the terminal to a foreground TUI editor (nano, vim, etc.).
+    pub fn suspend(&mut self) -> Result<(), TerminalError> {
+        if !self.active || self.suspended {
+            return Ok(());
+        }
+
+        let mut out = stdout();
+        if let Err(err) = (|| {
+            if self.mouse_enabled {
+                execute!(out, DisableMouseCapture)?;
+            }
+            execute!(out, DisableBracketedPaste)?;
+            execute!(out, LeaveAlternateScreen, Show)?;
+            disable_raw_mode()?;
+            out.flush()?;
+            Ok::<(), io::Error>(())
+        })() {
+            return Err(TerminalError::new(format!(
+                "failed to suspend terminal: {err}"
+            )));
+        }
+
+        self.suspended = true;
+        Ok(())
+    }
+
+    /// Restore Kiwi TUI control after a foreground editor exits.
+    pub fn resume(&mut self) -> Result<(), TerminalError> {
+        if !self.active || !self.suspended {
+            return Ok(());
+        }
+
+        let mut out = stdout();
+        if let Err(err) = (|| {
+            enable_raw_mode()?;
+            execute!(out, EnterAlternateScreen, Hide)?;
+            execute!(out, EnableBracketedPaste)?;
+            if self.mouse_enabled {
+                execute!(out, EnableMouseCapture)?;
+            }
+            out.flush()?;
+            Ok::<(), io::Error>(())
+        })() {
+            return Err(TerminalError::new(format!(
+                "failed to resume terminal: {err}"
+            )));
+        }
+
+        self.suspended = false;
+        Ok(())
+    }
+
     pub fn restore(&mut self) -> Result<(), TerminalError> {
         if !self.active {
+            return Ok(());
+        }
+
+        if self.suspended {
+            // Final shutdown while suspended: leave the user's shell visible.
+            self.suspended = false;
             return Ok(());
         }
 

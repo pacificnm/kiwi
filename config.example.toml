@@ -19,6 +19,7 @@ name = "kiwi-dark"
 
 [editor]
 command = "nvim"
+# terminal = true   # optional: force suspend/resume (true) or detached (false)
 
 [agent]
 command = "agent"

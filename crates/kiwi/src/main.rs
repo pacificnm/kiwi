@@ -5,6 +5,7 @@ mod bootstrap;
 mod cli;
 mod commands;
 mod config;
+mod editor;
 mod file_tree;
 mod git;
 mod layout;

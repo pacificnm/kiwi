@@ -1,4 +1,5 @@
 use std::io::stdout;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -11,6 +12,9 @@ use ratatui::Terminal;
 
 use crate::agent::{AgentOutputReader, AgentSession};
 use crate::bootstrap::StartupContext;
+use crate::editor::{
+    launch_gui_editor, prepare_editor_launch, run_terminal_editor, EditorLaunchMode,
+};
 use crate::file_tree::spawn_directory_load;
 use crate::layout::{agent_pty_size, shell_pty_size, FocusTarget};
 use crate::navigation::{map_key, LeftNavTab, MainTab};
@@ -29,6 +33,11 @@ use crate::workspace::{load_palette_history, save_palette_history};
 
 const SHELL_FORCE_QUIT_WINDOW: Duration = Duration::from_millis(500);
 
+struct PendingEditorLaunch {
+    path: PathBuf,
+    line: Option<u32>,
+}
+
 pub struct App {
     state: AppState,
     terminal: crate::terminal::TerminalGuard,
@@ -42,6 +51,7 @@ pub struct App {
     search_debounce: DebounceTimer,
     search_cancel: SearchCancelHandle,
     search_live_generation: Arc<AtomicU64>,
+    pending_editor_launch: Option<PendingEditorLaunch>,
 }
 
 impl App {
@@ -99,6 +109,7 @@ impl App {
             search_debounce: DebounceTimer::default(),
             search_cancel: SearchCancelHandle::default(),
             search_live_generation: Arc::new(AtomicU64::new(0)),
+            pending_editor_launch: None,
         };
         let spawn_effects = agent_spawn_effects_if_needed(&mut app.state);
         app.execute_effects(spawn_effects);
@@ -208,6 +219,8 @@ impl App {
                 break;
             }
 
+            self.flush_pending_editor_launch(&mut terminal);
+
             self.poll_search_debounce();
 
             if self.state.dirty {
@@ -290,6 +303,76 @@ impl App {
         }
     }
 
+    fn flush_pending_editor_launch(
+        &mut self,
+        tui: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) {
+        let Some(pending) = self.pending_editor_launch.take() else {
+            return;
+        };
+
+        let repo_root = self.state.repo_root.clone();
+        let settings = self.state.config.editor.clone();
+
+        let prepared =
+            match prepare_editor_launch(&repo_root, &settings, &pending.path, pending.line) {
+                Ok(prepared) => prepared,
+                Err(err) => {
+                    self.dispatch(AppEvent::EditorLaunchFailed {
+                        path: pending.path,
+                        error: err.user_message(),
+                        show_modal: err.is_command_not_found(),
+                    });
+                    return;
+                }
+            };
+
+        let launch_result = match prepared.mode {
+            EditorLaunchMode::Gui => launch_gui_editor(&prepared),
+            EditorLaunchMode::Terminal => {
+                let _ = tui.clear();
+                if let Err(err) = self.terminal.suspend() {
+                    self.dispatch(AppEvent::EditorLaunchFailed {
+                        path: prepared.path.clone(),
+                        error: err.to_string(),
+                        show_modal: false,
+                    });
+                    return;
+                }
+
+                let result = run_terminal_editor(&repo_root, &prepared);
+
+                if let Err(err) = self.terminal.resume() {
+                    self.dispatch(AppEvent::EditorLaunchFailed {
+                        path: prepared.path.clone(),
+                        error: err.to_string(),
+                        show_modal: false,
+                    });
+                }
+
+                let _ = tui.clear();
+                self.state.dirty = true;
+                result
+            }
+        };
+
+        match launch_result {
+            Ok(result) => {
+                self.dispatch(AppEvent::EditorLaunched {
+                    path: result.path,
+                    command: result.command,
+                });
+            }
+            Err(err) => {
+                self.dispatch(AppEvent::EditorLaunchFailed {
+                    path: prepared.path,
+                    error: err.user_message(),
+                    show_modal: err.is_command_not_found(),
+                });
+            }
+        }
+    }
+
     fn execute_effects(&mut self, effects: Vec<SideEffect>) -> bool {
         for effect in effects {
             match effect {
@@ -321,7 +404,10 @@ impl App {
                         let _ = shell.resize(cols, rows);
                     }
                 }
-                SideEffect::SaveWorkspace | SideEffect::LaunchEditor(_) => {}
+                SideEffect::SaveWorkspace => {}
+                SideEffect::LaunchEditor { path, line } => {
+                    self.pending_editor_launch = Some(PendingEditorLaunch { path, line });
+                }
                 SideEffect::SavePaletteHistory => {
                     if self.state.config.workspace.persist {
                         let _ = save_palette_history(
@@ -460,6 +546,13 @@ impl App {
     fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
         if self.is_force_quit(key) {
             return self.dispatch(AppEvent::Command(AppCommand::Quit));
+        }
+
+        if self.state.notifications.modal.is_some() {
+            if key.code == KeyCode::Esc {
+                return self.dispatch(AppEvent::Command(AppCommand::ModalDismiss));
+            }
+            return false;
         }
 
         if self.is_palette_open_key(key) {

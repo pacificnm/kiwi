@@ -180,6 +180,20 @@ Format for new entries:
 - **Files:** `search/`, `state/event.rs`, `state/reducer.rs`, `app.rs`, `ui/search.rs`, `ui/render.rs`, `commands/mod.rs`, `file_tree/mod.rs`
 - **Verify:** debounce/cancel/io/reducer/render tests; `cargo test` (250 tests), `cargo clippy -- -D warnings`.
 
+### Editor launcher resolution chain (GitHub #35, SPEC-015, ADR-013)
+
+- **Symptom:** `SideEffect::LaunchEditor` was a no-op; no resolution of which editor binary to run; no logging or error feedback.
+- **Fix:** Added `editor/` module with resolution order config → `$VISUAL` → `$EDITOR` → `nano`, PATH validation, detached spawn with reaper thread, and optional `+N` line arg for vim-family editors. Wired palette `Open in Editor` through `LaunchEditor` side effect; added `LogsState`, toast/modal notifications, and Logs tab rendering. `EditorSettings.configured_command` is set only when `[editor] command` appears in config (built-in default no longer hardcodes `nvim`).
+- **Files:** `editor/`, `config/types.rs`, `config/mod.rs`, `state/domains.rs`, `state/event.rs`, `state/reducer.rs`, `state/app_state.rs`, `app.rs`, `ui/logs.rs`, `ui/notifications.rs`, `ui/render.rs`, `commands/mod.rs`
+- **Verify:** resolve/launch/reducer/logs tests; `cargo test` (265 tests), `cargo clippy -- -D warnings`. Keybinding launch from tree/preview/search deferred to #36.
+
+### Terminal editor suspend/resume (GitHub #35 follow-up, ADR-013)
+
+- **Symptom:** Logs showed `nano` launched but the editor never appeared; spawn used null stdio while Kiwi held raw mode and alternate screen.
+- **Fix:** Classify editors as terminal vs GUI. Terminal editors suspend Kiwi (`TerminalGuard::suspend`), run with inherited stdio and wait, then resume. GUI editors keep detached spawn. Optional `[editor] terminal` config override.
+- **Files:** `editor/classify.rs`, `editor/launch.rs`, `terminal.rs`, `app.rs`, `config/types.rs`, ADR-013, SPEC-015, `workflows.md`
+- **Verify:** classify/launch tests; manual: palette Open in Editor with nano/nvim shows editor full-screen, Esc/:q returns to Kiwi.
+
 ---
 
 ## Reporting New Issues

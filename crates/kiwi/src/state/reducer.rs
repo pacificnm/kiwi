@@ -38,6 +38,12 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
             truncated,
             error,
         } => reduce_search_completed(state, generation, results, truncated, error),
+        AppEvent::EditorLaunched { path, command } => reduce_editor_launched(state, path, command),
+        AppEvent::EditorLaunchFailed {
+            path,
+            error,
+            show_modal,
+        } => reduce_editor_launch_failed(state, path, error, show_modal),
     }
 }
 
@@ -83,6 +89,8 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         AppCommand::SearchCancel => reduce_search_cancel(state),
         AppCommand::SearchMoveSelection(delta) => reduce_search_move_selection(state, delta),
         AppCommand::SearchSelect(index) => reduce_search_select(state, index),
+        AppCommand::OpenEditor { path, line } => reduce_open_editor(state, path, line),
+        AppCommand::ModalDismiss => reduce_modal_dismiss(state),
     }
 }
 
@@ -574,6 +582,50 @@ fn reduce_search_completed(
     Vec::new()
 }
 
+fn reduce_open_editor(state: &mut AppState, path: PathBuf, line: Option<u32>) -> Vec<SideEffect> {
+    state.dirty = true;
+    vec![SideEffect::LaunchEditor { path, line }]
+}
+
+fn reduce_modal_dismiss(state: &mut AppState) -> Vec<SideEffect> {
+    if state.notifications.modal.is_some() {
+        state.notifications.dismiss_modal();
+        state.dirty = true;
+    }
+    Vec::new()
+}
+
+fn reduce_editor_launched(state: &mut AppState, path: PathBuf, command: String) -> Vec<SideEffect> {
+    state.logs.push_info(format!(
+        "Launched editor `{command}` for {}",
+        path.display()
+    ));
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_editor_launch_failed(
+    state: &mut AppState,
+    path: PathBuf,
+    error: String,
+    show_modal: bool,
+) -> Vec<SideEffect> {
+    state.logs.push_error(format!(
+        "Editor launch failed for {}: {error}",
+        path.display()
+    ));
+    if show_modal {
+        state.notifications.show_modal(
+            "Editor command not found",
+            format!("{error}\n\nPress Esc to dismiss."),
+        );
+    } else {
+        state.notifications.show_toast(error);
+    }
+    state.dirty = true;
+    Vec::new()
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -617,6 +669,8 @@ mod tests {
             agent: AgentState::default(),
             shell: ShellState::default(),
             palette: CommandPaletteState::default(),
+            logs: crate::state::domains::LogsState::default(),
+            notifications: crate::state::domains::NotificationState::default(),
             status_bar: StatusBarState::default(),
             workspace_meta: WorkspaceMeta::default(),
         }
@@ -1214,5 +1268,56 @@ mod tests {
         assert!(effects.contains(&SideEffect::CancelSearch));
         assert!(state.search.query.is_empty());
         assert!(!state.search.running);
+    }
+
+    #[test]
+    fn open_editor_emits_launch_side_effect() {
+        let mut state = test_state();
+        let path = PathBuf::from("src/main.rs");
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::OpenEditor {
+                path: path.clone(),
+                line: None,
+            }),
+        );
+        assert!(effects.contains(&SideEffect::LaunchEditor { path, line: None }));
+    }
+
+    #[test]
+    fn editor_launched_records_log_entry() {
+        let mut state = test_state();
+        reduce(
+            &mut state,
+            AppEvent::EditorLaunched {
+                path: PathBuf::from("/tmp/a.rs"),
+                command: "nvim".to_string(),
+            },
+        );
+        assert_eq!(state.logs.entries.len(), 1);
+        assert!(state.logs.entries[0].message.contains("nvim"));
+    }
+
+    #[test]
+    fn editor_launch_failed_shows_modal_for_missing_command() {
+        let mut state = test_state();
+        reduce(
+            &mut state,
+            AppEvent::EditorLaunchFailed {
+                path: PathBuf::from("/tmp/a.rs"),
+                error: "Editor command not found: missing".to_string(),
+                show_modal: true,
+            },
+        );
+        assert!(state.notifications.modal.is_some());
+        assert_eq!(state.logs.entries.len(), 1);
+    }
+
+    #[test]
+    fn modal_dismiss_clears_modal_state() {
+        let mut state = test_state();
+        state.notifications.show_modal("Title", "Message");
+        reduce(&mut state, AppEvent::Command(AppCommand::ModalDismiss));
+        assert!(state.notifications.modal.is_none());
     }
 }

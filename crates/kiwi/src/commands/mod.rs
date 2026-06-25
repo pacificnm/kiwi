@@ -129,7 +129,7 @@ pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideE
                 return Vec::new();
             };
             state.dirty = true;
-            vec![SideEffect::LaunchEditor(path)]
+            vec![SideEffect::LaunchEditor { path, line: None }]
         }
     };
 

@@ -38,6 +38,8 @@ pub struct ThemeSection {
 #[serde(default)]
 pub struct EditorSection {
     pub command: Option<String>,
+    /// When set, overrides automatic terminal vs GUI detection.
+    pub terminal: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
@@ -146,9 +148,13 @@ pub struct ThemeSettings {
     pub custom: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct EditorSettings {
-    pub command: String,
+    /// Explicit `[editor] command` from config; when unset, runtime resolution uses
+    /// `$VISUAL` → `$EDITOR` → `nano` (ADR-013).
+    pub configured_command: Option<String>,
+    /// When set, forces terminal suspend/resume or detached GUI launch.
+    pub terminal: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -219,9 +225,7 @@ impl Default for ResolvedConfig {
                 name: "kiwi-dark".to_string(),
                 custom: None,
             },
-            editor: EditorSettings {
-                command: "nvim".to_string(),
-            },
+            editor: EditorSettings::default(),
             agent: AgentSettings {
                 command: "agent".to_string(),
                 args: Vec::new(),
@@ -287,7 +291,10 @@ impl RawConfig {
 
         if let Some(editor) = &self.editor {
             if let Some(command) = &editor.command {
-                resolved.editor.command = command.clone();
+                resolved.editor.configured_command = Some(command.clone());
+            }
+            if let Some(terminal) = editor.terminal {
+                resolved.editor.terminal = Some(terminal);
             }
         }
 
