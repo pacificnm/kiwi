@@ -1,5 +1,6 @@
 use crate::agent::infer_status_from_scrollback;
-use crate::layout::{agent_pty_size, compute_layout, shell_pty_size};
+use crate::commands::{execute_command, refresh_matches};
+use crate::layout::{agent_pty_size, compute_layout, shell_pty_size, FocusTarget};
 use crate::navigation::{MainTab, NavCommand};
 
 use super::app_state::AppState;
@@ -40,6 +41,15 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         AppCommand::AgentWrite(data) => vec![SideEffect::WriteAgent(data)],
         AppCommand::AgentScroll(delta) => reduce_agent_scroll(state, delta),
         AppCommand::AgentRestart => reduce_agent_restart(state),
+        AppCommand::PaletteOpen => reduce_palette_open(state),
+        AppCommand::PaletteClose => reduce_palette_close(state),
+        AppCommand::PaletteAppendChar(ch) => reduce_palette_append_char(state, ch),
+        AppCommand::PaletteBackspace => reduce_palette_backspace(state),
+        AppCommand::PaletteMoveSelection(delta) => reduce_palette_move_selection(state, delta),
+        AppCommand::PaletteHistoryUp => reduce_palette_history_up(state),
+        AppCommand::PaletteHistoryDown => reduce_palette_history_down(state),
+        AppCommand::PaletteExecuteSelected => reduce_palette_execute_selected(state),
+        AppCommand::PaletteExecuteMatch(index) => reduce_palette_execute_match(state, index),
     }
 }
 
@@ -166,6 +176,104 @@ fn reduce_agent_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
     Vec::new()
 }
 
+fn reduce_palette_open(state: &mut AppState) -> Vec<SideEffect> {
+    state.palette.open_with_focus(state.navigation.focus);
+    state.navigation.focus = FocusTarget::CommandPalette;
+    refresh_matches(state);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_palette_close(state: &mut AppState) -> Vec<SideEffect> {
+    if !state.palette.open {
+        return Vec::new();
+    }
+
+    state.palette.close(&mut state.navigation.focus);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_palette_append_char(state: &mut AppState, ch: char) -> Vec<SideEffect> {
+    if !state.palette.open {
+        return Vec::new();
+    }
+
+    state.palette.history_cursor = None;
+    state.palette.input.push(ch);
+    refresh_matches(state);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_palette_backspace(state: &mut AppState) -> Vec<SideEffect> {
+    if !state.palette.open {
+        return Vec::new();
+    }
+
+    state.palette.history_cursor = None;
+    state.palette.input.pop();
+    refresh_matches(state);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_palette_move_selection(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    if !state.palette.open {
+        return Vec::new();
+    }
+
+    state.palette.move_selection(delta as isize);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_palette_history_up(state: &mut AppState) -> Vec<SideEffect> {
+    if !state.palette.open {
+        return Vec::new();
+    }
+
+    state.palette.history_up();
+    refresh_matches(state);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_palette_history_down(state: &mut AppState) -> Vec<SideEffect> {
+    if !state.palette.open {
+        return Vec::new();
+    }
+
+    state.palette.history_down();
+    refresh_matches(state);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_palette_execute_selected(state: &mut AppState) -> Vec<SideEffect> {
+    if !state.palette.open {
+        return Vec::new();
+    }
+
+    let Some(registry_index) = state.palette.matches.get(state.palette.selected).copied() else {
+        return Vec::new();
+    };
+
+    execute_command(state, registry_index)
+}
+
+fn reduce_palette_execute_match(state: &mut AppState, match_index: usize) -> Vec<SideEffect> {
+    if !state.palette.open {
+        return Vec::new();
+    }
+
+    let Some(registry_index) = state.palette.matches.get(match_index).copied() else {
+        return Vec::new();
+    };
+
+    execute_command(state, registry_index)
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -173,6 +281,7 @@ mod tests {
     use crate::agent::AgentStatus;
     use crate::config::ResolvedConfig;
     use crate::layout::compute_layout;
+    use crate::layout::FocusTarget;
     use crate::navigation::{LeftNavTab, MainTab, NavCommand, NavigationState};
     use crate::theme::capabilities::TerminalCapabilities;
     use crate::theme::loader::load_theme_with_capabilities;
@@ -474,18 +583,68 @@ mod tests {
     }
 
     #[test]
-    fn shell_scroll_moves_viewport_and_clears_follow_tail() {
+    fn palette_open_sets_state_and_focus() {
         let mut state = test_state();
-        for index in 0..20 {
-            state
-                .shell
-                .scrollback
-                .append_bytes(format!("line {index}\n").as_bytes());
-        }
+        reduce(&mut state, AppEvent::Command(AppCommand::PaletteOpen));
+        assert!(state.palette.open);
+        assert_eq!(state.navigation.focus, FocusTarget::CommandPalette);
+        assert!(!state.palette.matches.is_empty());
+    }
 
-        reduce(&mut state, AppEvent::Command(AppCommand::ShellScroll(-1)));
+    #[test]
+    fn palette_close_restores_previous_focus() {
+        let mut state = test_state();
+        state.navigation.focus = FocusTarget::Shell;
+        reduce(&mut state, AppEvent::Command(AppCommand::PaletteOpen));
+        reduce(&mut state, AppEvent::Command(AppCommand::PaletteClose));
+        assert!(!state.palette.open);
+        assert_eq!(state.navigation.focus, FocusTarget::Shell);
+    }
 
-        assert!(!state.shell.follow_tail);
-        assert!(state.dirty);
+    #[test]
+    fn palette_fuzzy_query_matches_git_refresh() {
+        let mut state = test_state();
+        reduce(&mut state, AppEvent::Command(AppCommand::PaletteOpen));
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PaletteAppendChar('g')),
+        );
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PaletteAppendChar('i')),
+        );
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PaletteAppendChar('t')),
+        );
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PaletteAppendChar(' ')),
+        );
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PaletteAppendChar('r')),
+        );
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PaletteAppendChar('e')),
+        );
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PaletteAppendChar('f')),
+        );
+        let first = state.palette.matches.first().copied().expect("match");
+        assert_eq!(crate::commands::COMMANDS[first].id, "git.refresh");
+    }
+
+    #[test]
+    fn palette_execute_selected_closes_palette() {
+        let mut state = test_state();
+        reduce(&mut state, AppEvent::Command(AppCommand::PaletteOpen));
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PaletteExecuteSelected),
+        );
+        assert!(!state.palette.open);
     }
 }

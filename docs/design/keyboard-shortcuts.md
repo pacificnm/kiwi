@@ -41,7 +41,7 @@ When the shell or agent PTY has keyboard focus, `Ctrl+C` once sends an interrupt
 
 | Key | Action |
 |-----|--------|
-| `Ctrl+Shift+R` | Restart agent (until command palette ships in #27) |
+| `Ctrl+Shift+R` | Restart agent |
 
 When the agent process exits, the pane footer shows the exit code and the restart shortcut.
 
@@ -86,9 +86,10 @@ When the agent process exits, the pane footer shows the exit code and the restar
 
 | Key | Action |
 |-----|--------|
-| `↑` / `↓` | Move selection |
-| `Enter` | Execute |
-| `Esc` | Close |
+| `Ctrl+P` | Open command palette |
+| `↑` / `↓` | Move selection (or cycle recent commands when input is empty) |
+| `Enter` | Execute selected command |
+| `Esc` | Close palette and restore previous focus |
 
 ## Shell / Agent (when focused)
 

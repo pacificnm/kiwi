@@ -1,6 +1,6 @@
 use ratatui::layout::Rect;
 use ratatui::style::Style;
-use ratatui::text::{Line, Span};
+use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
@@ -11,6 +11,7 @@ use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
 
 use super::agent::render_agent_pane;
+use super::palette::render_palette_pane;
 use super::shell::render_shell_pane;
 use super::status_bar::render_status_bar;
 use super::tabs::tab_bar_line;
@@ -69,17 +70,12 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
             Some(main_pane_line(state)),
         );
     }
-    render_pane(
+    render_palette_pane(
         frame,
         state.layout.rects.palette,
-        "Commands",
         state.navigation.focus.is_focused(Region::Palette),
         &state.theme,
-        chrome,
-        Some(Line::from(Span::styled(
-            "Ctrl+P for commands",
-            state.theme.get(SemanticRole::Muted),
-        ))),
+        state,
     );
 
     let shell_title = format!("Shell: {}", state.shell.shell_name);

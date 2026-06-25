@@ -1,4 +1,5 @@
 use crate::agent::AgentStatus;
+use crate::layout::FocusTarget;
 use crate::shell::ScrollbackBuffer;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -239,9 +240,102 @@ impl ShellState {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandPaletteState {
     pub open: bool,
+    pub input: String,
+    pub matches: Vec<usize>,
+    pub selected: usize,
+    pub history: Vec<String>,
+    pub focus_before_open: FocusTarget,
+    pub history_cursor: Option<usize>,
+}
+
+impl Default for CommandPaletteState {
+    fn default() -> Self {
+        Self {
+            open: false,
+            input: String::new(),
+            matches: Vec::new(),
+            selected: 0,
+            history: Vec::new(),
+            focus_before_open: FocusTarget::Main,
+            history_cursor: None,
+        }
+    }
+}
+
+impl CommandPaletteState {
+    pub fn open_with_focus(&mut self, focus: FocusTarget) {
+        self.open = true;
+        self.input.clear();
+        self.selected = 0;
+        self.history_cursor = None;
+        if focus != FocusTarget::CommandPalette {
+            self.focus_before_open = focus;
+        }
+    }
+
+    pub fn close(&mut self, focus: &mut FocusTarget) {
+        self.open = false;
+        self.input.clear();
+        self.matches.clear();
+        self.selected = 0;
+        self.history_cursor = None;
+        *focus = self.focus_before_open;
+    }
+
+    pub fn record_history(&mut self, command_id: &str) {
+        if let Some(position) = self.history.iter().position(|id| id == command_id) {
+            self.history.remove(position);
+        }
+        self.history.push(command_id.to_string());
+        if self.history.len() > 20 {
+            let overflow = self.history.len() - 20;
+            self.history.drain(0..overflow);
+        }
+    }
+
+    pub fn move_selection(&mut self, delta: isize) {
+        if self.matches.is_empty() {
+            self.selected = 0;
+            return;
+        }
+
+        let len = self.matches.len();
+        let current = self.selected as isize;
+        let next = (current + delta).rem_euclid(len as isize);
+        self.selected = usize::try_from(next).unwrap_or(0);
+    }
+
+    pub fn history_up(&mut self) {
+        if self.history.is_empty() {
+            return;
+        }
+
+        let cursor = match self.history_cursor {
+            None => self.history.len() - 1,
+            Some(0) => return,
+            Some(value) => value - 1,
+        };
+        self.history_cursor = Some(cursor);
+        self.input = self.history[cursor].clone();
+    }
+
+    pub fn history_down(&mut self) {
+        let Some(cursor) = self.history_cursor else {
+            return;
+        };
+
+        if cursor + 1 >= self.history.len() {
+            self.history_cursor = None;
+            self.input.clear();
+            return;
+        }
+
+        self.history_cursor = Some(cursor + 1);
+        self.input = self.history[cursor + 1].clone();
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

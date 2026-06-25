@@ -16,7 +16,7 @@ use crate::shutdown;
 use crate::state::{
     agent_spawn_effects_if_needed, reduce, AppCommand, AppEvent, AppState, EventChannel, SideEffect,
 };
-use crate::ui::{draw_frame, map_mouse_click, mouse_interactions_enabled};
+use crate::ui::{draw_frame, map_mouse_click, mouse_interactions_enabled, palette_match_at};
 
 const SHELL_FORCE_QUIT_WINDOW: Duration = Duration::from_millis(500);
 
@@ -303,6 +303,17 @@ impl App {
             return false;
         }
 
+        if let Some(match_index) = palette_match_at(
+            &self.state,
+            self.state.layout.rects.palette,
+            mouse.column,
+            mouse.row,
+        ) {
+            return self.dispatch(AppEvent::Command(AppCommand::PaletteExecuteMatch(
+                match_index,
+            )));
+        }
+
         for command in map_mouse_click(&self.state, mouse.column, mouse.row) {
             if self.dispatch(AppEvent::Command(AppCommand::Navigation(command))) {
                 return true;
@@ -315,6 +326,14 @@ impl App {
     fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
         if self.is_force_quit(key) {
             return self.dispatch(AppEvent::Command(AppCommand::Quit));
+        }
+
+        if self.is_palette_open_key(key) {
+            return self.dispatch(AppEvent::Command(AppCommand::PaletteOpen));
+        }
+
+        if self.state.palette.open {
+            return self.handle_palette_key(key);
         }
 
         if self.is_agent_restart_key(key) {
@@ -351,6 +370,37 @@ impl App {
 
     fn is_focus_cycle_key(&self, key: crossterm::event::KeyEvent) -> bool {
         matches!(key.code, KeyCode::Tab)
+    }
+
+    fn is_palette_open_key(&self, key: crossterm::event::KeyEvent) -> bool {
+        key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char('p' | 'P'))
+    }
+
+    fn handle_palette_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Esc => self.dispatch(AppEvent::Command(AppCommand::PaletteClose)),
+            KeyCode::Enter => self.dispatch(AppEvent::Command(AppCommand::PaletteExecuteSelected)),
+            KeyCode::Up => {
+                if self.state.palette.input.is_empty() {
+                    self.dispatch(AppEvent::Command(AppCommand::PaletteHistoryUp))
+                } else {
+                    self.dispatch(AppEvent::Command(AppCommand::PaletteMoveSelection(-1)))
+                }
+            }
+            KeyCode::Down => {
+                if self.state.palette.input.is_empty() {
+                    self.dispatch(AppEvent::Command(AppCommand::PaletteHistoryDown))
+                } else {
+                    self.dispatch(AppEvent::Command(AppCommand::PaletteMoveSelection(1)))
+                }
+            }
+            KeyCode::Backspace => self.dispatch(AppEvent::Command(AppCommand::PaletteBackspace)),
+            KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.dispatch(AppEvent::Command(AppCommand::PaletteAppendChar(ch)))
+            }
+            _ => false,
+        }
     }
 
     fn is_agent_restart_key(&self, key: crossterm::event::KeyEvent) -> bool {

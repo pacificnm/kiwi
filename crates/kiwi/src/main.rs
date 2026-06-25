@@ -3,6 +3,7 @@ mod ansi;
 mod app;
 mod bootstrap;
 mod cli;
+mod commands;
 mod config;
 mod layout;
 mod navigation;

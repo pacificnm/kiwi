@@ -35,6 +35,15 @@ pub enum AppCommand {
     AgentWrite(Vec<u8>),
     AgentScroll(i32),
     AgentRestart,
+    PaletteOpen,
+    PaletteClose,
+    PaletteAppendChar(char),
+    PaletteBackspace,
+    PaletteMoveSelection(i32),
+    PaletteHistoryUp,
+    PaletteHistoryDown,
+    PaletteExecuteSelected,
+    PaletteExecuteMatch(usize),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

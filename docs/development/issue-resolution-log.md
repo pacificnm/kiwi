@@ -18,6 +18,14 @@ Format for new entries:
 
 ## M2 — Agent and Shell PTY (2026-06)
 
+### Command registry and palette UI (GitHub #27, SPEC-013)
+
+- **Symptom:** Commands pane showed only a static `Ctrl+P` hint; no searchable command list, no palette execution path, agent restart deferred to #27.
+- **Cause:** `CommandPaletteState` was a boolean stub; `Ctrl+P` only moved focus without opening a modal palette, registry, or fuzzy filter.
+- **Fix:** Added `commands/` registry with static `CommandDef` list, subsequence fuzzy matcher, palette reducer commands (`PaletteOpen`, input/selection/execute), `ui/palette.rs` rendering, global `Ctrl+P` handling, mouse click-to-execute, and in-session command history. Wired agent restart, git refresh, quit, focus, tab navigation, and editor open into the registry.
+- **Files:** `crates/kiwi/src/commands/`, `state/domains.rs`, `state/event.rs`, `state/reducer.rs`, `ui/palette.rs`, `ui/render.rs`, `app.rs`, `navigation/keys.rs`
+- **Verify:** `fuzzy_find_git_ref_matches_refresh_command`, `palette_close_restores_previous_focus`, `palette_match_at_maps_rows_below_prompt`; 180 tests pass.
+
 ### Agent pane repeating prompts (scrollback fidelity)
 
 - **Symptom:** Agent tab stacked duplicate prompts and status lines, as if output were being debounced or appended multiple times.
