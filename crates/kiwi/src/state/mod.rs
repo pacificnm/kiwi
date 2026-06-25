@@ -8,6 +8,7 @@ pub use app_state::AppState;
 pub use channel::EventChannel;
 #[allow(unused_imports)]
 pub use channel::EventSender;
+pub use domains::GitState;
 pub use domains::LogLevel;
 #[cfg(test)]
 pub use domains::{LogEntry, LogsState};

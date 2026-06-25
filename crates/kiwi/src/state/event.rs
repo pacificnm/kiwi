@@ -87,6 +87,10 @@ pub enum AppCommand {
     #[cfg_attr(not(test), allow(dead_code))]
     FileTreeRefresh,
     FileTreeMoveSelection(i32),
+    GitMoveSelection(i32),
+    GitSelect(usize),
+    GitOpenSelected,
+    GitRefresh,
     PreviewFile {
         path: PathBuf,
         line: Option<u32>,

@@ -31,6 +31,7 @@ use crate::shutdown;
 use crate::state::{
     agent_spawn_effects_if_needed, reduce, AppCommand, AppEvent, AppState, EventChannel, SideEffect,
 };
+use crate::ui::git_interaction_at;
 use crate::ui::{
     draw_frame, file_tree_interaction_at, map_mouse_click, mouse_interactions_enabled,
     palette_match_at, search_interaction_at, DoubleClickTarget, DoubleClickTracker,
@@ -655,6 +656,20 @@ impl App {
             }
         }
 
+        if self.state.navigation.left_tab == LeftNavTab::Git {
+            if let Some(index) = git_interaction_at(
+                &self.state,
+                self.state.layout.rects.left_content,
+                mouse.column,
+                mouse.row,
+            ) {
+                let _ = self.dispatch(AppEvent::Command(AppCommand::Navigation(
+                    crate::navigation::NavCommand::SetFocus(FocusTarget::Left),
+                )));
+                return self.dispatch(AppEvent::Command(AppCommand::GitSelect(index)));
+            }
+        }
+
         for command in map_mouse_click(&self.state, mouse.column, mouse.row) {
             if self.dispatch(AppEvent::Command(AppCommand::Navigation(command))) {
                 return true;
@@ -712,6 +727,10 @@ impl App {
 
         if self.file_tree_input_active() {
             return self.handle_file_tree_key(key);
+        }
+
+        if self.git_input_active() {
+            return self.handle_git_key(key);
         }
 
         if self.search_input_active() {
@@ -793,6 +812,27 @@ impl App {
     fn search_input_active(&self) -> bool {
         self.state.navigation.focus == FocusTarget::Left
             && self.state.navigation.left_tab == LeftNavTab::Search
+    }
+
+    fn git_input_active(&self) -> bool {
+        self.state.navigation.focus == FocusTarget::Left
+            && self.state.navigation.left_tab == LeftNavTab::Git
+    }
+
+    fn handle_git_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        if !key.modifiers.is_empty() && key.code != KeyCode::Char('R') {
+            return false;
+        }
+
+        match key.code {
+            KeyCode::Char('j') => self.dispatch(AppEvent::Command(AppCommand::GitMoveSelection(1))),
+            KeyCode::Char('k') => {
+                self.dispatch(AppEvent::Command(AppCommand::GitMoveSelection(-1)))
+            }
+            KeyCode::Char('R') => self.dispatch(AppEvent::Command(AppCommand::GitRefresh)),
+            KeyCode::Enter => self.dispatch(AppEvent::Command(AppCommand::GitOpenSelected)),
+            _ => false,
+        }
     }
 
     fn handle_search_key(&mut self, key: crossterm::event::KeyEvent) -> bool {

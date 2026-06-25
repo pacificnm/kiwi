@@ -1,5 +1,6 @@
 mod agent;
 mod file_tree;
+mod git;
 mod logs;
 mod mouse;
 mod mouse_clicks;
@@ -14,6 +15,7 @@ mod status_bar;
 mod tabs;
 
 pub use file_tree::{file_tree_interaction_at, FileTreeMouseAction};
+pub use git::{git_interaction_at, git_viewport_rows};
 pub use mouse::map_mouse_click;
 pub use mouse::mouse_interactions_enabled;
 pub use mouse_clicks::{DoubleClickTarget, DoubleClickTracker};

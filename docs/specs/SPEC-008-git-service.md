@@ -84,3 +84,11 @@ show_untracked = true
 - [x] Saving file updates status within debounce window
 - [x] No visible flicker on refresh (selection stable)
 - [x] Untracked hidden when config false
+
+## Git panel UI
+
+- [x] Branch and ahead/behind shown in Git left tab
+- [x] Files grouped by status with badge and path
+- [x] j/k selection with scroll preservation
+- [x] R refreshes git status from Git tab
+- [x] Enter selects file and opens main Diff tab
