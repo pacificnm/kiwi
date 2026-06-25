@@ -66,6 +66,10 @@ pub enum AppEvent {
     GitHubIssuesLoaded {
         result: crate::github::IssueListLoadResult,
     },
+    GitHubIssueDetailLoaded {
+        number: u32,
+        result: crate::github::IssueDetailLoadResult,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,6 +81,8 @@ pub enum AppCommand {
     GitHubRefresh,
     GitHubMoveIssueSelection(i32),
     GitHubOpenSelected,
+    GitHubIssueDetailScroll(i32),
+    GitHubIssueDetailPageScroll(i32),
     ShellWrite(Vec<u8>),
     ShellScroll(i32),
     AgentWrite(Vec<u8>),
@@ -191,6 +197,9 @@ pub enum SideEffect {
     PasteFromClipboard,
     SpawnGitHubAuthCheck,
     SpawnGitHubIssueList,
+    SpawnGitHubIssueDetail {
+        number: u32,
+    },
 }
 
 impl AppCommand {

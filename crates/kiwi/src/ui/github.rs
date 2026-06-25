@@ -13,10 +13,17 @@ use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
 
 const ISSUES_STATUS_ROWS: u16 = 1;
+const ISSUE_DETAIL_STATUS_ROWS: u16 = 1;
 
 pub fn issues_viewport_rows(area: Rect) -> usize {
     pane_inner(area)
         .map(|inner| inner.height.saturating_sub(ISSUES_STATUS_ROWS) as usize)
+        .unwrap_or(0)
+}
+
+pub fn issue_detail_viewport_rows(area: Rect) -> usize {
+    pane_inner(area)
+        .map(|inner| inner.height.saturating_sub(ISSUE_DETAIL_STATUS_ROWS) as usize)
         .unwrap_or(0)
 }
 
@@ -138,8 +145,48 @@ pub fn render_issue_detail_pane(
         return;
     }
 
-    let lines = issue_detail_lines(state);
-    render_github_pane(frame, area, focused, theme, state, "Issues", lines);
+    let border_style = if focused {
+        theme.get(SemanticRole::Accent)
+    } else {
+        theme.get(SemanticRole::Border)
+    };
+
+    let block = Block::default()
+        .title(issue_detail_title(state))
+        .borders(Borders::ALL)
+        .border_style(border_style)
+        .style(chrome_style(theme));
+
+    frame.render_widget(Clear, area);
+    frame.render_widget(block, area);
+
+    let Some(inner) = pane_inner(area) else {
+        return;
+    };
+
+    let status_y = inner
+        .y
+        .saturating_add(inner.height.saturating_sub(ISSUE_DETAIL_STATUS_ROWS));
+    let status_area = Rect {
+        x: inner.x,
+        y: status_y,
+        width: inner.width,
+        height: ISSUE_DETAIL_STATUS_ROWS.min(inner.height),
+    };
+    let content_area = Rect {
+        x: inner.x,
+        y: inner.y,
+        width: inner.width,
+        height: inner.height.saturating_sub(status_area.height),
+    };
+
+    if content_area.height > 0 && content_area.width > 0 {
+        render_issue_detail_content(frame, content_area, theme, state);
+    }
+
+    if status_area.height > 0 {
+        render_issue_detail_status_line(frame, status_area, focused, state, theme);
+    }
 }
 
 pub fn render_github_main_pane(
@@ -176,52 +223,132 @@ fn issues_list_title(state: &AppState) -> String {
     title
 }
 
-fn issue_detail_lines(state: &AppState) -> Vec<Line<'static>> {
-    let Some(number) = state.github.selected_issue else {
-        return vec![
-            Line::from("No issue selected"),
-            Line::from(""),
-            Line::from("Select an issue in the GH left panel (Alt+4)."),
-        ];
-    };
+fn issue_detail_title(state: &AppState) -> String {
+    let mut title = String::from("Issues");
+    if state.github.issue_detail_loading {
+        title.push_str(" · loading");
+    } else if state.github.issue_detail_error.is_some() {
+        title.push_str(" · error");
+    } else if let Some(number) = state.github.selected_issue {
+        title.push_str(&format!(" · #{number}"));
+    }
+    title
+}
 
-    let Some(issue) = state
-        .github
-        .issues
-        .iter()
-        .find(|issue| u64::from(issue.number) == number)
-    else {
-        return vec![
-            Line::from(format!("Issue #{number}")),
-            Line::from(""),
-            Line::from("Issue not in the current list — press R to refresh."),
-        ];
-    };
+fn render_issue_detail_content(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    theme: &ThemePalette,
+    state: &AppState,
+) {
+    let viewport_rows = area.height as usize;
+    let max_width = area.width as usize;
 
-    let mut lines = vec![
-        Line::from(Span::styled(
-            format!("#{} {}", issue.number, issue.title),
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from(format!("State: {}", issue.state.label())),
-    ];
-
-    if !issue.labels.is_empty() {
-        lines.push(Line::from(format!("Labels: {}", issue.labels.join(", "))));
+    if state.github.selected_issue.is_none() {
+        render_issue_detail_message(
+            frame,
+            area,
+            theme,
+            &[
+                "No issue selected",
+                "",
+                "Select an issue in the GH left panel (Alt+4) and press Enter.",
+            ],
+        );
+        return;
     }
 
-    if !issue.assignees.is_empty() {
-        lines.push(Line::from(format!(
-            "Assignees: {}",
-            issue.assignees.join(", ")
-        )));
+    if state.github.issue_detail_loading && state.github.issue_detail.is_none() {
+        render_issue_detail_message(frame, area, theme, &["Loading issue detail…"]);
+        return;
     }
 
-    lines.push(Line::from(""));
-    lines.push(Line::from(
-        "Body and comments will load in the issue detail view (#56).",
-    ));
-    lines
+    if let Some(error) = &state.github.issue_detail_error {
+        render_issue_detail_message(frame, area, theme, &[error.as_str()]);
+        return;
+    }
+
+    let Some(detail) = &state.github.issue_detail else {
+        render_issue_detail_message(
+            frame,
+            area,
+            theme,
+            &[
+                "Issue detail not loaded",
+                "",
+                "Press Enter on an issue in the GH left panel.",
+            ],
+        );
+        return;
+    };
+
+    let start = state.github.issue_detail_scroll_offset;
+    let end = (start + viewport_rows).min(detail.display_lines.len());
+    let fg = theme.get(SemanticRole::Fg);
+
+    for (row, line_index) in (start..end).enumerate() {
+        let line_text = &detail.display_lines[line_index];
+        let display = truncate_line(line_text, max_width);
+        let style = if line_index == 0 {
+            Style::default().add_modifier(Modifier::BOLD)
+        } else {
+            fg
+        };
+
+        let row_area = Rect {
+            x: area.x,
+            y: area.y.saturating_add(row as u16),
+            width: area.width,
+            height: 1,
+        };
+        frame.render_widget(Clear, row_area);
+        frame.render_widget(Paragraph::new(display).style(style), row_area);
+    }
+}
+
+fn render_issue_detail_message(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    theme: &ThemePalette,
+    lines: &[&str],
+) {
+    frame.render_widget(
+        Paragraph::new(
+            lines
+                .iter()
+                .map(|line| Line::from((*line).to_string()))
+                .collect::<Vec<_>>(),
+        )
+        .style(theme.get(SemanticRole::Fg))
+        .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
+fn render_issue_detail_status_line(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    focused: bool,
+    state: &AppState,
+    theme: &ThemePalette,
+) {
+    let status = if state.github.issue_detail_loading {
+        "Loading detail…"
+    } else if state.github.selected_issue.is_none() {
+        "Enter on GH left list to view"
+    } else if state.github.issue_detail.is_some() && focused {
+        "j/k scroll · PgUp/PgDn page · R refresh"
+    } else if state.github.issue_detail.is_some() {
+        "j/k scroll · R refresh"
+    } else {
+        "Enter on GH left list · R refresh"
+    };
+
+    frame.render_widget(
+        Paragraph::new(truncate_line(status, area.width as usize))
+            .style(theme.get(SemanticRole::Muted)),
+        area,
+    );
 }
 
 fn render_issue_list(
@@ -478,7 +605,7 @@ mod tests {
     use ratatui::Terminal;
 
     use crate::config::ResolvedConfig;
-    use crate::github::{GitHubAuthErrorKind, Issue, IssueState};
+    use crate::github::{GitHubAuthErrorKind, Issue, IssueDetail, IssueState};
     use crate::layout::compute_layout;
     use crate::navigation::{LeftNavTab, MainTab};
     use crate::state::AppState;
@@ -537,19 +664,35 @@ mod tests {
     }
 
     #[test]
-    fn issue_detail_pane_shows_selected_issue_summary() {
+    fn issue_detail_pane_shows_loaded_body_and_comments() {
         let mut state = test_state();
         state.navigation.main_tab = MainTab::Issues;
         state.github.auth_checked = true;
         state.github.auth_ok = true;
-        state.github.issues = vec![Issue {
-            number: 55,
-            title: "Issue list via gh json".to_string(),
+        state.github.selected_issue = Some(56);
+        state.github.issue_detail_number = Some(56);
+        state.github.issue_detail = Some(IssueDetail {
+            number: 56,
+            title: "Issue detail view".to_string(),
             state: IssueState::Open,
+            author: "pacificnm".to_string(),
             labels: vec!["epic-e14".to_string()],
-            assignees: vec!["octocat".to_string()],
-        }];
-        state.github.selected_issue = Some(55);
+            assignees: Vec::new(),
+            display_lines: vec![
+                "#56 Issue detail view".to_string(),
+                "State: open · Author: pacificnm".to_string(),
+                "Labels: epic-e14".to_string(),
+                String::new(),
+                "— Body —".to_string(),
+                String::new(),
+                "Detailed body text".to_string(),
+                String::new(),
+                "— Comments (1) —".to_string(),
+                String::new(),
+                "@reviewer · 2026-06-24".to_string(),
+                "Ship it".to_string(),
+            ],
+        });
 
         let backend = TestBackend::new(100, 16);
         let mut terminal = Terminal::new(backend).expect("terminal");
@@ -566,9 +709,10 @@ mod tests {
             .iter()
             .map(|cell| cell.symbol())
             .collect::<String>();
-        assert!(content.contains("#55 Issue list via gh json"));
-        assert!(content.contains("Labels: epic-e14"));
-        assert!(content.contains("Assignees: octocat"));
+        assert!(content.contains("#56 Issue detail view"));
+        assert!(content.contains("Detailed body text"));
+        assert!(content.contains("@reviewer"));
+        assert!(content.contains("Ship it"));
     }
 
     #[test]

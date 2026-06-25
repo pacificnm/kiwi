@@ -136,7 +136,7 @@ fn format_issue_list_failure(stderr: &[u8], stdout: &[u8]) -> String {
     "gh issue list failed".to_string()
 }
 
-fn command_on_path(command: &str) -> bool {
+pub(crate) fn command_on_path(command: &str) -> bool {
     let path = std::path::Path::new(command);
     if path.components().count() > 1 {
         return path.is_file();

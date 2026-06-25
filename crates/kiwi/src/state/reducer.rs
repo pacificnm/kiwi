@@ -10,7 +10,8 @@ use crate::git::{
     git_move_selection, git_select_row, patch_git_file_entries, row_for_path, GitFileEntry,
 };
 use crate::github::{
-    ensure_issue_selection, issue_move_selection, IssueListLoadResult, ISSUE_LIST_CACHE_SECS,
+    ensure_issue_selection, issue_move_selection, page_scroll_issue_detail, scroll_issue_detail,
+    IssueDetailLoadResult, IssueListLoadResult, ISSUE_LIST_CACHE_SECS,
 };
 use crate::layout::{agent_pty_size, compute_layout, shell_pty_size, FocusTarget};
 use crate::navigation::{LeftNavTab, MainTab, NavCommand};
@@ -60,6 +61,9 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
         AppEvent::DiffLoaded { result } => reduce_diff_loaded(state, result),
         AppEvent::GitHubAuthChecked { result } => reduce_github_auth_checked(state, result),
         AppEvent::GitHubIssuesLoaded { result } => reduce_github_issues_loaded(state, result),
+        AppEvent::GitHubIssueDetailLoaded { number, result } => {
+            reduce_github_issue_detail_loaded(state, number, result)
+        }
     }
 }
 
@@ -70,6 +74,7 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
             let mut effects = agent_spawn_effects_if_needed(state);
             effects.extend(github_first_access_effects(state));
             effects.extend(github_issue_list_access_effects(state, false));
+            effects.extend(github_issue_detail_access_effects(state, false));
             effects
         }
         AppCommand::Quit => {
@@ -82,6 +87,12 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
             reduce_github_move_issue_selection(state, delta)
         }
         AppCommand::GitHubOpenSelected => reduce_github_open_selected(state),
+        AppCommand::GitHubIssueDetailScroll(delta) => {
+            reduce_github_issue_detail_scroll(state, delta)
+        }
+        AppCommand::GitHubIssueDetailPageScroll(delta) => {
+            reduce_github_issue_detail_page_scroll(state, delta)
+        }
         AppCommand::ShellWrite(data) => vec![SideEffect::WriteShell(data)],
         AppCommand::ShellScroll(delta) => reduce_shell_scroll(state, delta),
         AppCommand::AgentWrite(data) => vec![SideEffect::WriteAgent(data)],
@@ -204,6 +215,7 @@ pub fn github_refresh_effects(state: &mut AppState) -> Vec<SideEffect> {
     state.github.loading = true;
     state.github.auth_checked = false;
     state.github.issues_loaded_at = None;
+    clear_issue_detail_cache(&mut state.github);
     vec![SideEffect::SpawnGitHubAuthCheck]
 }
 
@@ -246,6 +258,62 @@ pub fn github_issue_list_effects(state: &mut AppState, force: bool) -> Vec<SideE
 
 pub fn github_issue_list_access_effects(state: &mut AppState, force: bool) -> Vec<SideEffect> {
     github_issue_list_effects(state, force)
+}
+
+pub fn github_issue_detail_access_effects(state: &mut AppState, force: bool) -> Vec<SideEffect> {
+    if state.navigation.main_tab != MainTab::Issues {
+        return Vec::new();
+    }
+
+    let Some(number) = selected_issue_number(&state.github) else {
+        return Vec::new();
+    };
+
+    github_issue_detail_effects(state, number, force)
+}
+
+fn clear_issue_detail_cache(github: &mut crate::state::GitHubState) {
+    github.issue_detail_number = None;
+    github.issue_detail = None;
+    github.issue_detail_loading = false;
+    github.issue_detail_error = None;
+    github.issue_detail_scroll_offset = 0;
+}
+
+fn selected_issue_number(github: &crate::state::GitHubState) -> Option<u32> {
+    github
+        .selected_issue
+        .and_then(|number| u32::try_from(number).ok())
+}
+
+fn github_issue_detail_effects(state: &mut AppState, number: u32, force: bool) -> Vec<SideEffect> {
+    if !state.github.auth_ok {
+        return Vec::new();
+    }
+
+    if state.github.issue_detail_loading && state.github.issue_detail_number == Some(u64::from(number))
+    {
+        return Vec::new();
+    }
+
+    if !force
+        && state.github.issue_detail_number == Some(u64::from(number))
+        && state.github.issue_detail.is_some()
+        && state.github.issue_detail_error.is_none()
+    {
+        return Vec::new();
+    }
+
+    state.github.issue_detail_loading = true;
+    state.github.issue_detail_error = None;
+    if state.github.issue_detail_number != Some(u64::from(number)) {
+        state.github.issue_detail = None;
+        state.github.issue_detail_scroll_offset = 0;
+    }
+    state.github.issue_detail_number = Some(u64::from(number));
+    state.dirty = true;
+
+    vec![SideEffect::SpawnGitHubIssueDetail { number }]
 }
 
 fn github_surface_active(state: &AppState) -> bool {
@@ -304,6 +372,32 @@ fn reduce_github_issues_loaded(
     state.github.issues_loaded_at = Some(SystemTime::now());
     ensure_issue_selection(&mut state.github);
     state.dirty = true;
+
+    if state.navigation.main_tab == MainTab::Issues {
+        if let Some(number) = selected_issue_number(&state.github) {
+            return github_issue_detail_effects(state, number, true);
+        }
+    }
+
+    Vec::new()
+}
+
+fn reduce_github_issue_detail_loaded(
+    state: &mut AppState,
+    number: u32,
+    result: IssueDetailLoadResult,
+) -> Vec<SideEffect> {
+    if state.github.issue_detail_number != Some(u64::from(number)) {
+        return Vec::new();
+    }
+
+    state.github.issue_detail_loading = false;
+    state.github.issue_detail_error = result.error;
+    state.github.issue_detail = result.detail;
+    if state.github.issue_detail.is_some() {
+        clamp_issue_detail_scroll(state);
+    }
+    state.dirty = true;
     Vec::new()
 }
 
@@ -319,16 +413,63 @@ fn issues_viewport_rows(state: &AppState) -> usize {
 }
 
 fn reduce_github_open_selected(state: &mut AppState) -> Vec<SideEffect> {
-    if state.github.selected_issue.is_none() {
+    let Some(number) = selected_issue_number(&state.github) else {
         return Vec::new();
-    }
+    };
 
     state.navigation.apply(NavCommand::SelectMainTab(MainTab::Issues));
     state
         .navigation
         .apply(NavCommand::SetFocus(FocusTarget::Main));
     state.dirty = true;
+    github_issue_detail_effects(state, number, true)
+}
+
+fn reduce_github_issue_detail_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    let line_count = issue_detail_line_count(&state.github);
+    let viewport_rows = issue_detail_viewport_rows(state);
+    scroll_issue_detail(
+        &mut state.github.issue_detail_scroll_offset,
+        delta,
+        line_count,
+        viewport_rows,
+    );
+    state.dirty = true;
     Vec::new()
+}
+
+fn reduce_github_issue_detail_page_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    let line_count = issue_detail_line_count(&state.github);
+    let viewport_rows = issue_detail_viewport_rows(state);
+    page_scroll_issue_detail(
+        &mut state.github.issue_detail_scroll_offset,
+        delta,
+        line_count,
+        viewport_rows,
+    );
+    state.dirty = true;
+    Vec::new()
+}
+
+fn issue_detail_line_count(github: &crate::state::GitHubState) -> usize {
+    github
+        .issue_detail
+        .as_ref()
+        .map(|detail| detail.display_lines.len())
+        .unwrap_or(0)
+}
+
+fn clamp_issue_detail_scroll(state: &mut AppState) {
+    let line_count = issue_detail_line_count(&state.github);
+    let viewport_rows = issue_detail_viewport_rows(state);
+    let max_offset = line_count.saturating_sub(viewport_rows);
+    if state.github.issue_detail_scroll_offset > max_offset {
+        state.github.issue_detail_scroll_offset = max_offset;
+    }
+}
+
+fn issue_detail_viewport_rows(state: &AppState) -> usize {
+    crate::ui::issue_detail_viewport_rows(state.layout.rects.main_content)
 }
 
 fn reduce_git_refresh_requested(state: &mut AppState) -> Vec<SideEffect> {
@@ -1855,14 +1996,76 @@ mod tests {
     }
 
     #[test]
-    fn github_open_selected_focuses_main_issues_tab() {
+    fn github_open_selected_focuses_main_issues_tab_and_loads_detail() {
         let mut state = test_state();
+        state.github.auth_ok = true;
+        state.github.auth_checked = true;
         state.github.selected_issue = Some(42);
 
-        reduce(&mut state, AppEvent::Command(AppCommand::GitHubOpenSelected));
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::GitHubOpenSelected));
 
         assert_eq!(state.navigation.main_tab, MainTab::Issues);
         assert_eq!(state.navigation.focus, FocusTarget::Main);
+        assert!(state.github.issue_detail_loading);
+        assert!(effects.contains(&SideEffect::SpawnGitHubIssueDetail { number: 42 }));
+    }
+
+    #[test]
+    fn github_issue_detail_loaded_populates_detail() {
+        use crate::github::{IssueDetail, IssueDetailLoadResult, IssueState};
+
+        let mut state = test_state();
+        state.github.issue_detail_number = Some(56);
+        state.github.issue_detail_loading = true;
+
+        reduce(
+            &mut state,
+            AppEvent::GitHubIssueDetailLoaded {
+                number: 56,
+                result: IssueDetailLoadResult {
+                    detail: Some(IssueDetail {
+                        number: 56,
+                        title: "Issue detail view".to_string(),
+                        state: IssueState::Open,
+                        author: "pacificnm".to_string(),
+                        labels: Vec::new(),
+                        assignees: Vec::new(),
+                        display_lines: vec!["#56 Issue detail view".to_string()],
+                    }),
+                    error: None,
+                },
+            },
+        );
+
+        assert!(!state.github.issue_detail_loading);
+        assert_eq!(
+            state.github.issue_detail.as_ref().map(|detail| detail.number),
+            Some(56)
+        );
+    }
+
+    #[test]
+    fn github_issue_detail_scroll_moves_offset() {
+        use crate::github::{IssueDetail, IssueState};
+
+        let mut state = test_state();
+        state.navigation.main_tab = MainTab::Issues;
+        state.github.issue_detail = Some(IssueDetail {
+            number: 1,
+            title: "Test".to_string(),
+            state: IssueState::Open,
+            author: "user".to_string(),
+            labels: Vec::new(),
+            assignees: Vec::new(),
+            display_lines: (0..100).map(|index| format!("line {index}")).collect(),
+        });
+
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::GitHubIssueDetailScroll(5)),
+        );
+
+        assert_eq!(state.github.issue_detail_scroll_offset, 5);
     }
 
     #[test]

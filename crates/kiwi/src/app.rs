@@ -22,7 +22,7 @@ use crate::editor::{
 };
 use crate::file_tree::spawn_directory_load;
 use crate::git::spawn_git_refresh;
-use crate::github::{spawn_github_auth_check, spawn_github_issue_list_load};
+use crate::github::{spawn_github_auth_check, spawn_github_issue_detail_load, spawn_github_issue_list_load};
 use crate::layout::{agent_pty_size, shell_pty_size, FocusTarget};
 use crate::navigation::{map_key, LeftNavTab, MainTab, NavCommand};
 use crate::preview::spawn_preview_load;
@@ -437,6 +437,14 @@ impl App {
                     spawn_github_issue_list_load(
                         self.state.repo_root.clone(),
                         self.state.config.github.command.clone(),
+                        self.events.sender(),
+                    );
+                }
+                SideEffect::SpawnGitHubIssueDetail { number } => {
+                    spawn_github_issue_detail_load(
+                        self.state.repo_root.clone(),
+                        self.state.config.github.command.clone(),
+                        number,
                         self.events.sender(),
                     );
                 }
@@ -892,6 +900,8 @@ impl App {
 
         let gh_list_focused = self.state.navigation.focus == FocusTarget::Left
             && self.state.navigation.left_tab == LeftNavTab::Gh;
+        let issues_detail_focused = self.state.navigation.focus == FocusTarget::Main
+            && self.state.navigation.main_tab == MainTab::Issues;
 
         match key.code {
             KeyCode::Char('R') => {
@@ -904,6 +914,22 @@ impl App {
             }
             KeyCode::Char('k') if gh_list_focused => {
                 self.dispatch(AppEvent::Command(AppCommand::GitHubMoveIssueSelection(-1)));
+                true
+            }
+            KeyCode::Char('j') if issues_detail_focused => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubIssueDetailScroll(1)));
+                true
+            }
+            KeyCode::Char('k') if issues_detail_focused => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubIssueDetailScroll(-1)));
+                true
+            }
+            KeyCode::PageDown if issues_detail_focused => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubIssueDetailPageScroll(1)));
+                true
+            }
+            KeyCode::PageUp if issues_detail_focused => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubIssueDetailPageScroll(-1)));
                 true
             }
             KeyCode::Enter if gh_list_focused => {
