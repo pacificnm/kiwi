@@ -36,6 +36,10 @@ pub enum SideEffect {
     Quit,
     SpawnGitRefresh,
     WriteShell(Vec<u8>),
+    ResizeShell {
+        cols: u16,
+        rows: u16,
+    },
     #[cfg_attr(not(test), allow(dead_code))]
     SaveWorkspace,
     #[cfg_attr(not(test), allow(dead_code))]

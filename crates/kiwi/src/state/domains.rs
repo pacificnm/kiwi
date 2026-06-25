@@ -95,6 +95,11 @@ impl ShellState {
         self.spawn_error = Some(message);
     }
 
+    pub fn apply_resize(&mut self, cols: u16, rows: u16) {
+        self.cols = cols;
+        self.rows = rows;
+    }
+
     pub fn scroll_by(&mut self, delta: i32, page_size: u16) {
         let page = usize::from(page_size.max(1));
         let visible_height = page;
