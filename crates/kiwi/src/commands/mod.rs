@@ -4,7 +4,7 @@ mod registry;
 use crate::clipboard::resolve_copy_text_for_focus;
 use crate::editor::resolve_editor_target;
 use crate::navigation::{MainTab, NavCommand};
-use crate::state::{git_refresh_effects, AppState, SideEffect};
+use crate::state::{diff_set_source_effects, git_refresh_effects, AppState, SideEffect};
 
 pub use fuzzy::{best_fuzzy_score, filter_ranked};
 pub use registry::COMMANDS;
@@ -16,6 +16,7 @@ pub enum CommandContext {
     Always,
     RequiresGitRepo,
     AgentTab,
+    DiffTab,
     HasEditorTarget,
 }
 
@@ -31,6 +32,7 @@ pub enum PaletteAction {
     ClipboardCopy,
     ClipboardCut,
     ClipboardPaste,
+    DiffToggleSource,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,6 +62,7 @@ pub fn command_available(state: &AppState, command: &CommandDef) -> bool {
         CommandContext::Always => true,
         CommandContext::RequiresGitRepo => state.workspace_meta.is_git_repo,
         CommandContext::AgentTab => state.navigation.main_tab == MainTab::Agent,
+        CommandContext::DiffTab => state.navigation.main_tab == MainTab::Diff,
         CommandContext::HasEditorTarget => resolve_editor_target(state).is_some(),
     }
 }
@@ -154,6 +157,9 @@ pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideE
         PaletteAction::ClipboardPaste => {
             state.dirty = true;
             vec![SideEffect::PasteFromClipboard]
+        }
+        PaletteAction::DiffToggleSource => {
+            diff_set_source_effects(state, state.diff.source.toggle())
         }
     };
 

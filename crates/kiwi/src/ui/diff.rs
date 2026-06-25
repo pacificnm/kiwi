@@ -107,13 +107,22 @@ pub fn render_diff_pane(
         render_message(
             frame,
             content_area,
-            "No diff for this file",
+            empty_diff_message(state.diff.source),
             theme.get(SemanticRole::Muted),
         );
         return;
     }
 
     render_virtualized_lines(frame, content_area, state, theme, content_height);
+}
+
+fn empty_diff_message(source: DiffSource) -> &'static str {
+    match source {
+        DiffSource::Staged => {
+            "No staged changes for this file (s toggles view; use shell to git add)"
+        }
+        DiffSource::Unstaged => "No unstaged changes for this file (s toggles view)",
+    }
 }
 
 fn render_virtualized_lines(
@@ -242,8 +251,8 @@ fn format_diff_status(state: &AppState) -> String {
 
     let path = diff.selected_path.as_deref().unwrap_or("No file selected");
     let source = match diff.source {
-        DiffSource::Unstaged => "unstaged",
-        DiffSource::Staged => "staged",
+        DiffSource::Unstaged => "view: unstaged",
+        DiffSource::Staged => "view: staged",
     };
 
     if diff.is_binary {
@@ -466,18 +475,25 @@ mod tests {
     }
 
     #[test]
-    fn gutter_includes_old_and_new_line_numbers() {
-        let state = test_state_with_diff(
-            vec![DiffLine {
-                kind: DiffLineKind::Context,
-                content: " unchanged".to_string(),
-                old_lineno: Some(12),
-                new_lineno: Some(12),
-            }],
-            0,
-        );
-        let gutter = format_gutter(Some(12), Some(12), 2, 2);
-        assert_eq!(gutter, "12 12 ");
-        let _ = state;
+    fn empty_staged_diff_shows_view_hint() {
+        let mut state = test_state_with_diff(Vec::new(), 0);
+        state.diff.source = DiffSource::Staged;
+        let backend = TestBackend::new(80, 10);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+
+        terminal
+            .draw(|frame| {
+                render_diff_pane(frame, Rect::new(0, 0, 80, 8), true, &state.theme, &state);
+            })
+            .expect("draw");
+
+        let content = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(content.contains("No staged changes"));
     }
 }

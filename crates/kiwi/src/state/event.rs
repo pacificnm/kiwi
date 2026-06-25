@@ -104,6 +104,9 @@ pub enum AppCommand {
     DiffScroll(i32),
     DiffPageScroll(i32),
     DiffHorizontalScroll(i32),
+    DiffToggleSource,
+    #[cfg_attr(not(test), allow(dead_code))]
+    DiffSetSource(crate::diff::DiffSource),
     #[cfg_attr(not(test), allow(dead_code))]
     SearchSetQuery(String),
     SearchAppendChar(char),

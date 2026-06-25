@@ -2,8 +2,17 @@
 pub enum DiffSource {
     #[default]
     Unstaged,
-    #[allow(dead_code)] // wired by diff staged toggle (#52)
     Staged,
+}
+
+impl DiffSource {
+    #[must_use]
+    pub const fn toggle(self) -> Self {
+        match self {
+            Self::Unstaged => Self::Staged,
+            Self::Staged => Self::Unstaged,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,5 +48,16 @@ impl FileDiffLoadResult {
             is_binary: false,
             error: Some(message.into()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn diff_source_toggle_alternates() {
+        assert_eq!(DiffSource::Unstaged.toggle(), DiffSource::Staged);
+        assert_eq!(DiffSource::Staged.toggle(), DiffSource::Unstaged);
     }
 }

@@ -61,6 +61,12 @@ impl DiffState {
         self.horizontal_scroll_offset = 0;
     }
 
+    pub fn begin_source_reload(&mut self) {
+        self.loading = true;
+        self.error = None;
+        self.is_binary = false;
+    }
+
     pub fn apply_loaded(&mut self, result: FileDiffLoadResult) {
         if self.selected_path.as_deref() != Some(result.path.as_str()) {
             return;

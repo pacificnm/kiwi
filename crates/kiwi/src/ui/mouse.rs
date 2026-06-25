@@ -32,7 +32,9 @@ pub fn map_mouse_click_in_layout(
         return vec![command, NavCommand::SetFocus(focus)];
     }
 
-    if main_tab == MainTab::Agent && point_in_rect(column, row, rects.main_content) {
+    if matches!(main_tab, MainTab::Agent | MainTab::Diff | MainTab::Preview)
+        && point_in_rect(column, row, rects.main_content)
+    {
         return vec![NavCommand::SetFocus(FocusTarget::Main)];
     }
 
@@ -157,7 +159,29 @@ mod tests {
     }
 
     #[test]
-    fn click_on_main_content_ignored_off_agent_tab() {
+    fn click_on_diff_pane_focuses_main() {
+        let mut state = test_state();
+        state.navigation.main_tab = MainTab::Diff;
+        let rects = state.layout.rects;
+        assert_eq!(
+            map_mouse_click(&state, rects.main_content.x + 2, rects.main_content.y + 2),
+            vec![NavCommand::SetFocus(FocusTarget::Main)]
+        );
+    }
+
+    #[test]
+    fn click_on_preview_pane_focuses_main() {
+        let mut state = test_state();
+        state.navigation.main_tab = MainTab::Preview;
+        let rects = state.layout.rects;
+        assert_eq!(
+            map_mouse_click(&state, rects.main_content.x + 2, rects.main_content.y + 2),
+            vec![NavCommand::SetFocus(FocusTarget::Main)]
+        );
+    }
+
+    #[test]
+    fn click_on_main_content_ignored_on_non_interactive_main_tab() {
         let mut state = test_state();
         state.navigation.main_tab = MainTab::Issues;
         let rects = state.layout.rects;
