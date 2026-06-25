@@ -150,8 +150,8 @@ Pair **GH** left (`Alt+4`) with **Issues** main (`2`) or **PRs** main (`3`). Use
 | `Enter` | Open selected issue in Issues main tab |
 | Command palette | **GitHub: Comment on Issue** — prompt for comment text (`Enter` posts) |
 | Command palette | **GitHub: Add Labels to Issue** — multi-select overlay (`Space` toggle, `Enter` apply, `Esc` cancel) |
-| `c` | Comment (opens palette prompt) |
-| `o` | Open in browser |
+| Command palette | **GitHub: Open in Browser** — opens selected issue or PR via `gh view --web` |
+| `o` | Open selected issue or PR in browser |
 | `R` | Refresh list |
 
 ## Customization

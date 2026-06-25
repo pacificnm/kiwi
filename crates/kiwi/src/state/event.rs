@@ -81,6 +81,10 @@ pub enum AppEvent {
         number: u32,
         result: crate::github::IssueActionResult,
     },
+    GitHubOpenBrowserCompleted {
+        target: crate::github::GitHubBrowserTarget,
+        result: crate::github::IssueActionResult,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,6 +104,7 @@ pub enum AppCommand {
     GitHubLabelPickerToggle,
     GitHubLabelPickerApply,
     GitHubLabelPickerCancel,
+    GitHubOpenInBrowser,
     ShellWrite(Vec<u8>),
     ShellScroll(i32),
     AgentWrite(Vec<u8>),
@@ -225,6 +230,9 @@ pub enum SideEffect {
     SpawnGitHubIssueLabelApply {
         number: u32,
         labels: Vec<String>,
+    },
+    SpawnGitHubOpenBrowser {
+        target: crate::github::GitHubBrowserTarget,
     },
 }
 

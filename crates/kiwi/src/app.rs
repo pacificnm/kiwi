@@ -24,7 +24,8 @@ use crate::file_tree::spawn_directory_load;
 use crate::git::spawn_git_refresh;
 use crate::github::{
     spawn_github_auth_check, spawn_github_issue_comment, spawn_github_issue_detail_load,
-    spawn_github_issue_label_apply, spawn_github_issue_list_load, spawn_github_repo_labels_load,
+    spawn_github_issue_label_apply, spawn_github_issue_list_load, spawn_github_open_browser,
+    spawn_github_repo_labels_load,
 };
 use crate::layout::{agent_pty_size, shell_pty_size, FocusTarget};
 use crate::navigation::{map_key, LeftNavTab, MainTab, NavCommand};
@@ -473,6 +474,14 @@ impl App {
                         self.state.config.github.command.clone(),
                         number,
                         labels,
+                        self.events.sender(),
+                    );
+                }
+                SideEffect::SpawnGitHubOpenBrowser { target } => {
+                    spawn_github_open_browser(
+                        self.state.repo_root.clone(),
+                        self.state.config.github.command.clone(),
+                        target,
                         self.events.sender(),
                     );
                 }
@@ -993,6 +1002,10 @@ impl App {
         match key.code {
             KeyCode::Char('R') => {
                 self.dispatch(AppEvent::Command(AppCommand::GitHubRefresh));
+                true
+            }
+            KeyCode::Char('o') if self.github_input_active() => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubOpenInBrowser));
                 true
             }
             KeyCode::Char('i') if gh_left_focused => {

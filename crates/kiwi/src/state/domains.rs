@@ -145,6 +145,7 @@ impl DiffState {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GitHubState {
     pub selected_issue: Option<u64>,
+    pub selected_pr: Option<u64>,
     pub auth_checked: bool,
     pub auth_ok: bool,
     pub loading: bool,
