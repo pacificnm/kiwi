@@ -18,6 +18,38 @@ Format for new entries:
 
 ## M2 — Agent and Shell PTY (2026-06)
 
+### Agent pane repeating prompts (scrollback fidelity)
+
+- **Symptom:** Agent tab stacked duplicate prompts and status lines, as if output were being debounced or appended multiple times.
+- **Cause:** `ScrollbackBuffer` naively split PTY bytes on `\n` and committed every segment permanently. Interactive agent TUIs redraw with `\r`, clear-screen (`\x1b[2J`), and cursor-up (`\x1b[1A`); each redraw became a new scrollback line instead of overwriting the screen.
+- **Fix:** Rewrote scrollback as a minimal cursor-based PTY screen (history + active screen grid). Handles `\r`, `\n`, `\t`, `\b`, CSI clear/position/cursor movement, alternate screen (`?1049`), and SGR passthrough. Agent and shell share the same buffer and `render_scrollback_pane` path — no separate agent display pipeline.
+- **Files:** `crates/kiwi/src/shell/scrollback.rs`, `crates/kiwi/src/ui/scrollback.rs`, `crates/kiwi/src/ui/agent.rs`
+- **Verify:** `clear_screen_drops_duplicate_prompts`, `cursor_up_allows_redrawing_previous_line`, `carriage_return_overwrites_current_line`, `split_escape_sequence_across_reads_is_reassembled`; manual agent tab shows one updating prompt.
+
+### PTY pane colors overridden by Kiwi theme
+
+- **Symptom:** Agent and shell text used Kiwi chrome theme foreground/background instead of the child process ANSI colors.
+- **Cause:** Scrollback rendering stripped SGR codes and applied `ThemePalette` styles to PTY lines; full-frame background fill also set theme foreground on every cell.
+- **Fix:** Added `ansi.rs` with `pty_base_style()` (`Color::Reset` fg/bg), `ansi_line()` SGR parser (16-color + 256-color fg), and `strip_ansi()` for heuristics only. PTY rows render with terminal-standard colors; Kiwi theme applies to borders, tabs, and status bar only.
+- **Files:** `crates/kiwi/src/ansi.rs`, `crates/kiwi/src/ui/scrollback.rs`, `crates/kiwi/src/ui/render.rs`, `crates/kiwi/src/shell/scrollback.rs`
+- **Verify:** `ansi_line_preserves_green_text`, `viewport_lines_preserves_ansi_color_codes`, `pty_base_style_resets_terminal_colors`; manual check that tool output colors match a normal terminal.
+
+### Agent pane garbled / odd characters
+
+- **Symptom:** Agent output showed mojibake (`â`, `¢`, etc.) and stray text like `?25h` mixed with real content.
+- **Cause:** (1) After the screen-model rewrite, printable bytes were decoded as `byte as char`, breaking multi-byte UTF-8 (arrows, box-drawing, emoji). (2) CSI private-mode sequences (`\x1b[?25h`, `\x1b[?2004h`, etc.) failed to parse because the CSI lexer only accepted digits; failed escapes leaked as visible characters.
+- **Fix:** Buffer PTY text in `text_pending` and decode valid UTF-8 before writing; use U+FFFD for invalid sequences. Replaced CSI parser with standard parameter/intermediate byte handling (`0x30–0x3F`, `0x20–0x2F`); private-mode `h`/`l` sequences are consumed and ignored. Short non-CSI escapes (`\x1b(B`, etc.) are consumed without printing.
+- **Files:** `crates/kiwi/src/shell/scrollback.rs`
+- **Verify:** `utf8_multibyte_characters_decode_correctly`, `utf8_split_across_reads_is_reassembled`, `private_mode_sequences_are_not_printed`; 168 tests pass.
+
+### Agent restart command (GitHub #26, SPEC-010)
+
+- **Symptom:** Crashed or exited agent could not be recovered without quitting Kiwi.
+- **Cause:** No `AgentRestart` command, exit polling, or restart UX.
+- **Fix:** `AppCommand::AgentRestart` + `SideEffect::RestartAgent`; poll child exit in main loop; footer with exit code and `Ctrl+Shift+R` hint; keyboard shortcut on Agent tab (palette wiring deferred to #27).
+- **Files:** `app.rs`, `state/event.rs`, `state/reducer.rs`, `state/domains.rs`, `agent/session.rs`, `ui/agent.rs`, `ui/scrollback.rs`
+- **Verify:** `agent_restart_emits_side_effect_on_agent_tab`, `agent_restart_shortcut_dispatches_on_agent_tab`; 168 tests pass.
+
 ### Agent status heuristics for status bar (GitHub #25, SPEC-010 / SPEC-019)
 
 - **Symptom:** Status bar only showed generic "Agent Running" / "Agent Idle" regardless of agent output.

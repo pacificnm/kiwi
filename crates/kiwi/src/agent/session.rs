@@ -5,7 +5,7 @@ use std::thread;
 #[cfg(test)]
 use std::time::Duration;
 
-use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
+use portable_pty::{native_pty_system, Child, CommandBuilder, ExitStatus, MasterPty, PtySize};
 
 use crate::config::AgentSettings;
 
@@ -105,6 +105,15 @@ impl AgentSession {
         }
     }
 
+    #[must_use]
+    pub fn poll_exit(&mut self) -> Option<i32> {
+        match self.child.try_wait() {
+            Ok(None) => None,
+            Ok(Some(status)) => Some(exit_status_code(&status)),
+            Err(_) => Some(1),
+        }
+    }
+
     pub fn shutdown(&mut self) {
         self.writer.take();
         let _ = self.child.kill();
@@ -141,6 +150,10 @@ impl Drop for AgentSession {
 fn apply_pty_env(command: &mut CommandBuilder) {
     let term = std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".to_string());
     command.env("TERM", term);
+}
+
+fn exit_status_code(status: &ExitStatus) -> i32 {
+    i32::try_from(status.exit_code()).unwrap_or(1)
 }
 
 #[cfg(test)]

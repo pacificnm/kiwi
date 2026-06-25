@@ -17,8 +17,9 @@ use super::tabs::tab_bar_line;
 
 pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
     let chrome = chrome_style(&state.theme);
+    let chrome_bg = chrome_background(&state.theme);
     frame.render_widget(Clear, frame.area());
-    frame.render_widget(Paragraph::new("").style(chrome), frame.area());
+    frame.render_widget(Paragraph::new("").style(chrome_bg), frame.area());
 
     render_tab_bar(
         frame,
@@ -54,7 +55,7 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
             &agent_title,
             state.navigation.focus.is_focused(Region::MainContent),
             &state.theme,
-            chrome,
+            hint_style(&state.theme),
             state,
         );
     } else {
@@ -88,7 +89,7 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
         &shell_title,
         state.navigation.focus.is_focused(Region::Shell),
         &state.theme,
-        chrome,
+        hint_style(&state.theme),
         state,
     );
 
@@ -171,6 +172,18 @@ fn chrome_style(theme: &ThemePalette) -> Style {
         style = style.fg(fg);
     }
     style
+}
+
+fn chrome_background(theme: &ThemePalette) -> Style {
+    let mut style = Style::default();
+    if let Some(bg) = theme.get(SemanticRole::Bg).bg {
+        style = style.bg(bg);
+    }
+    style
+}
+
+fn hint_style(theme: &ThemePalette) -> Style {
+    theme.get(SemanticRole::Muted)
 }
 
 #[cfg(test)]

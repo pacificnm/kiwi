@@ -113,6 +113,46 @@ impl App {
         self.state.dirty = true;
     }
 
+    fn restart_agent(&mut self) {
+        if self.state.navigation.main_tab != MainTab::Agent {
+            return;
+        }
+
+        if let Some(reader) = self.agent_io.take() {
+            reader.abandon();
+        }
+        if let Some(mut agent) = self.agent.take() {
+            agent.shutdown();
+        }
+
+        self.state.agent.prepare_restart();
+        self.spawn_agent();
+    }
+
+    fn poll_agent_exit(&mut self) {
+        if !self.state.agent.running {
+            return;
+        }
+
+        let exit_code = {
+            let Some(agent) = self.agent.as_mut() else {
+                return;
+            };
+            agent.poll_exit()
+        };
+
+        let Some(code) = exit_code else {
+            return;
+        };
+
+        if let Some(reader) = self.agent_io.take() {
+            reader.abandon();
+        }
+        self.agent.take();
+
+        self.dispatch(AppEvent::AgentExited(code));
+    }
+
     #[must_use]
     #[cfg(test)]
     pub fn state(&self) -> &AppState {
@@ -141,6 +181,8 @@ impl App {
             if shutdown::shutdown_requested() {
                 break;
             }
+
+            self.poll_agent_exit();
 
             if self.process_pending_events() {
                 break;
@@ -208,6 +250,9 @@ impl App {
                 SideEffect::SpawnAgent => {
                     self.spawn_agent();
                 }
+                SideEffect::RestartAgent => {
+                    self.restart_agent();
+                }
                 SideEffect::WriteShell(data) => {
                     if let Some(shell) = self.shell.as_mut() {
                         let _ = shell.write(&data);
@@ -272,6 +317,10 @@ impl App {
             return self.dispatch(AppEvent::Command(AppCommand::Quit));
         }
 
+        if self.is_agent_restart_key(key) {
+            return self.dispatch(AppEvent::Command(AppCommand::AgentRestart));
+        }
+
         if self.is_focus_cycle_key(key) {
             let command = if key.modifiers.contains(KeyModifiers::SHIFT) {
                 crate::navigation::NavCommand::PreviousFocus
@@ -302,6 +351,13 @@ impl App {
 
     fn is_focus_cycle_key(&self, key: crossterm::event::KeyEvent) -> bool {
         matches!(key.code, KeyCode::Tab)
+    }
+
+    fn is_agent_restart_key(&self, key: crossterm::event::KeyEvent) -> bool {
+        self.state.navigation.main_tab == MainTab::Agent
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && key.modifiers.contains(KeyModifiers::SHIFT)
+            && matches!(key.code, KeyCode::Char('r' | 'R'))
     }
 
     fn is_force_quit(&self, key: crossterm::event::KeyEvent) -> bool {
@@ -665,6 +721,38 @@ mod tests {
             app.state().navigation.main_tab,
             crate::navigation::MainTab::Issues
         );
+    }
+
+    #[test]
+    fn agent_restart_shortcut_dispatches_on_agent_tab() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+        use crate::layout::FocusTarget;
+        use crate::navigation::{MainTab, NavCommand};
+        use crate::state::AppCommand;
+
+        let mut app = App::new(test_context());
+        app.state_mut().navigation.main_tab = MainTab::Agent;
+        app.event_sender()
+            .send(AppEvent::Command(AppCommand::Navigation(
+                NavCommand::SetFocus(FocusTarget::Main),
+            )))
+            .expect("send");
+        app.process_pending_events();
+
+        let key = KeyEvent {
+            code: KeyCode::Char('R'),
+            modifiers: KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        };
+        assert!(!app.dispatch_key(key));
+        if std::path::Path::new("/bin/bash").exists()
+            || std::path::Path::new("/usr/bin/bash").exists()
+        {
+            assert!(app.state().agent.spawned);
+            assert!(app.state().agent.running);
+        }
     }
 
     #[test]

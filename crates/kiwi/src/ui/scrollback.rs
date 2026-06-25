@@ -1,9 +1,10 @@
 use ratatui::layout::Rect;
 use ratatui::style::Style;
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
+use crate::ansi::{ansi_line, pty_base_style};
 use crate::shell::ScrollbackBuffer;
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
@@ -14,6 +15,7 @@ pub struct ScrollbackPane<'a> {
     pub viewport_offset: usize,
     pub spawn_error: Option<&'a str>,
     pub idle_hint: Option<&'a str>,
+    pub footer: Option<&'a str>,
 }
 
 pub fn render_scrollback_pane(
@@ -22,7 +24,7 @@ pub fn render_scrollback_pane(
     title: &str,
     focused: bool,
     theme: &ThemePalette,
-    chrome: Style,
+    hint_style: Style,
     pane: ScrollbackPane<'_>,
 ) {
     if area.width == 0 || area.height == 0 {
@@ -38,8 +40,7 @@ pub fn render_scrollback_pane(
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
-        .border_style(border_style)
-        .style(chrome);
+        .border_style(border_style);
 
     let inner = block.inner(area);
     frame.render_widget(Clear, area);
@@ -49,9 +50,10 @@ pub fn render_scrollback_pane(
         return;
     }
 
-    frame.render_widget(Clear, inner);
+    fill_pty_background(frame, inner);
 
-    let visible_height = inner.height as usize;
+    let footer_rows = usize::from(pane.footer.is_some());
+    let visible_height = inner.height.saturating_sub(footer_rows as u16) as usize;
     let max_width = inner.width as usize;
     let include_pending = pane.follow_tail;
     let start =
@@ -62,22 +64,76 @@ pub fn render_scrollback_pane(
         .viewport_lines(start, visible_height, max_width, include_pending);
 
     if lines.is_empty() {
+        if let Some(footer) = pane.footer {
+            render_hint_line(frame, inner, 0, footer, hint_style);
+            return;
+        }
         if let Some(error) = pane.spawn_error {
-            render_clipped_line(frame, inner, 0, error, chrome);
+            render_hint_line(frame, inner, 0, error, hint_style);
             return;
         }
         if let Some(hint) = pane.idle_hint {
-            render_clipped_line(frame, inner, 0, hint, chrome);
+            render_hint_line(frame, inner, 0, hint, hint_style);
         }
         return;
     }
 
     for (row, line) in lines.iter().enumerate().take(visible_height) {
-        render_clipped_line(frame, inner, row, line, chrome);
+        render_pty_line(frame, inner, row, line, max_width);
+    }
+
+    if let Some(footer) = pane.footer {
+        render_hint_line(
+            frame,
+            inner,
+            inner.height.saturating_sub(1) as usize,
+            footer,
+            hint_style,
+        );
     }
 }
 
-fn render_clipped_line(frame: &mut Frame<'_>, inner: Rect, row: usize, text: &str, style: Style) {
+fn render_pty_line(frame: &mut Frame<'_>, inner: Rect, row: usize, text: &str, max_width: usize) {
+    if row >= inner.height as usize {
+        return;
+    }
+
+    let row_area = Rect {
+        x: inner.x,
+        y: inner.y.saturating_add(row as u16),
+        width: inner.width,
+        height: 1,
+    };
+    frame.render_widget(Clear, row_area);
+    frame.render_widget(
+        Paragraph::new(ansi_line(text, max_width)).style(pty_base_style()),
+        row_area,
+    );
+}
+
+fn fill_pty_background(frame: &mut Frame<'_>, area: Rect) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    let style = pty_base_style();
+    let blank = " ".repeat(area.width as usize);
+    for row in 0..area.height {
+        let row_area = Rect {
+            x: area.x,
+            y: area.y.saturating_add(row),
+            width: area.width,
+            height: 1,
+        };
+        frame.render_widget(Clear, row_area);
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(blank.clone(), style))),
+            row_area,
+        );
+    }
+}
+
+fn render_hint_line(frame: &mut Frame<'_>, inner: Rect, row: usize, text: &str, style: Style) {
     if row >= inner.height as usize {
         return;
     }

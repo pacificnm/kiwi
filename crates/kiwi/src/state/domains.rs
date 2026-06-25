@@ -47,6 +47,8 @@ pub struct AgentState {
     pub viewport_offset: usize,
     pub follow_tail: bool,
     pub status: AgentStatus,
+    pub exit_code: Option<i32>,
+    pub restart_hint: Option<String>,
 }
 
 impl Default for AgentState {
@@ -64,6 +66,8 @@ impl Default for AgentState {
             viewport_offset: 0,
             follow_tail: true,
             status: AgentStatus::Idle,
+            exit_code: None,
+            restart_hint: None,
         }
     }
 }
@@ -85,7 +89,10 @@ impl AgentState {
         self.cols = cols;
         self.rows = rows;
         self.spawn_error = None;
+        self.exit_code = None;
+        self.restart_hint = None;
         self.scrollback.clear();
+        self.scrollback.set_cols(cols);
         self.viewport_offset = 0;
         self.follow_tail = true;
         self.status = AgentStatus::Executing;
@@ -97,12 +104,27 @@ impl AgentState {
         self.child_pid = None;
         self.spawn_error = Some(message);
         self.status = AgentStatus::Error;
+        self.restart_hint = Some("Agent failed to start. Ctrl+Shift+R to retry.".to_string());
     }
 
     pub fn apply_exit(&mut self, code: i32) {
         self.running = false;
         self.child_pid = None;
+        self.exit_code = Some(code);
         self.status = AgentStatus::from_exit_code(code);
+        self.restart_hint = Some(format!(
+            "Agent exited (code {code}). Ctrl+Shift+R to restart."
+        ));
+    }
+
+    pub fn prepare_restart(&mut self) {
+        self.spawned = false;
+        self.running = false;
+        self.child_pid = None;
+        self.spawn_error = None;
+        self.exit_code = None;
+        self.restart_hint = None;
+        self.status = AgentStatus::Idle;
     }
 
     pub fn scroll_by(&mut self, delta: i32, page_size: u16) {
@@ -177,6 +199,7 @@ impl ShellState {
         self.rows = rows;
         self.spawn_error = None;
         self.scrollback.clear();
+        self.scrollback.set_cols(cols);
         self.viewport_offset = 0;
         self.follow_tail = true;
     }

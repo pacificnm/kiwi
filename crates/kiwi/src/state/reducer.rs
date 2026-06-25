@@ -39,6 +39,7 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         AppCommand::ShellScroll(delta) => reduce_shell_scroll(state, delta),
         AppCommand::AgentWrite(data) => vec![SideEffect::WriteAgent(data)],
         AppCommand::AgentScroll(delta) => reduce_agent_scroll(state, delta),
+        AppCommand::AgentRestart => reduce_agent_restart(state),
     }
 }
 
@@ -106,6 +107,7 @@ fn reduce_git_status_updated(state: &mut AppState, modified_files: Vec<String>) 
 }
 
 fn reduce_shell_output(state: &mut AppState, data: Vec<u8>) -> Vec<SideEffect> {
+    state.shell.scrollback.set_cols(state.shell.cols);
     state.shell.scrollback.append_bytes(&data);
     state.dirty = true;
     Vec::new()
@@ -118,6 +120,7 @@ fn reduce_shell_exited(state: &mut AppState) -> Vec<SideEffect> {
 }
 
 fn reduce_agent_output(state: &mut AppState, data: Vec<u8>) -> Vec<SideEffect> {
+    state.agent.scrollback.set_cols(state.agent.cols);
     state.agent.scrollback.append_bytes(&data);
     if let Some(status) = infer_status_from_scrollback(&state.agent.scrollback) {
         state.agent.status = status;
@@ -130,6 +133,15 @@ fn reduce_agent_exited(state: &mut AppState, code: i32) -> Vec<SideEffect> {
     state.agent.apply_exit(code);
     state.dirty = true;
     Vec::new()
+}
+
+fn reduce_agent_restart(state: &mut AppState) -> Vec<SideEffect> {
+    if state.navigation.main_tab != MainTab::Agent {
+        return Vec::new();
+    }
+
+    state.dirty = true;
+    vec![SideEffect::RestartAgent]
 }
 
 fn reduce_shell_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
@@ -352,7 +364,7 @@ mod tests {
     fn shell_output_appends_to_scrollback_and_sets_dirty() {
         let mut state = test_state();
         reduce(&mut state, AppEvent::ShellOutput(b"hello\nworld".to_vec()));
-        assert_eq!(state.shell.scrollback.line_count(), 1);
+        assert_eq!(state.shell.scrollback.line_count(), 2);
         assert!(state.dirty);
     }
 
@@ -392,6 +404,37 @@ mod tests {
         state.agent.running = true;
         reduce(&mut state, AppEvent::AgentExited(0));
         assert_eq!(state.agent.status, AgentStatus::Success);
+        assert_eq!(state.agent.exit_code, Some(0));
+        assert!(state.agent.restart_hint.is_some());
+    }
+
+    #[test]
+    fn agent_restart_emits_side_effect_on_agent_tab() {
+        let mut state = test_state();
+        state.navigation.main_tab = MainTab::Agent;
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::AgentRestart));
+        assert!(effects.contains(&SideEffect::RestartAgent));
+        assert!(state.dirty);
+    }
+
+    #[test]
+    fn agent_restart_ignored_off_agent_tab() {
+        let mut state = test_state();
+        state.navigation.main_tab = MainTab::Issues;
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::AgentRestart));
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn agent_exited_sets_restart_hint_with_code() {
+        let mut state = test_state();
+        reduce(&mut state, AppEvent::AgentExited(2));
+        assert_eq!(state.agent.exit_code, Some(2));
+        assert!(state
+            .agent
+            .restart_hint
+            .as_deref()
+            .is_some_and(|hint| hint.contains("code 2")));
     }
 
     #[test]
