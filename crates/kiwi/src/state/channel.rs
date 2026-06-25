@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError};
 
 use super::event::AppEvent;
+use crate::watcher::coalesce_paths;
 
 pub const EVENT_CHANNEL_CAPACITY: usize = 1024;
 
@@ -89,7 +90,7 @@ fn flush_pending(
         *pending_git_refresh = false;
     }
     if !pending_fs_paths.is_empty() {
-        let paths: Vec<PathBuf> = pending_fs_paths.drain().collect();
+        let paths = coalesce_paths(pending_fs_paths.drain());
         events.push(AppEvent::FsChanged { paths });
     }
 }
@@ -148,6 +149,32 @@ mod tests {
         assert_eq!(paths.len(), 2);
         assert!(paths.contains(&PathBuf::from("/repo/a.rs")));
         assert!(paths.contains(&PathBuf::from("/repo/b.rs")));
+    }
+
+    #[test]
+    fn coalesces_fifty_fs_changed_batches() {
+        let mut channel = EventChannel::new();
+        let sender = channel.sender();
+
+        for i in 0..50 {
+            sender
+                .send(AppEvent::FsChanged {
+                    paths: vec![PathBuf::from(format!("/repo/file{i}.rs"))],
+                })
+                .expect("send");
+            sender
+                .send(AppEvent::FsChanged {
+                    paths: vec![PathBuf::from(format!("/repo/file{i}.rs"))],
+                })
+                .expect("send");
+        }
+
+        let drained = channel.drain_coalesced();
+        assert_eq!(drained.len(), 1);
+        let AppEvent::FsChanged { paths } = &drained[0] else {
+            panic!("expected FsChanged");
+        };
+        assert_eq!(paths.len(), 50);
     }
 
     #[test]

@@ -10,7 +10,7 @@ use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use crate::state::{AppEvent, EventSender};
 
 use super::debounce::PathDebouncer;
-use super::paths::{should_emit_fs_changed_event, should_ignore_watch_path, DEFAULT_DEBOUNCE_MS};
+use super::paths::{should_emit_fs_changed_event, should_ignore_watch_path};
 
 pub struct RepoWatcher {
     shutdown: Arc<AtomicBool>,
@@ -18,7 +18,11 @@ pub struct RepoWatcher {
 }
 
 impl RepoWatcher {
-    pub fn spawn(repo_root: PathBuf, sender: EventSender) -> Result<Self, String> {
+    pub fn spawn(
+        repo_root: PathBuf,
+        debounce_ms: u64,
+        sender: EventSender,
+    ) -> Result<Self, String> {
         let shutdown = Arc::new(AtomicBool::new(false));
         let shutdown_flag = Arc::clone(&shutdown);
         let (raw_tx, raw_rx) = mpsc::channel();
@@ -49,7 +53,7 @@ impl RepoWatcher {
 
         let handle = thread::spawn(move || {
             let _watcher = watcher;
-            run_debounce_loop(raw_rx, sender, shutdown_flag);
+            run_debounce_loop(raw_rx, sender, shutdown_flag, debounce_ms);
         });
 
         Ok(Self {
@@ -72,8 +76,9 @@ fn run_debounce_loop(
     raw_rx: mpsc::Receiver<PathBuf>,
     sender: EventSender,
     shutdown: Arc<AtomicBool>,
+    debounce_ms: u64,
 ) {
-    let mut debouncer = PathDebouncer::new(Duration::from_millis(DEFAULT_DEBOUNCE_MS));
+    let mut debouncer = PathDebouncer::new(Duration::from_millis(debounce_ms));
 
     while !shutdown.load(Ordering::Relaxed) {
         while let Ok(path) = raw_rx.try_recv() {
@@ -104,7 +109,8 @@ mod tests {
         let file = temp.join("src/nested.rs");
 
         let mut channel = EventChannel::new();
-        let watcher = RepoWatcher::spawn(temp.clone(), channel.sender()).expect("spawn watcher");
+        let watcher =
+            RepoWatcher::spawn(temp.clone(), 300, channel.sender()).expect("spawn watcher");
 
         fs::write(&file, "nested").expect("write");
         let deadline = std::time::Instant::now() + Duration::from_secs(3);
@@ -143,7 +149,8 @@ mod tests {
 
         let head = temp.join(".git/HEAD");
         let mut channel = EventChannel::new();
-        let watcher = RepoWatcher::spawn(temp.clone(), channel.sender()).expect("spawn watcher");
+        let watcher =
+            RepoWatcher::spawn(temp.clone(), 300, channel.sender()).expect("spawn watcher");
 
         fs::write(&head, "ref: refs/heads/main\n").expect("write head");
         let deadline = std::time::Instant::now() + Duration::from_secs(3);
@@ -176,7 +183,8 @@ mod tests {
         let file = temp.join("watch-me.txt");
 
         let mut channel = EventChannel::new();
-        let watcher = RepoWatcher::spawn(temp.clone(), channel.sender()).expect("spawn watcher");
+        let watcher =
+            RepoWatcher::spawn(temp.clone(), 300, channel.sender()).expect("spawn watcher");
 
         fs::write(&file, "one").expect("write");
         let deadline = std::time::Instant::now() + Duration::from_secs(3);

@@ -2,8 +2,6 @@ use std::path::{Component, Path, PathBuf};
 
 use notify::EventKind;
 
-pub const DEFAULT_DEBOUNCE_MS: u64 = 300;
-
 const GIT_METADATA_FILES: &[&str] = &["HEAD", "index"];
 
 /// Returns true for `.git/HEAD` and `.git/index`, which drive branch/status refresh per ADR-011.
