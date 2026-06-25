@@ -13,7 +13,8 @@ use crate::github::{
     advance_pr_create_prompt, apply_label_picker_load, ensure_issue_selection,
     issue_move_selection, issue_select_row, missing_browser_target_message,
     page_scroll_issue_detail, resolve_browser_target, scroll_issue_detail, GitHubLeftPane,
-    IssueDetailLoadResult, IssueListLoadResult, PrCreatePromptAdvance, ISSUE_LIST_CACHE_SECS,
+    IssueDetailLoadResult, IssueListLoadResult, PrCreatePromptAdvance, PrDetailLoadResult,
+    ISSUE_LIST_CACHE_SECS,
 };
 use crate::layout::{agent_pty_size, compute_layout, shell_pty_size, FocusTarget};
 use crate::navigation::{LeftNavTab, MainTab, NavCommand};
@@ -67,6 +68,9 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
         AppEvent::GitHubIssueDetailLoaded { number, result } => {
             reduce_github_issue_detail_loaded(state, number, result)
         }
+        AppEvent::GitHubPrDetailLoaded { number, result } => {
+            reduce_github_pr_detail_loaded(state, number, result)
+        }
         AppEvent::GitHubIssueCommentCompleted { number, result } => {
             reduce_github_issue_comment_completed(state, number, result)
         }
@@ -93,6 +97,7 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
             effects.extend(github_first_access_effects(state));
             effects.extend(github_issue_list_access_effects(state, false));
             effects.extend(github_issue_detail_access_effects(state, false));
+            effects.extend(github_pr_detail_access_effects(state, false));
             effects
         }
         AppCommand::Quit => {
@@ -112,6 +117,10 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         }
         AppCommand::GitHubIssueDetailPageScroll(delta) => {
             reduce_github_issue_detail_page_scroll(state, delta)
+        }
+        AppCommand::GitHubPrDetailScroll(delta) => reduce_github_pr_detail_scroll(state, delta),
+        AppCommand::GitHubPrDetailPageScroll(delta) => {
+            reduce_github_pr_detail_page_scroll(state, delta)
         }
         AppCommand::GitHubLabelPickerMove(delta) => reduce_github_label_picker_move(state, delta),
         AppCommand::GitHubLabelPickerToggle => reduce_github_label_picker_toggle(state),
@@ -252,6 +261,7 @@ pub fn github_refresh_effects(state: &mut AppState) -> Vec<SideEffect> {
     state.github.auth_checked = false;
     state.github.issues_loaded_at = None;
     clear_issue_detail_cache(&mut state.github);
+    clear_pr_detail_cache(&mut state.github);
     vec![SideEffect::SpawnGitHubAuthCheck]
 }
 
@@ -316,6 +326,61 @@ fn clear_issue_detail_cache(github: &mut crate::state::GitHubState) {
     github.issue_detail_scroll_offset = 0;
 }
 
+fn clear_pr_detail_cache(github: &mut crate::state::GitHubState) {
+    github.pr_detail_number = None;
+    github.pr_detail = None;
+    github.pr_detail_loading = false;
+    github.pr_detail_error = None;
+    github.pr_detail_scroll_offset = 0;
+}
+
+pub fn github_pr_detail_access_effects(state: &mut AppState, force: bool) -> Vec<SideEffect> {
+    if state.navigation.main_tab != MainTab::Prs {
+        return Vec::new();
+    }
+
+    let Some(number) = selected_pr_number(&state.github) else {
+        return Vec::new();
+    };
+
+    github_pr_detail_effects(state, number, force)
+}
+
+fn selected_pr_number(github: &crate::state::GitHubState) -> Option<u32> {
+    github
+        .selected_pr
+        .and_then(|number| u32::try_from(number).ok())
+}
+
+fn github_pr_detail_effects(state: &mut AppState, number: u32, force: bool) -> Vec<SideEffect> {
+    if !state.github.auth_ok {
+        return Vec::new();
+    }
+
+    if state.github.pr_detail_loading && state.github.pr_detail_number == Some(u64::from(number)) {
+        return Vec::new();
+    }
+
+    if !force
+        && state.github.pr_detail_number == Some(u64::from(number))
+        && state.github.pr_detail.is_some()
+        && state.github.pr_detail_error.is_none()
+    {
+        return Vec::new();
+    }
+
+    state.github.pr_detail_loading = true;
+    state.github.pr_detail_error = None;
+    if state.github.pr_detail_number != Some(u64::from(number)) {
+        state.github.pr_detail = None;
+        state.github.pr_detail_scroll_offset = 0;
+    }
+    state.github.pr_detail_number = Some(u64::from(number));
+    state.dirty = true;
+
+    vec![SideEffect::SpawnGitHubPrDetail { number }]
+}
+
 fn selected_issue_number(github: &crate::state::GitHubState) -> Option<u32> {
     github
         .selected_issue
@@ -327,7 +392,8 @@ fn github_issue_detail_effects(state: &mut AppState, number: u32, force: bool) -
         return Vec::new();
     }
 
-    if state.github.issue_detail_loading && state.github.issue_detail_number == Some(u64::from(number))
+    if state.github.issue_detail_loading
+        && state.github.issue_detail_number == Some(u64::from(number))
     {
         return Vec::new();
     }
@@ -415,6 +481,12 @@ fn reduce_github_issues_loaded(
         }
     }
 
+    if state.navigation.main_tab == MainTab::Prs {
+        if let Some(number) = selected_pr_number(&state.github) {
+            return github_pr_detail_effects(state, number, true);
+        }
+    }
+
     Vec::new()
 }
 
@@ -433,6 +505,26 @@ fn reduce_github_issue_detail_loaded(
     if state.github.issue_detail.is_some() {
         state.text_selection.clear();
         clamp_issue_detail_scroll(state);
+    }
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_github_pr_detail_loaded(
+    state: &mut AppState,
+    number: u32,
+    result: PrDetailLoadResult,
+) -> Vec<SideEffect> {
+    if state.github.pr_detail_number != Some(u64::from(number)) {
+        return Vec::new();
+    }
+
+    state.github.pr_detail_loading = false;
+    state.github.pr_detail_error = result.error;
+    state.github.pr_detail = result.detail;
+    if state.github.pr_detail.is_some() {
+        state.text_selection.clear();
+        clamp_pr_detail_scroll(state);
     }
     state.dirty = true;
     Vec::new()
@@ -457,30 +549,52 @@ fn issues_viewport_rows(state: &AppState) -> usize {
 }
 
 fn reduce_github_open_selected(state: &mut AppState) -> Vec<SideEffect> {
-    let Some(number) = selected_issue_number(&state.github) else {
-        return Vec::new();
-    };
+    match state.github.left_pane {
+        GitHubLeftPane::Issues => {
+            let Some(number) = selected_issue_number(&state.github) else {
+                return Vec::new();
+            };
 
-    state.github.left_pane = GitHubLeftPane::Issues;
-    state.navigation.apply(NavCommand::SelectMainTab(MainTab::Issues));
-    state
-        .navigation
-        .apply(NavCommand::SetFocus(FocusTarget::Main));
-    state.dirty = true;
-    github_issue_detail_effects(state, number, true)
+            state.github.left_pane = GitHubLeftPane::Issues;
+            state
+                .navigation
+                .apply(NavCommand::SelectMainTab(MainTab::Issues));
+            state
+                .navigation
+                .apply(NavCommand::SetFocus(FocusTarget::Main));
+            state.dirty = true;
+            github_issue_detail_effects(state, number, true)
+        }
+        GitHubLeftPane::Prs => {
+            let Some(number) = selected_pr_number(&state.github) else {
+                return Vec::new();
+            };
+
+            state.github.left_pane = GitHubLeftPane::Prs;
+            state
+                .navigation
+                .apply(NavCommand::SelectMainTab(MainTab::Prs));
+            state
+                .navigation
+                .apply(NavCommand::SetFocus(FocusTarget::Main));
+            state.dirty = true;
+            github_pr_detail_effects(state, number, true)
+        }
+    }
 }
 
-fn reduce_github_select_left_pane(
-    state: &mut AppState,
-    pane: GitHubLeftPane,
-) -> Vec<SideEffect> {
+fn reduce_github_select_left_pane(state: &mut AppState, pane: GitHubLeftPane) -> Vec<SideEffect> {
     state.github.left_pane = pane;
     match pane {
         GitHubLeftPane::Issues => {
-            state.navigation.apply(NavCommand::SelectMainTab(MainTab::Issues));
+            state
+                .navigation
+                .apply(NavCommand::SelectMainTab(MainTab::Issues));
         }
         GitHubLeftPane::Prs => {
-            state.navigation.apply(NavCommand::SelectMainTab(MainTab::Prs));
+            state
+                .navigation
+                .apply(NavCommand::SelectMainTab(MainTab::Prs));
         }
     }
     state.dirty = true;
@@ -532,6 +646,53 @@ fn clamp_issue_detail_scroll(state: &mut AppState) {
 
 fn issue_detail_viewport_rows(state: &AppState) -> usize {
     crate::ui::issue_detail_viewport_rows(state.layout.rects.main_content)
+}
+
+fn reduce_github_pr_detail_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    let line_count = pr_detail_line_count(&state.github);
+    let viewport_rows = pr_detail_viewport_rows(state);
+    scroll_issue_detail(
+        &mut state.github.pr_detail_scroll_offset,
+        delta,
+        line_count,
+        viewport_rows,
+    );
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_github_pr_detail_page_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    let line_count = pr_detail_line_count(&state.github);
+    let viewport_rows = pr_detail_viewport_rows(state);
+    page_scroll_issue_detail(
+        &mut state.github.pr_detail_scroll_offset,
+        delta,
+        line_count,
+        viewport_rows,
+    );
+    state.dirty = true;
+    Vec::new()
+}
+
+fn pr_detail_line_count(github: &crate::state::GitHubState) -> usize {
+    github
+        .pr_detail
+        .as_ref()
+        .map(|detail| detail.display_lines.len())
+        .unwrap_or(0)
+}
+
+fn clamp_pr_detail_scroll(state: &mut AppState) {
+    let line_count = pr_detail_line_count(&state.github);
+    let viewport_rows = pr_detail_viewport_rows(state);
+    let max_offset = line_count.saturating_sub(viewport_rows);
+    if state.github.pr_detail_scroll_offset > max_offset {
+        state.github.pr_detail_scroll_offset = max_offset;
+    }
+}
+
+fn pr_detail_viewport_rows(state: &AppState) -> usize {
+    crate::ui::pr_detail_viewport_rows(state.layout.rects.main_content)
 }
 
 fn reduce_github_issue_comment_completed(
@@ -589,8 +750,7 @@ fn reduce_github_issue_labels_applied(
 
     if result.success {
         state.github.label_picker = None;
-        state.github.issue_action_message =
-            Some(format!("Labels updated on #{number}"));
+        state.github.issue_action_message = Some(format!("Labels updated on #{number}"));
         state.github.issues_loaded_at = None;
         clear_issue_detail_cache(&mut state.github);
         let mut effects = github_issue_list_effects(state, true);
@@ -633,7 +793,9 @@ fn reduce_github_label_picker_apply(state: &mut AppState) -> Vec<SideEffect> {
 
     let labels = picker.labels_to_add();
     if labels.is_empty() {
-        state.notifications.show_toast("Select at least one new label");
+        state
+            .notifications
+            .show_toast("Select at least one new label");
         state.dirty = true;
         return Vec::new();
     }
@@ -655,7 +817,9 @@ fn reduce_github_label_picker_cancel(state: &mut AppState) -> Vec<SideEffect> {
 
 fn reduce_github_open_in_browser(state: &mut AppState) -> Vec<SideEffect> {
     if !state.github.auth_ok {
-        state.notifications.show_toast("GitHub authentication required");
+        state
+            .notifications
+            .show_toast("GitHub authentication required");
         state.dirty = true;
         return Vec::new();
     }
@@ -2309,7 +2473,10 @@ mod tests {
         state.github.auth_checked = true;
         state.github.selected_issue = Some(42);
 
-        let effects = reduce(&mut state, AppEvent::Command(AppCommand::GitHubOpenSelected));
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::GitHubOpenSelected),
+        );
 
         assert_eq!(state.navigation.main_tab, MainTab::Issues);
         assert_eq!(state.navigation.focus, FocusTarget::Main);
@@ -2346,7 +2513,11 @@ mod tests {
 
         assert!(!state.github.issue_detail_loading);
         assert_eq!(
-            state.github.issue_detail.as_ref().map(|detail| detail.number),
+            state
+                .github
+                .issue_detail
+                .as_ref()
+                .map(|detail| detail.number),
             Some(56)
         );
     }
@@ -2376,18 +2547,95 @@ mod tests {
     }
 
     #[test]
+    fn github_open_selected_on_prs_tab_loads_pr_detail() {
+        let mut state = test_state();
+        state.github.auth_ok = true;
+        state.github.auth_checked = true;
+        state.github.left_pane = GitHubLeftPane::Prs;
+        state.github.selected_pr = Some(60);
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::GitHubOpenSelected),
+        );
+
+        assert_eq!(state.navigation.main_tab, MainTab::Prs);
+        assert_eq!(state.navigation.focus, FocusTarget::Main);
+        assert!(state.github.pr_detail_loading);
+        assert!(effects.contains(&SideEffect::SpawnGitHubPrDetail { number: 60 }));
+    }
+
+    #[test]
+    fn github_pr_detail_loaded_populates_detail() {
+        use crate::github::{PrDetail, PrDetailLoadResult, PrState};
+
+        let mut state = test_state();
+        state.github.pr_detail_number = Some(60);
+        state.github.pr_detail_loading = true;
+
+        reduce(
+            &mut state,
+            AppEvent::GitHubPrDetailLoaded {
+                number: 60,
+                result: PrDetailLoadResult {
+                    detail: Some(PrDetail {
+                        number: 60,
+                        title: "PR detail view".to_string(),
+                        state: PrState::Open,
+                        author: "pacificnm".to_string(),
+                        display_lines: vec!["#60 PR detail view".to_string()],
+                    }),
+                    error: None,
+                },
+            },
+        );
+
+        assert!(!state.github.pr_detail_loading);
+        assert_eq!(
+            state.github.pr_detail.as_ref().map(|detail| detail.number),
+            Some(60)
+        );
+    }
+
+    #[test]
+    fn github_pr_detail_scroll_moves_offset() {
+        use crate::github::{PrDetail, PrState};
+
+        let mut state = test_state();
+        state.navigation.main_tab = MainTab::Prs;
+        state.github.pr_detail = Some(PrDetail {
+            number: 1,
+            title: "Test".to_string(),
+            state: PrState::Open,
+            author: "user".to_string(),
+            display_lines: (0..100).map(|index| format!("line {index}")).collect(),
+        });
+
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::GitHubPrDetailScroll(5)),
+        );
+
+        assert_eq!(state.github.pr_detail_scroll_offset, 5);
+    }
+
+    #[test]
     fn palette_prompt_submits_issue_comment() {
         use crate::state::PalettePrompt;
 
         let mut state = test_state();
         state.github.selected_issue = Some(42);
-        state
-            .palette
-            .begin_prompt(PalettePrompt::GitHubIssueComment { number: 42 }, FocusTarget::Main);
+        state.palette.begin_prompt(
+            PalettePrompt::GitHubIssueComment { number: 42 },
+            FocusTarget::Main,
+        );
         state.navigation.focus = FocusTarget::CommandPalette;
         state.palette.input = "Looks good".to_string();
 
-        let effects = reduce(&mut state, AppEvent::Command(AppCommand::PaletteExecuteSelected));
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PaletteExecuteSelected),
+        );
 
         assert!(!state.palette.open);
         assert!(effects.iter().any(|effect| {
@@ -2456,9 +2704,16 @@ mod tests {
         picker.selected[1] = true;
         state.github.label_picker = Some(picker);
 
-        let effects = reduce(&mut state, AppEvent::Command(AppCommand::GitHubLabelPickerApply));
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::GitHubLabelPickerApply),
+        );
 
-        assert!(state.github.label_picker.as_ref().is_some_and(|picker| picker.applying));
+        assert!(state
+            .github
+            .label_picker
+            .as_ref()
+            .is_some_and(|picker| picker.applying));
         assert!(effects.iter().any(|effect| {
             matches!(
                 effect,
@@ -2477,7 +2732,10 @@ mod tests {
             .navigation
             .apply(NavCommand::SelectMainTab(MainTab::Issues));
 
-        let effects = reduce(&mut state, AppEvent::Command(AppCommand::GitHubOpenInBrowser));
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::GitHubOpenInBrowser),
+        );
 
         assert!(effects.iter().any(|effect| {
             matches!(
@@ -2495,26 +2753,33 @@ mod tests {
         use crate::state::{GitHubPrCreatePrompt, PalettePrompt};
 
         let mut state = test_state();
-        state
-            .palette
-            .begin_prompt(
-                PalettePrompt::GitHubPrCreate(GitHubPrCreatePrompt::default()),
-                FocusTarget::Main,
-            );
+        state.palette.begin_prompt(
+            PalettePrompt::GitHubPrCreate(GitHubPrCreatePrompt::default()),
+            FocusTarget::Main,
+        );
         state.navigation.focus = FocusTarget::CommandPalette;
         state.palette.input = "Fix login".to_string();
 
-        let effects = reduce(&mut state, AppEvent::Command(AppCommand::PaletteExecuteSelected));
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PaletteExecuteSelected),
+        );
         assert!(state.palette.open);
         assert!(effects.is_empty());
 
         state.palette.input = "Fixes #42".to_string();
-        let effects = reduce(&mut state, AppEvent::Command(AppCommand::PaletteExecuteSelected));
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PaletteExecuteSelected),
+        );
         assert!(state.palette.open);
         assert!(effects.is_empty());
 
         state.palette.input = "main".to_string();
-        let effects = reduce(&mut state, AppEvent::Command(AppCommand::PaletteExecuteSelected));
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PaletteExecuteSelected),
+        );
         assert!(!state.palette.open);
         assert!(effects.iter().any(|effect| {
             matches!(

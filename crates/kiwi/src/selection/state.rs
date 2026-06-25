@@ -2,6 +2,7 @@
 pub enum SelectionPane {
     Preview,
     IssueDetail,
+    PrDetail,
     Agent,
     Shell,
 }

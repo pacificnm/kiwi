@@ -6,9 +6,8 @@ use ratatui::Frame;
 
 use crate::github::{
     issue_at_viewport, issue_selected_row_index, GitHubAuthErrorKind, GitHubLeftPane, Issue,
-    IssueState,
+    IssueState, PrState,
 };
-use crate::navigation::MainTab;
 use crate::selection::{line_spans_with_selection, SelectionPane};
 use crate::state::AppState;
 use crate::theme::SemanticRole;
@@ -34,6 +33,10 @@ pub fn issue_detail_viewport_rows(area: Rect) -> usize {
     pane_inner(area)
         .map(|inner| inner.height.saturating_sub(ISSUE_DETAIL_STATUS_ROWS) as usize)
         .unwrap_or(0)
+}
+
+pub fn pr_detail_viewport_rows(area: Rect) -> usize {
+    issue_detail_viewport_rows(area)
 }
 
 pub fn github_issue_interaction_at(
@@ -78,7 +81,12 @@ pub fn github_issue_interaction_at(
     let viewport_index = usize::from(row.saturating_sub(list_area.y));
     issue_at_viewport(&state.github, viewport_index)?;
 
-    Some(state.github.issues_scroll_offset.saturating_add(viewport_index))
+    Some(
+        state
+            .github
+            .issues_scroll_offset
+            .saturating_add(viewport_index),
+    )
 }
 
 fn github_issues_list_area(area: Rect) -> Option<Rect> {
@@ -288,26 +296,85 @@ pub fn render_issue_detail_pane(
     }
 }
 
-pub fn render_github_main_pane(
+pub fn render_pr_detail_pane(
     frame: &mut Frame<'_>,
     area: Rect,
     focused: bool,
     theme: &ThemePalette,
     state: &AppState,
-    main_tab: MainTab,
 ) {
-    let title = main_tab.label();
-    let lines = if state.github.loading && !state.github.auth_checked {
-        vec![Line::from("Checking GitHub authentication…")]
-    } else if let Some(message) = github_auth_message(state) {
-        auth_error_lines(message, state.github.error_kind)
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    if state.github.loading && !state.github.auth_checked {
+        render_github_pane(
+            frame,
+            area,
+            focused,
+            theme,
+            state,
+            "PRs",
+            vec![Line::from("Checking GitHub authentication…")],
+        );
+        return;
+    }
+
+    if let Some(message) = github_auth_message(state) {
+        render_github_pane(
+            frame,
+            area,
+            focused,
+            theme,
+            state,
+            "PRs",
+            auth_error_lines(message, state.github.error_kind),
+        );
+        return;
+    }
+
+    let border_style = if focused {
+        theme.get(SemanticRole::Accent)
     } else {
-        vec![Line::from(format!(
-            "{title} view — press R to refresh (PR list in a later milestone)"
-        ))]
+        theme.get(SemanticRole::Border)
     };
 
-    render_github_pane(frame, area, focused, theme, state, title, lines);
+    let block = Block::default()
+        .title(pr_detail_title(state))
+        .borders(Borders::ALL)
+        .border_style(border_style)
+        .style(chrome_style(theme));
+
+    frame.render_widget(Clear, area);
+    frame.render_widget(block, area);
+
+    let Some(inner) = pane_inner(area) else {
+        return;
+    };
+
+    let status_y = inner
+        .y
+        .saturating_add(inner.height.saturating_sub(ISSUE_DETAIL_STATUS_ROWS));
+    let status_area = Rect {
+        x: inner.x,
+        y: status_y,
+        width: inner.width,
+        height: ISSUE_DETAIL_STATUS_ROWS.min(inner.height),
+    };
+    let content_area = Rect {
+        x: inner.x,
+        y: inner.y,
+        width: inner.width,
+        height: inner.height.saturating_sub(status_area.height),
+    };
+
+    if content_area.height > 0 && content_area.width > 0 {
+        render_pr_detail_content(frame, content_area, theme, state);
+    }
+
+    if status_area.height > 0 {
+        render_pr_detail_status_line(frame, status_area, focused, state, theme);
+    }
 }
 
 fn github_left_title(state: &AppState) -> String {
@@ -363,7 +430,12 @@ fn render_github_hub_line(
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
-fn render_pr_list_placeholder(frame: &mut Frame<'_>, area: Rect, theme: &ThemePalette, state: &AppState) {
+fn render_pr_list_placeholder(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    theme: &ThemePalette,
+    state: &AppState,
+) {
     let message = if state.github.auth_ok {
         "PR list loads in a later milestone (#59).\n\nPress Enter to open the PRs main tab."
     } else {
@@ -385,6 +457,132 @@ fn render_prs_list_status_line(frame: &mut Frame<'_>, area: Rect, theme: &ThemeP
             area.width as usize,
         ))
         .style(theme.get(SemanticRole::Muted)),
+        area,
+    );
+}
+
+fn pr_detail_title(state: &AppState) -> String {
+    let mut title = String::from("PRs");
+    if state.github.pr_detail_loading {
+        title.push_str(" · loading");
+    } else if state.github.pr_detail_error.is_some() {
+        title.push_str(" · error");
+    } else if let Some(number) = state.github.selected_pr {
+        title.push_str(&format!(" · #{number}"));
+    }
+    title
+}
+
+fn render_pr_detail_content(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    theme: &ThemePalette,
+    state: &AppState,
+) {
+    let viewport_rows = area.height as usize;
+    let max_width = area.width as usize;
+
+    if state.github.selected_pr.is_none() {
+        render_issue_detail_message(
+            frame,
+            area,
+            theme,
+            &[
+                "No pull request selected",
+                "",
+                "Select a PR in the GH left panel (Alt+4) and press Enter.",
+            ],
+        );
+        return;
+    }
+
+    if state.github.pr_detail_loading && state.github.pr_detail.is_none() {
+        render_issue_detail_message(frame, area, theme, &["Loading pull request detail…"]);
+        return;
+    }
+
+    if let Some(error) = &state.github.pr_detail_error {
+        render_issue_detail_message(frame, area, theme, &[error.as_str()]);
+        return;
+    }
+
+    let Some(detail) = &state.github.pr_detail else {
+        render_issue_detail_message(
+            frame,
+            area,
+            theme,
+            &[
+                "Pull request detail not loaded",
+                "",
+                "Press Enter on a PR in the GH left panel.",
+            ],
+        );
+        return;
+    };
+
+    let start = state.github.pr_detail_scroll_offset;
+    let end = (start + viewport_rows).min(detail.display_lines.len());
+    let fg = theme.get(SemanticRole::Fg);
+
+    for (row, line_index) in (start..end).enumerate() {
+        let line_text = &detail.display_lines[line_index];
+        let display = truncate_line(line_text, max_width);
+        let style = if line_index == 0 {
+            Style::default().add_modifier(Modifier::BOLD)
+        } else if line_index == 1 {
+            pr_state_style(detail.state, theme)
+        } else {
+            fg
+        };
+        let line = line_spans_with_selection(
+            &display,
+            line_index,
+            SelectionPane::PrDetail,
+            &state.text_selection,
+            style,
+            theme,
+        );
+
+        let row_area = Rect {
+            x: area.x,
+            y: area.y.saturating_add(row as u16),
+            width: area.width,
+            height: 1,
+        };
+        frame.render_widget(Clear, row_area);
+        frame.render_widget(Paragraph::new(line), row_area);
+    }
+}
+
+fn pr_state_style(state: PrState, theme: &ThemePalette) -> Style {
+    match state {
+        PrState::Open => theme.get(SemanticRole::PrOpen),
+        PrState::Draft => theme.get(SemanticRole::PrDraft),
+        PrState::Merged => theme.get(SemanticRole::PrMerged),
+        PrState::Closed => theme.get(SemanticRole::PrClosed),
+    }
+}
+
+fn render_pr_detail_status_line(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    _focused: bool,
+    state: &AppState,
+    theme: &ThemePalette,
+) {
+    let status = if state.github.pr_detail_loading {
+        "Loading detail…"
+    } else if state.github.selected_pr.is_none() {
+        "Enter on GH left list to view"
+    } else if state.github.pr_detail.is_some() {
+        "j/k scroll · drag select · Ctrl+C · o browser · R refresh"
+    } else {
+        "Enter on GH left list · R refresh"
+    };
+
+    frame.render_widget(
+        Paragraph::new(truncate_line(status, area.width as usize))
+            .style(theme.get(SemanticRole::Muted)),
         area,
     );
 }
@@ -779,7 +977,9 @@ mod tests {
     use ratatui::Terminal;
 
     use crate::config::ResolvedConfig;
-    use crate::github::{GitHubAuthErrorKind, GitHubLeftPane, Issue, IssueDetail, IssueState};
+    use crate::github::{
+        GitHubAuthErrorKind, GitHubLeftPane, Issue, IssueDetail, IssueState, PrDetail, PrState,
+    };
     use crate::layout::compute_layout;
     use crate::navigation::{LeftNavTab, MainTab};
     use crate::state::AppState;
@@ -979,6 +1179,57 @@ mod tests {
         assert!(content.contains("Detailed body text"));
         assert!(content.contains("@reviewer"));
         assert!(content.contains("Ship it"));
+    }
+
+    #[test]
+    fn pr_detail_pane_shows_loaded_description_commits_and_checks() {
+        let mut state = test_state();
+        state.navigation.main_tab = MainTab::Prs;
+        state.github.auth_checked = true;
+        state.github.auth_ok = true;
+        state.github.selected_pr = Some(60);
+        state.github.pr_detail_number = Some(60);
+        state.github.pr_detail = Some(PrDetail {
+            number: 60,
+            title: "PR detail view".to_string(),
+            state: PrState::Open,
+            author: "pacificnm".to_string(),
+            display_lines: vec![
+                "#60 PR detail view".to_string(),
+                "State: open · Author: pacificnm".to_string(),
+                "Branch: feature → main · +10 -2 · 3 files".to_string(),
+                String::new(),
+                "— Description —".to_string(),
+                String::new(),
+                "PR body text".to_string(),
+                String::new(),
+                "— Commits (1) —".to_string(),
+                "· Add loader · @pacificnm · 2026-06-25".to_string(),
+                String::new(),
+                "— Checks (1) —".to_string(),
+                "· ci: SUCCESS".to_string(),
+            ],
+        });
+
+        let backend = TestBackend::new(100, 18);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| {
+                render_pr_detail_pane(frame, frame.area(), true, &state.theme, &state);
+            })
+            .expect("draw");
+
+        let content = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(content.contains("#60 PR detail view"));
+        assert!(content.contains("PR body text"));
+        assert!(content.contains("Add loader"));
+        assert!(content.contains("ci: SUCCESS"));
     }
 
     #[test]

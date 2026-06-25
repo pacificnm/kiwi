@@ -38,6 +38,10 @@ pub fn hit_test_text(
         return hit_test_issue_detail(state, column, row);
     }
 
+    if state.navigation.main_tab == MainTab::Prs && point_in_rect(column, row, rects.main_content) {
+        return hit_test_pr_detail(state, column, row);
+    }
+
     if state.navigation.main_tab == MainTab::Agent && point_in_rect(column, row, rects.main_content)
     {
         return hit_test_scrollback(
@@ -140,6 +144,48 @@ fn hit_test_issue_detail(
     let max_col = detail.display_lines[line].chars().count();
     Some((
         SelectionPane::IssueDetail,
+        TextPosition {
+            line,
+            col: col.min(max_col),
+        },
+    ))
+}
+
+fn hit_test_pr_detail(
+    state: &AppState,
+    column: u16,
+    row: u16,
+) -> Option<(SelectionPane, TextPosition)> {
+    let detail = state.github.pr_detail.as_ref()?;
+    if detail.display_lines.is_empty() {
+        return None;
+    }
+
+    let inner = block_inner(state.layout.rects.main_content);
+    let content_area = Rect {
+        x: inner.x,
+        y: inner.y,
+        width: inner.width,
+        height: inner.height.saturating_sub(1),
+    };
+
+    if !point_in_rect(column, row, content_area) {
+        return None;
+    }
+
+    let viewport_row = usize::from(row.saturating_sub(content_area.y));
+    let line = state
+        .github
+        .pr_detail_scroll_offset
+        .saturating_add(viewport_row);
+    if line >= detail.display_lines.len() {
+        return None;
+    }
+
+    let col = usize::from(column.saturating_sub(content_area.x));
+    let max_col = detail.display_lines[line].chars().count();
+    Some((
+        SelectionPane::PrDetail,
         TextPosition {
             line,
             col: col.min(max_col),

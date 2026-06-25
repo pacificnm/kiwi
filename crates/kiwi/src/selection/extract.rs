@@ -36,6 +36,16 @@ fn lines_for_pane(state: &AppState, pane: SelectionPane) -> Option<Vec<String>> 
                 .as_ref()
                 .map(|detail| detail.display_lines.clone())
         }
+        SelectionPane::PrDetail => {
+            if state.navigation.main_tab != MainTab::Prs {
+                return None;
+            }
+            state
+                .github
+                .pr_detail
+                .as_ref()
+                .map(|detail| detail.display_lines.clone())
+        }
         SelectionPane::Agent => {
             if state.navigation.main_tab != MainTab::Agent {
                 return None;

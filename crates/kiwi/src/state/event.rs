@@ -70,6 +70,10 @@ pub enum AppEvent {
         number: u32,
         result: crate::github::IssueDetailLoadResult,
     },
+    GitHubPrDetailLoaded {
+        number: u32,
+        result: crate::github::PrDetailLoadResult,
+    },
     GitHubIssueCommentCompleted {
         number: u32,
         result: crate::github::IssueActionResult,
@@ -103,6 +107,8 @@ pub enum AppCommand {
     GitHubSelectLeftPane(crate::github::GitHubLeftPane),
     GitHubIssueDetailScroll(i32),
     GitHubIssueDetailPageScroll(i32),
+    GitHubPrDetailScroll(i32),
+    GitHubPrDetailPageScroll(i32),
     GitHubLabelPickerMove(i32),
     GitHubLabelPickerToggle,
     GitHubLabelPickerApply,
@@ -223,6 +229,9 @@ pub enum SideEffect {
     SpawnGitHubAuthCheck,
     SpawnGitHubIssueList,
     SpawnGitHubIssueDetail {
+        number: u32,
+    },
+    SpawnGitHubPrDetail {
         number: u32,
     },
     SpawnGitHubIssueComment {

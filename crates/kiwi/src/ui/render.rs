@@ -14,9 +14,7 @@ use super::agent::render_agent_pane;
 use super::diff::render_diff_pane;
 use super::file_tree::render_file_tree_pane;
 use super::git::render_git_pane;
-use super::github::{
-    render_github_left_pane, render_github_main_pane, render_issue_detail_pane,
-};
+use super::github::{render_github_left_pane, render_issue_detail_pane, render_pr_detail_pane};
 use super::label_picker::render_label_picker_overlay;
 use super::logs::render_logs_pane;
 use super::notifications::render_notifications;
@@ -137,13 +135,12 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
             state,
         );
     } else if state.navigation.main_tab == MainTab::Prs {
-        render_github_main_pane(
+        render_pr_detail_pane(
             frame,
             state.layout.rects.main_content,
             state.navigation.focus.is_focused(Region::MainContent),
             &state.theme,
             state,
-            state.navigation.main_tab,
         );
     } else {
         render_pane(
@@ -157,12 +154,7 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
         );
     }
     if state.github.label_picker.is_some() {
-        render_label_picker_overlay(
-            frame,
-            state.layout.rects.main_content,
-            &state.theme,
-            state,
-        );
+        render_label_picker_overlay(frame, state.layout.rects.main_content, &state.theme, state);
     }
     render_palette_pane(
         frame,

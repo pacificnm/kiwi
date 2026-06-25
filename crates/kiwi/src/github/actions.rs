@@ -150,9 +150,6 @@ mod tests {
     fn add_issue_labels_rejects_empty_selection() {
         let result = add_issue_labels(Path::new("."), "gh", 1, &[]);
         assert!(!result.success);
-        assert_eq!(
-            result.error.as_deref(),
-            Some("Select at least one label")
-        );
+        assert_eq!(result.error.as_deref(), Some("Select at least one label"));
     }
 }

@@ -19,7 +19,10 @@ mod tabs;
 
 pub use file_tree::{file_tree_interaction_at, FileTreeMouseAction};
 pub use git::{git_interaction_at, git_viewport_rows};
-pub use github::{github_issue_interaction_at, issue_detail_viewport_rows, issues_viewport_rows};
+pub use github::{
+    github_issue_interaction_at, issue_detail_viewport_rows, issues_viewport_rows,
+    pr_detail_viewport_rows,
+};
 pub use mouse::map_mouse_click;
 pub use mouse::mouse_interactions_enabled;
 pub use mouse_clicks::{DoubleClickTarget, DoubleClickTracker};

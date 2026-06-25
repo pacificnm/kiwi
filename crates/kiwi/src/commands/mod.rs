@@ -3,9 +3,7 @@ mod registry;
 
 use crate::clipboard::resolve_copy_text_for_focus;
 use crate::editor::resolve_editor_target;
-use crate::github::{
-    LabelPickerState, missing_browser_target_message, resolve_browser_target,
-};
+use crate::github::{missing_browser_target_message, resolve_browser_target, LabelPickerState};
 use crate::layout::FocusTarget;
 use crate::navigation::{LeftNavTab, MainTab, NavCommand};
 use crate::state::{
@@ -119,11 +117,7 @@ fn prioritize_github_issue_commands(state: &AppState, matches: &mut Vec<usize>) 
             && state.github.left_pane == crate::github::GitHubLeftPane::Issues);
 
     let command_ids: &[&str] = if pr_surface {
-        &[
-            "github.pr.create",
-            "github.open.browser",
-            "github.refresh",
-        ]
+        &["github.pr.create", "github.open.browser", "github.refresh"]
     } else if issue_surface {
         &[
             "github.open.browser",
@@ -136,7 +130,10 @@ fn prioritize_github_issue_commands(state: &AppState, matches: &mut Vec<usize>) 
     };
 
     for command_id in command_ids {
-        let Some(index) = COMMANDS.iter().position(|command| command.id == *command_id) else {
+        let Some(index) = COMMANDS
+            .iter()
+            .position(|command| command.id == *command_id)
+        else {
             continue;
         };
         matches.retain(|candidate| *candidate != index);
@@ -281,13 +278,17 @@ fn unavailable_command_message(state: &AppState, command: &CommandDef) -> Option
 
 fn github_issue_comment_prompt_effects(state: &mut AppState) -> Vec<SideEffect> {
     if !state.github.auth_ok {
-        state.notifications.show_toast("GitHub authentication required");
+        state
+            .notifications
+            .show_toast("GitHub authentication required");
         state.dirty = true;
         return Vec::new();
     }
 
     let Some(number) = selected_issue_number(state) else {
-        state.notifications.show_toast("Select an issue in the GH left list first");
+        state
+            .notifications
+            .show_toast("Select an issue in the GH left list first");
         state.dirty = true;
         return Vec::new();
     };
@@ -303,13 +304,17 @@ fn github_issue_comment_prompt_effects(state: &mut AppState) -> Vec<SideEffect> 
 
 fn github_issue_label_picker_effects(state: &mut AppState) -> Vec<SideEffect> {
     if !state.github.auth_ok {
-        state.notifications.show_toast("GitHub authentication required");
+        state
+            .notifications
+            .show_toast("GitHub authentication required");
         state.dirty = true;
         return Vec::new();
     }
 
     let Some(number) = selected_issue_number(state) else {
-        state.notifications.show_toast("Select an issue in the GH left list first");
+        state
+            .notifications
+            .show_toast("Select an issue in the GH left list first");
         state.dirty = true;
         return Vec::new();
     };
@@ -322,7 +327,9 @@ fn github_issue_label_picker_effects(state: &mut AppState) -> Vec<SideEffect> {
 
 fn github_open_in_browser_effects(state: &mut AppState) -> Vec<SideEffect> {
     if !state.github.auth_ok {
-        state.notifications.show_toast("GitHub authentication required");
+        state
+            .notifications
+            .show_toast("GitHub authentication required");
         state.dirty = true;
         return Vec::new();
     }
@@ -341,7 +348,9 @@ fn github_open_in_browser_effects(state: &mut AppState) -> Vec<SideEffect> {
 
 fn github_pr_create_prompt_effects(state: &mut AppState) -> Vec<SideEffect> {
     if !state.github.auth_ok {
-        state.notifications.show_toast("GitHub authentication required");
+        state
+            .notifications
+            .show_toast("GitHub authentication required");
         state.dirty = true;
         return Vec::new();
     }
@@ -535,9 +544,11 @@ mod tests {
         let mut state = test_state();
         state.palette.input = "issue comment".to_string();
         refresh_matches(&mut state);
-        assert!(state.palette.matches.iter().any(|index| {
-            COMMANDS[*index].id == "github.issue.comment"
-        }));
+        assert!(state
+            .palette
+            .matches
+            .iter()
+            .any(|index| { COMMANDS[*index].id == "github.issue.comment" }));
     }
 
     #[test]
@@ -556,6 +567,7 @@ mod tests {
                 SideEffect::SpawnGitHubIssueComment { .. }
                     | SideEffect::SpawnGitHubIssueList
                     | SideEffect::SpawnGitHubIssueDetail { .. }
+                    | SideEffect::SpawnGitHubPrDetail { .. }
             )
         }));
         assert!(state.palette.open);
@@ -610,9 +622,9 @@ mod tests {
             .position(|command| command.id == "github.pr.create")
             .expect("github pr create");
         let effects = execute_command(&mut state, index);
-        assert!(!effects.iter().any(|effect| {
-            matches!(effect, SideEffect::SpawnGitHubPrCreate { .. })
-        }));
+        assert!(!effects
+            .iter()
+            .any(|effect| { matches!(effect, SideEffect::SpawnGitHubPrCreate { .. }) }));
         assert!(state.palette.open);
         assert!(state.palette.prompt.is_some());
         assert_eq!(state.navigation.focus, FocusTarget::CommandPalette);
