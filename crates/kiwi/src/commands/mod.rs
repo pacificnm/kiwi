@@ -42,6 +42,7 @@ pub enum PaletteAction {
     DiffPrevFile,
     GitHubIssueCommentPrompt,
     GitHubIssueLabelPicker,
+    GitHubIssueCreateBranch,
     GitHubOpenInBrowser,
     GitHubPrCreatePrompt,
 }
@@ -121,6 +122,7 @@ fn prioritize_github_issue_commands(state: &AppState, matches: &mut Vec<usize>) 
     } else if issue_surface {
         &[
             "github.open.browser",
+            "github.issue.branch",
             "github.issue.comment",
             "github.issue.label",
             "github.refresh",
@@ -224,6 +226,7 @@ pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideE
         PaletteAction::DiffPrevFile => diff_move_file_effects(state, -1),
         PaletteAction::GitHubIssueCommentPrompt => github_issue_comment_prompt_effects(state),
         PaletteAction::GitHubIssueLabelPicker => github_issue_label_picker_effects(state),
+        PaletteAction::GitHubIssueCreateBranch => github_issue_create_branch_effects(state),
         PaletteAction::GitHubOpenInBrowser => github_open_in_browser_effects(state),
         PaletteAction::GitHubPrCreatePrompt => github_pr_create_prompt_effects(state),
     };
@@ -323,6 +326,28 @@ fn github_issue_label_picker_effects(state: &mut AppState) -> Vec<SideEffect> {
     state.github.label_picker = Some(LabelPickerState::new(number, existing_labels));
     state.dirty = true;
     vec![SideEffect::SpawnGitHubRepoLabels]
+}
+
+fn github_issue_create_branch_effects(state: &mut AppState) -> Vec<SideEffect> {
+    if !state.github.auth_ok {
+        state
+            .notifications
+            .show_toast("GitHub authentication required");
+        state.dirty = true;
+        return Vec::new();
+    }
+
+    let Some(number) = selected_issue_number(state) else {
+        state
+            .notifications
+            .show_toast("Select an issue in the GH left list first");
+        state.dirty = true;
+        return Vec::new();
+    };
+
+    state.github.issue_action_message = Some(format!("Creating branch for issue #{number}..."));
+    state.dirty = true;
+    vec![SideEffect::SpawnGitHubIssueCreateBranch { number }]
 }
 
 fn github_open_in_browser_effects(state: &mut AppState) -> Vec<SideEffect> {
@@ -537,6 +562,7 @@ mod tests {
         assert!(ids.contains(&"github.issue.comment"));
         assert!(ids.contains(&"github.open.browser"));
         assert!(ids.contains(&"github.issue.label"));
+        assert!(ids.contains(&"github.issue.branch"));
     }
 
     #[test]
@@ -610,6 +636,30 @@ mod tests {
         let effects = execute_command(&mut state, index);
         assert!(state.github.label_picker.is_some());
         assert!(effects.contains(&SideEffect::SpawnGitHubRepoLabels));
+        assert!(!state.palette.open);
+    }
+
+    #[test]
+    fn execute_issue_create_branch_spawns_side_effect() {
+        let mut state = test_state();
+        state.github.auth_ok = true;
+        state.github.selected_issue = Some(7);
+        let index = COMMANDS
+            .iter()
+            .position(|command| command.id == "github.issue.branch")
+            .expect("github issue branch");
+        let effects = execute_command(&mut state, index);
+        assert!(effects.iter().any(|effect| {
+            matches!(
+                effect,
+                SideEffect::SpawnGitHubIssueCreateBranch { number: 7 }
+            )
+        }));
+        assert!(state
+            .github
+            .issue_action_message
+            .as_ref()
+            .is_some_and(|message| message.contains("Creating branch")));
         assert!(!state.palette.open);
     }
 

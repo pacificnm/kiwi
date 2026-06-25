@@ -82,6 +82,13 @@ pub const COMMANDS: &[CommandDef] = &[
         action: PaletteAction::GitHubIssueLabelPicker,
     },
     CommandDef {
+        id: "github.issue.branch",
+        title: "Issue: Create Branch",
+        shortcut: None,
+        context: CommandContext::RequiresGitRepo,
+        action: PaletteAction::GitHubIssueCreateBranch,
+    },
+    CommandDef {
         id: "github.open.browser",
         title: "GitHub: Open in Browser",
         shortcut: Some("o"),
@@ -353,6 +360,7 @@ mod tests {
             "github.refresh",
             "github.issue.comment",
             "github.issue.label",
+            "github.issue.branch",
             "github.open.browser",
             "github.pr.create",
             "editor.open",
