@@ -32,6 +32,12 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
             error,
         } => reduce_file_tree_children_loaded(state, parent, children, error),
         AppEvent::PreviewLoaded { path, result } => reduce_preview_loaded(state, path, result),
+        AppEvent::SearchCompleted {
+            generation,
+            results,
+            truncated,
+            error,
+        } => reduce_search_completed(state, generation, results, truncated, error),
     }
 }
 
@@ -68,6 +74,15 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         AppCommand::PreviewFile(path) => reduce_preview_file(state, path),
         AppCommand::PreviewScroll(delta) => reduce_preview_scroll(state, delta),
         AppCommand::PreviewPageScroll(delta) => reduce_preview_page_scroll(state, delta),
+        AppCommand::SearchSetQuery(query) => reduce_search_set_query(state, query),
+        AppCommand::SearchAppendChar(ch) => reduce_search_append_char(state, ch),
+        AppCommand::SearchBackspace => reduce_search_backspace(state),
+        AppCommand::SearchClear => reduce_search_clear(state),
+        AppCommand::SearchSetMode(mode) => reduce_search_set_mode(state, mode),
+        AppCommand::SearchExecute => reduce_search_execute(state),
+        AppCommand::SearchCancel => reduce_search_cancel(state),
+        AppCommand::SearchMoveSelection(delta) => reduce_search_move_selection(state, delta),
+        AppCommand::SearchSelect(index) => reduce_search_select(state, index),
     }
 }
 
@@ -457,6 +472,108 @@ fn reduce_preview_page_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffec
     Vec::new()
 }
 
+fn reduce_search_set_query(state: &mut AppState, query: String) -> Vec<SideEffect> {
+    state.search.schedule_query(query);
+    state.dirty = true;
+    vec![SideEffect::CancelSearch]
+}
+
+fn reduce_search_append_char(state: &mut AppState, ch: char) -> Vec<SideEffect> {
+    let mut query = state.search.query.clone();
+    query.push(ch);
+    reduce_search_set_query(state, query)
+}
+
+fn reduce_search_backspace(state: &mut AppState) -> Vec<SideEffect> {
+    if state.search.query.is_empty() {
+        return Vec::new();
+    }
+
+    let mut query = state.search.query.clone();
+    query.pop();
+    reduce_search_set_query(state, query)
+}
+
+fn reduce_search_clear(state: &mut AppState) -> Vec<SideEffect> {
+    state.search.clear_query();
+    state.dirty = true;
+    vec![SideEffect::CancelSearch]
+}
+
+fn reduce_search_set_mode(
+    state: &mut AppState,
+    mode: crate::search::SearchMode,
+) -> Vec<SideEffect> {
+    state.search.set_mode(mode);
+    state.dirty = true;
+    vec![SideEffect::CancelSearch]
+}
+
+fn reduce_search_execute(state: &mut AppState) -> Vec<SideEffect> {
+    let generation = state.search.begin_execute();
+    state.dirty = true;
+
+    if state.search.query.is_empty() {
+        return vec![SideEffect::CancelSearch];
+    }
+
+    vec![SideEffect::RunSearch {
+        mode: state.search.mode,
+        query: state.search.query.clone(),
+        generation,
+    }]
+}
+
+fn reduce_search_cancel(state: &mut AppState) -> Vec<SideEffect> {
+    state.search.cancel();
+    state.dirty = true;
+    vec![SideEffect::CancelSearch]
+}
+
+fn search_viewport_rows(state: &AppState) -> usize {
+    state.layout.rects.left_content.height.saturating_sub(4) as usize
+}
+
+fn reduce_search_move_selection(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    if delta == 0 {
+        return Vec::new();
+    }
+
+    state
+        .search
+        .move_selection(delta, search_viewport_rows(state));
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_search_select(state: &mut AppState, index: usize) -> Vec<SideEffect> {
+    state
+        .search
+        .select_index(index, search_viewport_rows(state));
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_search_completed(
+    state: &mut AppState,
+    generation: u64,
+    results: Vec<crate::search::SearchResult>,
+    truncated: bool,
+    error: Option<String>,
+) -> Vec<SideEffect> {
+    if generation != state.search.generation {
+        return Vec::new();
+    }
+
+    if let Some(message) = error {
+        state.search.apply_error(generation, message);
+    } else {
+        state.search.apply_results(generation, results, truncated);
+    }
+    state.dirty = true;
+    Vec::new()
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -473,8 +590,9 @@ mod tests {
     use super::*;
     use crate::file_tree::{DirectoryEntry, FileTreeState};
     use crate::preview::{PreviewLoadResult, PreviewState};
+    use crate::search::{SearchMode, SearchState};
     use crate::state::domains::{
-        AgentState, CommandPaletteState, DiffState, GitHubState, GitState, SearchState, ShellState,
+        AgentState, CommandPaletteState, DiffState, GitHubState, GitState, ShellState,
         StatusBarState, WorkspaceMeta,
     };
 
@@ -1040,5 +1158,61 @@ mod tests {
             AppEvent::Command(AppCommand::PreviewScroll(-500)),
         );
         assert_eq!(state.preview.scroll_offset, 0);
+    }
+
+    #[test]
+    fn search_set_query_schedules_debounce_and_cancels() {
+        let mut state = test_state();
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::SearchSetQuery("main".to_string())),
+        );
+        assert!(effects.contains(&SideEffect::CancelSearch));
+        assert!(state.search.debounce_scheduled);
+        assert_eq!(state.search.generation, 1);
+    }
+
+    #[test]
+    fn search_execute_emits_run_side_effect() {
+        let mut state = test_state();
+        state.search.query = "main".to_string();
+        state.search.generation = 1;
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::SearchExecute));
+        assert!(effects.iter().any(|effect| matches!(
+            effect,
+            SideEffect::RunSearch {
+                mode: SearchMode::Files,
+                query,
+                generation: 1,
+            } if query == "main"
+        )));
+        assert!(state.search.running);
+    }
+
+    #[test]
+    fn search_completed_ignores_stale_generation() {
+        let mut state = test_state();
+        state.search.generation = 2;
+        reduce(
+            &mut state,
+            AppEvent::SearchCompleted {
+                generation: 1,
+                results: vec![],
+                truncated: false,
+                error: None,
+            },
+        );
+        assert!(state.search.results.is_empty());
+    }
+
+    #[test]
+    fn search_clear_cancels_running_query() {
+        let mut state = test_state();
+        state.search.query = "abc".to_string();
+        state.search.running = true;
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::SearchClear));
+        assert!(effects.contains(&SideEffect::CancelSearch));
+        assert!(state.search.query.is_empty());
+        assert!(!state.search.running);
     }
 }

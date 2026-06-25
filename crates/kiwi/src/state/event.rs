@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use crate::git::GitFileEntry;
 use crate::navigation::NavCommand;
 use crate::preview::PreviewLoadResult;
+use crate::search::{SearchMode, SearchResult};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppEvent {
@@ -32,6 +33,12 @@ pub enum AppEvent {
     PreviewLoaded {
         path: PathBuf,
         result: PreviewLoadResult,
+    },
+    SearchCompleted {
+        generation: u64,
+        results: Vec<SearchResult>,
+        truncated: bool,
+        error: Option<String>,
     },
 }
 
@@ -67,6 +74,17 @@ pub enum AppCommand {
     PreviewFile(PathBuf),
     PreviewScroll(i32),
     PreviewPageScroll(i32),
+    #[cfg_attr(not(test), allow(dead_code))]
+    SearchSetQuery(String),
+    SearchAppendChar(char),
+    SearchBackspace,
+    SearchClear,
+    SearchSetMode(SearchMode),
+    SearchExecute,
+    #[cfg_attr(not(test), allow(dead_code))]
+    SearchCancel,
+    SearchMoveSelection(i32),
+    SearchSelect(usize),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,6 +105,12 @@ pub enum SideEffect {
     SavePaletteHistory,
     LoadDirectoryChildren(PathBuf),
     LoadPreviewFile(PathBuf),
+    CancelSearch,
+    RunSearch {
+        mode: SearchMode,
+        query: String,
+        generation: u64,
+    },
     #[cfg_attr(not(test), allow(dead_code))]
     LaunchEditor(PathBuf),
 }

@@ -1,4 +1,6 @@
 use std::io::stdout;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{
@@ -13,6 +15,7 @@ use crate::file_tree::spawn_directory_load;
 use crate::layout::{agent_pty_size, shell_pty_size, FocusTarget};
 use crate::navigation::{map_key, LeftNavTab, MainTab};
 use crate::preview::spawn_preview_load;
+use crate::search::{spawn_search, DebounceTimer, SearchCancelHandle, SearchJob, SearchMode};
 use crate::shell::{encode_key, ShellOutputReader, ShellSession};
 use crate::shutdown;
 use crate::state::{
@@ -20,7 +23,7 @@ use crate::state::{
 };
 use crate::ui::{
     draw_frame, file_tree_interaction_at, map_mouse_click, mouse_interactions_enabled,
-    palette_match_at, FileTreeMouseAction,
+    palette_match_at, search_interaction_at, FileTreeMouseAction,
 };
 use crate::workspace::{load_palette_history, save_palette_history};
 
@@ -36,6 +39,9 @@ pub struct App {
     agent_io: Option<AgentOutputReader>,
     last_shell_interrupt: Option<Instant>,
     last_agent_interrupt: Option<Instant>,
+    search_debounce: DebounceTimer,
+    search_cancel: SearchCancelHandle,
+    search_live_generation: Arc<AtomicU64>,
 }
 
 impl App {
@@ -90,6 +96,9 @@ impl App {
             agent_io: None,
             last_shell_interrupt: None,
             last_agent_interrupt: None,
+            search_debounce: DebounceTimer::default(),
+            search_cancel: SearchCancelHandle::default(),
+            search_live_generation: Arc::new(AtomicU64::new(0)),
         };
         let spawn_effects = agent_spawn_effects_if_needed(&mut app.state);
         app.execute_effects(spawn_effects);
@@ -199,6 +208,8 @@ impl App {
                 break;
             }
 
+            self.poll_search_debounce();
+
             if self.state.dirty {
                 terminal
                     .draw(|frame| draw_frame(frame, &self.state))
@@ -206,7 +217,13 @@ impl App {
                 self.state.mark_clean();
             }
 
-            if event::poll(Duration::from_millis(100)).expect("poll terminal events")
+            let poll_timeout = self
+                .search_debounce
+                .remaining()
+                .unwrap_or(Duration::from_millis(100))
+                .min(Duration::from_millis(100));
+
+            if event::poll(poll_timeout).expect("poll terminal events")
                 && self.handle_terminal_event(event::read().expect("read terminal event"))
             {
                 break;
@@ -252,7 +269,25 @@ impl App {
 
     fn dispatch(&mut self, event: AppEvent) -> bool {
         let effects = reduce(&mut self.state, event);
-        self.execute_effects(effects)
+        let quit = self.execute_effects(effects);
+        self.sync_search_debounce();
+        quit
+    }
+
+    fn sync_search_debounce(&mut self) {
+        self.search_live_generation
+            .store(self.state.search.generation, Ordering::Relaxed);
+
+        if self.state.search.debounce_scheduled {
+            let debounce = Duration::from_millis(self.state.config.search.debounce_ms);
+            self.search_debounce.schedule(debounce);
+        }
+    }
+
+    fn poll_search_debounce(&mut self) {
+        if self.search_debounce.poll_ready() {
+            self.dispatch(AppEvent::Command(AppCommand::SearchExecute));
+        }
     }
 
     fn execute_effects(&mut self, effects: Vec<SideEffect>) -> bool {
@@ -303,6 +338,31 @@ impl App {
                         path,
                         self.state.config.preview.max_size_bytes,
                         self.events.sender(),
+                    );
+                }
+                SideEffect::CancelSearch => {
+                    self.search_cancel.cancel();
+                    self.search_debounce.clear();
+                    self.search_live_generation
+                        .store(self.state.search.generation, Ordering::Relaxed);
+                }
+                SideEffect::RunSearch {
+                    mode,
+                    query,
+                    generation,
+                } => {
+                    self.search_cancel.clear();
+                    spawn_search(
+                        SearchJob {
+                            mode,
+                            query,
+                            generation,
+                            repo_root: self.state.repo_root.clone(),
+                            rg_command: self.state.config.search.command.clone(),
+                        },
+                        self.events.sender(),
+                        self.search_live_generation.clone(),
+                        self.search_cancel.clone(),
                     );
                 }
             }
@@ -374,6 +434,20 @@ impl App {
             }
         }
 
+        if self.state.navigation.left_tab == LeftNavTab::Search {
+            if let Some(index) = search_interaction_at(
+                &self.state,
+                self.state.layout.rects.left_content,
+                mouse.column,
+                mouse.row,
+            ) {
+                let _ = self.dispatch(AppEvent::Command(AppCommand::Navigation(
+                    crate::navigation::NavCommand::SetFocus(FocusTarget::Left),
+                )));
+                return self.dispatch(AppEvent::Command(AppCommand::SearchSelect(index)));
+            }
+        }
+
         for command in map_mouse_click(&self.state, mouse.column, mouse.row) {
             if self.dispatch(AppEvent::Command(AppCommand::Navigation(command))) {
                 return true;
@@ -411,6 +485,10 @@ impl App {
 
         if self.file_tree_input_active() {
             return self.handle_file_tree_key(key);
+        }
+
+        if self.search_input_active() {
+            return self.handle_search_key(key);
         }
 
         if self.preview_input_active() {
@@ -474,6 +552,54 @@ impl App {
     fn file_tree_input_active(&self) -> bool {
         self.state.navigation.focus == FocusTarget::Left
             && self.state.navigation.left_tab == LeftNavTab::Files
+    }
+
+    fn search_input_active(&self) -> bool {
+        self.state.navigation.focus == FocusTarget::Left
+            && self.state.navigation.left_tab == LeftNavTab::Search
+    }
+
+    fn handle_search_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        if self.is_search_mode_toggle(key) {
+            let mode = match self.state.search.mode {
+                SearchMode::Files => SearchMode::Content,
+                SearchMode::Content => SearchMode::Files,
+            };
+            return self.dispatch(AppEvent::Command(AppCommand::SearchSetMode(mode)));
+        }
+
+        if !key.modifiers.is_empty() {
+            return false;
+        }
+
+        match key.code {
+            KeyCode::Esc => self.dispatch(AppEvent::Command(AppCommand::SearchClear)),
+            KeyCode::Backspace => self.dispatch(AppEvent::Command(AppCommand::SearchBackspace)),
+            KeyCode::Enter => self.dispatch_preview_from_search_selection(),
+            KeyCode::Char('j') => {
+                self.dispatch(AppEvent::Command(AppCommand::SearchMoveSelection(1)))
+            }
+            KeyCode::Char('k') => {
+                self.dispatch(AppEvent::Command(AppCommand::SearchMoveSelection(-1)))
+            }
+            KeyCode::Char('/') => false,
+            KeyCode::Char(ch) => self.dispatch(AppEvent::Command(AppCommand::SearchAppendChar(ch))),
+            _ => false,
+        }
+    }
+
+    fn is_search_mode_toggle(&self, key: crossterm::event::KeyEvent) -> bool {
+        key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char('m' | 'M') | KeyCode::Enter)
+    }
+
+    fn dispatch_preview_from_search_selection(&mut self) -> bool {
+        let Some(result) = self.state.search.results.get(self.state.search.selected) else {
+            return false;
+        };
+        self.dispatch(AppEvent::Command(AppCommand::PreviewFile(
+            result.path.clone(),
+        )))
     }
 
     fn preview_input_active(&self) -> bool {
