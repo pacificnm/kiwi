@@ -3,6 +3,7 @@ mod diff;
 mod file_tree;
 mod git;
 mod github;
+mod label_picker;
 mod logs;
 mod mouse;
 mod mouse_clicks;

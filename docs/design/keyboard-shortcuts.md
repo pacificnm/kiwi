@@ -148,6 +148,8 @@ Pair **GH** left (`Alt+4`) with **Issues** main (`2`) or **PRs** main (`3`). Use
 | `j` / `k` | Issue list navigation (GH left, Issues hub) or scroll detail (Issues main, main focus) |
 | `PgUp` / `PgDn` | Page scroll issue detail (Issues main, main focus) |
 | `Enter` | Open selected issue in Issues main tab |
+| Command palette | **GitHub: Comment on Issue** — prompt for comment text (`Enter` posts) |
+| Command palette | **GitHub: Add Labels to Issue** — multi-select overlay (`Space` toggle, `Enter` apply, `Esc` cancel) |
 | `c` | Comment (opens palette prompt) |
 | `o` | Open in browser |
 | `R` | Refresh list |

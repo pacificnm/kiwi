@@ -161,6 +161,8 @@ pub struct GitHubState {
     pub issue_detail_error: Option<String>,
     pub issue_detail_scroll_offset: usize,
     pub left_pane: crate::github::GitHubLeftPane,
+    pub label_picker: Option<crate::github::LabelPickerState>,
+    pub issue_action_message: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -369,6 +371,27 @@ impl ShellState {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PalettePrompt {
+    GitHubIssueComment { number: u32 },
+}
+
+impl PalettePrompt {
+    #[must_use]
+    pub fn title(&self) -> String {
+        match self {
+            Self::GitHubIssueComment { number } => format!("Comment on issue #{number}"),
+        }
+    }
+
+    #[must_use]
+    pub fn hint(&self) -> &'static str {
+        match self {
+            Self::GitHubIssueComment { .. } => "Enter to post · Esc to cancel",
+        }
+    }
+}
+
 use crate::workspace::MAX_PALETTE_HISTORY_ENTRIES;
 
 const MAX_PALETTE_HISTORY: usize = MAX_PALETTE_HISTORY_ENTRIES;
@@ -377,6 +400,7 @@ const MAX_PALETTE_HISTORY: usize = MAX_PALETTE_HISTORY_ENTRIES;
 pub struct CommandPaletteState {
     pub open: bool,
     pub input: String,
+    pub prompt: Option<PalettePrompt>,
     pub matches: Vec<usize>,
     pub selected: usize,
     pub history: Vec<String>,
@@ -389,6 +413,7 @@ impl Default for CommandPaletteState {
         Self {
             open: false,
             input: String::new(),
+            prompt: None,
             matches: Vec::new(),
             selected: 0,
             history: Vec::new(),
@@ -402,6 +427,19 @@ impl CommandPaletteState {
     pub fn open_with_focus(&mut self, focus: FocusTarget) {
         self.open = true;
         self.input.clear();
+        self.prompt = None;
+        self.selected = 0;
+        self.history_cursor = None;
+        if focus != FocusTarget::CommandPalette {
+            self.focus_before_open = focus;
+        }
+    }
+
+    pub fn begin_prompt(&mut self, prompt: PalettePrompt, focus: FocusTarget) {
+        self.open = true;
+        self.prompt = Some(prompt);
+        self.input.clear();
+        self.matches.clear();
         self.selected = 0;
         self.history_cursor = None;
         if focus != FocusTarget::CommandPalette {
@@ -412,6 +450,7 @@ impl CommandPaletteState {
     pub fn close(&mut self, focus: &mut FocusTarget) {
         self.open = false;
         self.input.clear();
+        self.prompt = None;
         self.matches.clear();
         self.selected = 0;
         self.history_cursor = None;

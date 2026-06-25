@@ -10,12 +10,13 @@ use crate::git::{
     git_move_selection, git_select_row, patch_git_file_entries, row_for_path, GitFileEntry,
 };
 use crate::github::{
-    ensure_issue_selection, issue_move_selection, issue_select_row, page_scroll_issue_detail,
-    scroll_issue_detail, GitHubLeftPane, IssueDetailLoadResult, IssueListLoadResult,
-    ISSUE_LIST_CACHE_SECS,
+    apply_label_picker_load, ensure_issue_selection, issue_move_selection, issue_select_row,
+    page_scroll_issue_detail, scroll_issue_detail, GitHubLeftPane, IssueDetailLoadResult,
+    IssueListLoadResult, ISSUE_LIST_CACHE_SECS,
 };
 use crate::layout::{agent_pty_size, compute_layout, shell_pty_size, FocusTarget};
 use crate::navigation::{LeftNavTab, MainTab, NavCommand};
+use crate::state::PalettePrompt;
 
 use super::app_state::AppState;
 use super::event::{AppCommand, AppEvent, SideEffect};
@@ -65,6 +66,15 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
         AppEvent::GitHubIssueDetailLoaded { number, result } => {
             reduce_github_issue_detail_loaded(state, number, result)
         }
+        AppEvent::GitHubIssueCommentCompleted { number, result } => {
+            reduce_github_issue_comment_completed(state, number, result)
+        }
+        AppEvent::GitHubRepoLabelsLoaded { result } => {
+            reduce_github_repo_labels_loaded(state, result)
+        }
+        AppEvent::GitHubIssueLabelsApplied { number, result } => {
+            reduce_github_issue_labels_applied(state, number, result)
+        }
     }
 }
 
@@ -96,6 +106,10 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         AppCommand::GitHubIssueDetailPageScroll(delta) => {
             reduce_github_issue_detail_page_scroll(state, delta)
         }
+        AppCommand::GitHubLabelPickerMove(delta) => reduce_github_label_picker_move(state, delta),
+        AppCommand::GitHubLabelPickerToggle => reduce_github_label_picker_toggle(state),
+        AppCommand::GitHubLabelPickerApply => reduce_github_label_picker_apply(state),
+        AppCommand::GitHubLabelPickerCancel => reduce_github_label_picker_cancel(state),
         AppCommand::ShellWrite(data) => vec![SideEffect::WriteShell(data)],
         AppCommand::ShellScroll(delta) => reduce_shell_scroll(state, delta),
         AppCommand::AgentWrite(data) => vec![SideEffect::WriteAgent(data)],
@@ -512,6 +526,125 @@ fn issue_detail_viewport_rows(state: &AppState) -> usize {
     crate::ui::issue_detail_viewport_rows(state.layout.rects.main_content)
 }
 
+fn reduce_github_issue_comment_completed(
+    state: &mut AppState,
+    number: u32,
+    result: crate::github::IssueActionResult,
+) -> Vec<SideEffect> {
+    if state.github.selected_issue != Some(u64::from(number)) {
+        return Vec::new();
+    }
+
+    if result.success {
+        state.github.issue_action_message = Some(format!("Comment posted on #{number}"));
+        state.github.issues_loaded_at = None;
+        clear_issue_detail_cache(&mut state.github);
+        let mut effects = github_issue_list_effects(state, true);
+        effects.extend(github_issue_detail_effects(state, number, true));
+        state.dirty = true;
+        return effects;
+    }
+
+    state.github.issue_action_message = result.error.clone();
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_github_repo_labels_loaded(
+    state: &mut AppState,
+    result: crate::github::RepoLabelsLoadResult,
+) -> Vec<SideEffect> {
+    let Some(picker) = state.github.label_picker.as_mut() else {
+        return Vec::new();
+    };
+
+    let existing = picker.existing_labels.clone();
+    apply_label_picker_load(picker, result, &existing);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_github_issue_labels_applied(
+    state: &mut AppState,
+    number: u32,
+    result: crate::github::IssueActionResult,
+) -> Vec<SideEffect> {
+    let Some(picker) = state.github.label_picker.as_mut() else {
+        return Vec::new();
+    };
+
+    if picker.issue_number != number {
+        return Vec::new();
+    }
+
+    picker.applying = false;
+
+    if result.success {
+        state.github.label_picker = None;
+        state.github.issue_action_message =
+            Some(format!("Labels updated on #{number}"));
+        state.github.issues_loaded_at = None;
+        clear_issue_detail_cache(&mut state.github);
+        let mut effects = github_issue_list_effects(state, true);
+        effects.extend(github_issue_detail_effects(state, number, true));
+        state.dirty = true;
+        return effects;
+    }
+
+    picker.error = result.error.clone();
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_github_label_picker_move(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    if let Some(picker) = state.github.label_picker.as_mut() {
+        picker.move_cursor(delta);
+        state.dirty = true;
+    }
+    Vec::new()
+}
+
+fn reduce_github_label_picker_toggle(state: &mut AppState) -> Vec<SideEffect> {
+    if let Some(picker) = state.github.label_picker.as_mut() {
+        if !picker.loading && !picker.applying {
+            picker.toggle_cursor();
+            state.dirty = true;
+        }
+    }
+    Vec::new()
+}
+
+fn reduce_github_label_picker_apply(state: &mut AppState) -> Vec<SideEffect> {
+    let Some(picker) = state.github.label_picker.as_mut() else {
+        return Vec::new();
+    };
+
+    if picker.loading || picker.applying {
+        return Vec::new();
+    }
+
+    let labels = picker.labels_to_add();
+    if labels.is_empty() {
+        state.notifications.show_toast("Select at least one new label");
+        state.dirty = true;
+        return Vec::new();
+    }
+
+    let number = picker.issue_number;
+    picker.applying = true;
+    picker.error = None;
+    state.dirty = true;
+    vec![SideEffect::SpawnGitHubIssueLabelApply { number, labels }]
+}
+
+fn reduce_github_label_picker_cancel(state: &mut AppState) -> Vec<SideEffect> {
+    if state.github.label_picker.is_some() {
+        state.github.label_picker = None;
+        state.dirty = true;
+    }
+    Vec::new()
+}
+
 fn reduce_git_refresh_requested(state: &mut AppState) -> Vec<SideEffect> {
     git_refresh_effects(state)
 }
@@ -692,7 +825,7 @@ fn reduce_palette_backspace(state: &mut AppState) -> Vec<SideEffect> {
 }
 
 fn reduce_palette_move_selection(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
-    if !state.palette.open {
+    if !state.palette.open || state.palette.prompt.is_some() {
         return Vec::new();
     }
 
@@ -734,6 +867,10 @@ fn reduce_palette_execute_selected(state: &mut AppState) -> Vec<SideEffect> {
         return Vec::new();
     }
 
+    if let Some(prompt) = state.palette.prompt.clone() {
+        return reduce_palette_prompt_submit(state, prompt);
+    }
+
     let Some(registry_index) = state.palette.matches.get(state.palette.selected).copied() else {
         return Vec::new();
     };
@@ -741,8 +878,25 @@ fn reduce_palette_execute_selected(state: &mut AppState) -> Vec<SideEffect> {
     execute_command(state, registry_index)
 }
 
+fn reduce_palette_prompt_submit(state: &mut AppState, prompt: PalettePrompt) -> Vec<SideEffect> {
+    match prompt {
+        PalettePrompt::GitHubIssueComment { number } => {
+            let body = state.palette.input.trim().to_string();
+            if body.is_empty() {
+                state.notifications.show_toast("Comment cannot be empty");
+                state.dirty = true;
+                return Vec::new();
+            }
+
+            state.palette.close(&mut state.navigation.focus);
+            state.dirty = true;
+            vec![SideEffect::SpawnGitHubIssueComment { number, body }]
+        }
+    }
+}
+
 fn reduce_palette_execute_match(state: &mut AppState, match_index: usize) -> Vec<SideEffect> {
-    if !state.palette.open {
+    if !state.palette.open || state.palette.prompt.is_some() {
         return Vec::new();
     }
 
@@ -2136,6 +2290,98 @@ mod tests {
         );
 
         assert_eq!(state.github.issue_detail_scroll_offset, 5);
+    }
+
+    #[test]
+    fn palette_prompt_submits_issue_comment() {
+        use crate::state::PalettePrompt;
+
+        let mut state = test_state();
+        state.github.selected_issue = Some(42);
+        state
+            .palette
+            .begin_prompt(PalettePrompt::GitHubIssueComment { number: 42 }, FocusTarget::Main);
+        state.navigation.focus = FocusTarget::CommandPalette;
+        state.palette.input = "Looks good".to_string();
+
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::PaletteExecuteSelected));
+
+        assert!(!state.palette.open);
+        assert!(effects.iter().any(|effect| {
+            matches!(
+                effect,
+                SideEffect::SpawnGitHubIssueComment { number: 42, body }
+                if body == "Looks good"
+            )
+        }));
+    }
+
+    #[test]
+    fn github_issue_comment_completed_refreshes_detail() {
+        use crate::github::IssueActionResult;
+
+        let mut state = test_state();
+        state.github.auth_ok = true;
+        state.github.auth_checked = true;
+        state.github.selected_issue = Some(42);
+        state.github.issue_detail_number = Some(42);
+        state
+            .navigation
+            .apply(NavCommand::SelectMainTab(MainTab::Issues));
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::GitHubIssueCommentCompleted {
+                number: 42,
+                result: IssueActionResult {
+                    success: true,
+                    error: None,
+                },
+            },
+        );
+
+        assert!(state.github.issue_action_message.is_some());
+        assert!(state.github.issue_detail.is_none());
+        assert!(effects.contains(&SideEffect::SpawnGitHubIssueList));
+        assert!(effects.contains(&SideEffect::SpawnGitHubIssueDetail { number: 42 }));
+    }
+
+    #[test]
+    fn github_label_picker_apply_spawns_edit() {
+        use crate::github::{apply_label_picker_load, LabelPickerState, RepoLabelsLoadResult};
+
+        let mut state = test_state();
+        let mut picker = LabelPickerState::new(9, vec!["bug".to_string()]);
+        apply_label_picker_load(
+            &mut picker,
+            RepoLabelsLoadResult {
+                labels: vec![
+                    crate::github::labels::RepoLabel {
+                        name: "bug".to_string(),
+                        description: String::new(),
+                    },
+                    crate::github::labels::RepoLabel {
+                        name: "docs".to_string(),
+                        description: String::new(),
+                    },
+                ],
+                error: None,
+            },
+            &["bug".to_string()],
+        );
+        picker.selected[1] = true;
+        state.github.label_picker = Some(picker);
+
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::GitHubLabelPickerApply));
+
+        assert!(state.github.label_picker.as_ref().is_some_and(|picker| picker.applying));
+        assert!(effects.iter().any(|effect| {
+            matches!(
+                effect,
+                SideEffect::SpawnGitHubIssueLabelApply { number: 9, labels }
+                if labels == &vec!["docs".to_string()]
+            )
+        }));
     }
 
     #[test]

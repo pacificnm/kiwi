@@ -68,7 +68,7 @@ Example combinations:
 - Detail view for the issue selected in the **GH** left tab
 - Shows title, state, labels, assignees; body and comments (future)
 - `Enter` on GH left list focuses main and opens detail
-- Actions via palette: comment, label, branch
+- Actions via palette: **Comment on Issue** (palette prompt), **Add Labels to Issue** (multi-select overlay), create branch (future)
 
 ### PRs
 

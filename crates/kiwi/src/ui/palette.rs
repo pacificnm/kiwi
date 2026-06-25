@@ -26,8 +26,14 @@ pub fn render_palette_pane(
         theme.get(SemanticRole::Border)
     };
 
+    let title = if let Some(prompt) = &state.palette.prompt {
+        prompt.title()
+    } else {
+        "Commands".to_string()
+    };
+
     let block = Block::default()
-        .title("Commands")
+        .title(title)
         .borders(Borders::ALL)
         .border_style(border_style);
 
@@ -51,16 +57,23 @@ pub fn render_palette_pane(
     )));
 
     if state.palette.open {
-        let visible_rows = inner
-            .height
-            .saturating_sub(1)
-            .min(MAX_VISIBLE_MATCHES as u16) as usize;
-        for match_index in 0..visible_rows {
-            let Some(line) = render_match_line(state, theme, match_index, inner.width as usize)
-            else {
-                break;
-            };
-            lines.push(line);
+        if let Some(prompt) = &state.palette.prompt {
+            lines.push(Line::from(Span::styled(
+                truncate_line(prompt.hint(), inner.width as usize),
+                theme.get(SemanticRole::Muted),
+            )));
+        } else {
+            let visible_rows = inner
+                .height
+                .saturating_sub(1)
+                .min(MAX_VISIBLE_MATCHES as u16) as usize;
+            for match_index in 0..visible_rows {
+                let Some(line) = render_match_line(state, theme, match_index, inner.width as usize)
+                else {
+                    break;
+                };
+                lines.push(line);
+            }
         }
     }
 
@@ -98,7 +111,8 @@ fn render_match_line(
 }
 
 pub fn palette_match_at(state: &AppState, area: Rect, column: u16, row: u16) -> Option<usize> {
-    if !state.palette.open || area.width == 0 || area.height == 0 {
+    if !state.palette.open || state.palette.prompt.is_some() || area.width == 0 || area.height == 0
+    {
         return None;
     }
 
@@ -140,7 +154,7 @@ fn truncate_line(text: &str, max_width: usize) -> String {
 mod tests {
     use crate::config::ResolvedConfig;
     use crate::layout::compute_layout;
-    use crate::state::AppState;
+    use crate::state::{AppState, PalettePrompt};
     use crate::theme::capabilities::TerminalCapabilities;
     use crate::theme::loader::load_theme_with_capabilities;
 
@@ -168,5 +182,15 @@ mod tests {
         let area = Rect::new(0, 0, 30, 5);
         assert_eq!(palette_match_at(&state, area, 2, 2), Some(0));
         assert_eq!(palette_match_at(&state, area, 2, 3), Some(1));
+    }
+
+    #[test]
+    fn palette_match_at_disabled_in_prompt_mode() {
+        let mut state = test_state();
+        state.palette.open = true;
+        state.palette.prompt = Some(PalettePrompt::GitHubIssueComment { number: 1 });
+        state.palette.matches = vec![0];
+        let area = Rect::new(0, 0, 30, 5);
+        assert_eq!(palette_match_at(&state, area, 2, 3), None);
     }
 }

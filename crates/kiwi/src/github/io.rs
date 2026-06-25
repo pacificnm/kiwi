@@ -2,9 +2,11 @@ use std::path::PathBuf;
 
 use crate::state::{AppEvent, EventSender};
 
+use super::actions::{add_issue_labels, post_issue_comment};
 use super::auth::check_github_auth;
 use super::detail::load_issue_detail;
 use super::issue::load_issue_list;
+use super::labels::load_repo_labels;
 
 pub fn spawn_github_auth_check(command: String, sender: EventSender) {
     std::thread::spawn(move || {
@@ -29,5 +31,38 @@ pub fn spawn_github_issue_detail_load(
     std::thread::spawn(move || {
         let result = load_issue_detail(&repo_root, &command, number);
         let _ = sender.send(AppEvent::GitHubIssueDetailLoaded { number, result });
+    });
+}
+
+pub fn spawn_github_issue_comment(
+    repo_root: PathBuf,
+    command: String,
+    number: u32,
+    body: String,
+    sender: EventSender,
+) {
+    std::thread::spawn(move || {
+        let result = post_issue_comment(&repo_root, &command, number, &body);
+        let _ = sender.send(AppEvent::GitHubIssueCommentCompleted { number, result });
+    });
+}
+
+pub fn spawn_github_repo_labels_load(repo_root: PathBuf, command: String, sender: EventSender) {
+    std::thread::spawn(move || {
+        let result = load_repo_labels(&repo_root, &command);
+        let _ = sender.send(AppEvent::GitHubRepoLabelsLoaded { result });
+    });
+}
+
+pub fn spawn_github_issue_label_apply(
+    repo_root: PathBuf,
+    command: String,
+    number: u32,
+    labels: Vec<String>,
+    sender: EventSender,
+) {
+    std::thread::spawn(move || {
+        let result = add_issue_labels(&repo_root, &command, number, &labels);
+        let _ = sender.send(AppEvent::GitHubIssueLabelsApplied { number, result });
     });
 }
