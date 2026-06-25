@@ -50,7 +50,7 @@ pub fn tab_bar_line(tabs: &[&'static str], selected: usize, theme: &ThemePalette
     Line::from(spans)
 }
 
-fn separator_span(theme: &ThemePalette) -> Span<'static> {
+pub(crate) fn separator_span(theme: &ThemePalette) -> Span<'static> {
     Span::styled(TAB_SEPARATOR, theme.get(SemanticRole::Muted))
 }
 

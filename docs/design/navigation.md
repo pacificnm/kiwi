@@ -36,10 +36,11 @@ Example combinations:
 
 ### GH
 
-- Issue list (number, title, state, labels) — same role as Git left tab for diffs
-- `j`/`k` navigate list; `Enter` opens selected issue in main **Issues** tab
+- Hub sub-navigation: **Issues** | **PRs** (switch with `i` / `p` on left focus)
+- **Issues** list (number, title, state, labels) — `j`/`k` navigate; mouse single-click select; double-click or `Enter` opens main **Issues** detail
+- **PRs** placeholder until PR list lands (#59); `Enter` opens main **PRs** tab
 - Auth errors and loading state shown inline when `gh` is unavailable
-- `R` refresh issue list
+- `R` refresh
 
 ### Search
 

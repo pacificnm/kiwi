@@ -160,6 +160,7 @@ pub struct GitHubState {
     pub issue_detail_loading: bool,
     pub issue_detail_error: Option<String>,
     pub issue_detail_scroll_offset: usize,
+    pub left_pane: crate::github::GitHubLeftPane,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

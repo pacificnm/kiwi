@@ -5,19 +5,28 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 
 use crate::github::{
-    issue_at_viewport, issue_selected_row_index, GitHubAuthErrorKind, Issue, IssueState,
+    issue_at_viewport, issue_selected_row_index, GitHubAuthErrorKind, GitHubLeftPane, Issue,
+    IssueState,
 };
 use crate::navigation::MainTab;
+use crate::selection::{line_spans_with_selection, SelectionPane};
 use crate::state::AppState;
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
 
+use super::tabs::separator_span;
+
+const GH_HUB_ROWS: u16 = 1;
 const ISSUES_STATUS_ROWS: u16 = 1;
 const ISSUE_DETAIL_STATUS_ROWS: u16 = 1;
 
 pub fn issues_viewport_rows(area: Rect) -> usize {
     pane_inner(area)
-        .map(|inner| inner.height.saturating_sub(ISSUES_STATUS_ROWS) as usize)
+        .map(|inner| {
+            inner
+                .height
+                .saturating_sub(ISSUES_STATUS_ROWS + GH_HUB_ROWS) as usize
+        })
         .unwrap_or(0)
 }
 
@@ -27,7 +36,80 @@ pub fn issue_detail_viewport_rows(area: Rect) -> usize {
         .unwrap_or(0)
 }
 
-pub fn render_github_issues_list_pane(
+pub fn github_issue_interaction_at(
+    state: &AppState,
+    area: Rect,
+    column: u16,
+    row: u16,
+) -> Option<usize> {
+    if state.github.left_pane != GitHubLeftPane::Issues {
+        return None;
+    }
+
+    if state.github.loading && !state.github.auth_checked {
+        return None;
+    }
+
+    if github_auth_message(state).is_some() {
+        return None;
+    }
+
+    if area.width == 0 || area.height == 0 {
+        return None;
+    }
+
+    if column < area.x
+        || column >= area.x.saturating_add(area.width)
+        || row < area.y
+        || row >= area.y.saturating_add(area.height)
+    {
+        return None;
+    }
+
+    let list_area = github_issues_list_area(area)?;
+    if column < list_area.x
+        || column >= list_area.x.saturating_add(list_area.width)
+        || row < list_area.y
+        || row >= list_area.y.saturating_add(list_area.height)
+    {
+        return None;
+    }
+
+    let viewport_index = usize::from(row.saturating_sub(list_area.y));
+    issue_at_viewport(&state.github, viewport_index)?;
+
+    Some(state.github.issues_scroll_offset.saturating_add(viewport_index))
+}
+
+fn github_issues_list_area(area: Rect) -> Option<Rect> {
+    let inner = pane_inner(area)?;
+    let status_y = inner
+        .y
+        .saturating_add(inner.height.saturating_sub(ISSUES_STATUS_ROWS));
+    let status_area = Rect {
+        x: inner.x,
+        y: status_y,
+        width: inner.width,
+        height: ISSUES_STATUS_ROWS.min(inner.height),
+    };
+    let hub_area = Rect {
+        x: inner.x,
+        y: inner.y,
+        width: inner.width,
+        height: GH_HUB_ROWS.min(inner.height.saturating_sub(status_area.height)),
+    };
+
+    Some(Rect {
+        x: inner.x,
+        y: hub_area.y.saturating_add(hub_area.height),
+        width: inner.width,
+        height: inner
+            .height
+            .saturating_sub(hub_area.height + status_area.height),
+    })
+}
+
+pub fn render_github_left_pane(
     frame: &mut Frame<'_>,
     area: Rect,
     focused: bool,
@@ -45,7 +127,7 @@ pub fn render_github_issues_list_pane(
             focused,
             theme,
             state,
-            "Issues",
+            "GitHub",
             vec![Line::from("Checking GitHub authentication…")],
         );
         return;
@@ -58,7 +140,7 @@ pub fn render_github_issues_list_pane(
             focused,
             theme,
             state,
-            "Issues",
+            "GitHub",
             auth_error_lines(message, state.github.error_kind),
         );
         return;
@@ -71,7 +153,7 @@ pub fn render_github_issues_list_pane(
     };
 
     let block = Block::default()
-        .title(issues_list_title(state))
+        .title(github_left_title(state))
         .borders(Borders::ALL)
         .border_style(border_style)
         .style(chrome_style(theme));
@@ -92,19 +174,36 @@ pub fn render_github_issues_list_pane(
         width: inner.width,
         height: ISSUES_STATUS_ROWS.min(inner.height),
     };
-    let list_area = Rect {
+    let Some(list_area) = github_issues_list_area(area) else {
+        return;
+    };
+    let hub_area = Rect {
         x: inner.x,
         y: inner.y,
         width: inner.width,
-        height: inner.height.saturating_sub(status_area.height),
+        height: list_area.y.saturating_sub(inner.y),
     };
 
+    if hub_area.height > 0 && hub_area.width > 0 {
+        render_github_hub_line(frame, hub_area, focused, theme, state);
+    }
+
     if list_area.height > 0 && list_area.width > 0 {
-        render_issue_list(frame, list_area, focused, theme, state);
+        match state.github.left_pane {
+            GitHubLeftPane::Issues => {
+                render_issue_list(frame, list_area, focused, theme, state);
+            }
+            GitHubLeftPane::Prs => render_pr_list_placeholder(frame, list_area, theme, state),
+        }
     }
 
     if status_area.height > 0 {
-        render_issues_list_status_line(frame, status_area, state, theme);
+        match state.github.left_pane {
+            GitHubLeftPane::Issues => {
+                render_issues_list_status_line(frame, status_area, state, theme);
+            }
+            GitHubLeftPane::Prs => render_prs_list_status_line(frame, status_area, theme),
+        }
     }
 }
 
@@ -211,16 +310,80 @@ pub fn render_github_main_pane(
     render_github_pane(frame, area, focused, theme, state, title, lines);
 }
 
-fn issues_list_title(state: &AppState) -> String {
-    let mut title = String::from("Issues");
-    if state.github.issues_loading {
-        title.push_str(" · loading");
-    } else if state.github.issues_error.is_some() {
-        title.push_str(" · error");
-    } else if !state.github.issues.is_empty() {
-        title.push_str(&format!(" · {}", state.github.issues.len()));
+fn github_left_title(state: &AppState) -> String {
+    title_with_auth_status("GitHub", state)
+}
+
+fn github_hub_label(state: &AppState, pane: GitHubLeftPane) -> String {
+    match pane {
+        GitHubLeftPane::Issues => {
+            let mut label = String::from("Issues");
+            if state.github.issues_loading {
+                label.push_str(" …");
+            } else if !state.github.issues.is_empty() {
+                label.push_str(&format!(" · {}", state.github.issues.len()));
+            }
+            label
+        }
+        GitHubLeftPane::Prs => String::from("PRs"),
     }
-    title
+}
+
+fn render_github_hub_line(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    focused: bool,
+    theme: &ThemePalette,
+    state: &AppState,
+) {
+    let selected = state.github.left_pane.index();
+    let mut spans = Vec::new();
+
+    for (index, pane) in [GitHubLeftPane::Issues, GitHubLeftPane::Prs]
+        .iter()
+        .enumerate()
+    {
+        if index > 0 {
+            spans.push(separator_span(theme));
+        }
+
+        let active = focused && index == selected;
+        let mut style = if active {
+            theme.get(SemanticRole::Accent).add_modifier(Modifier::BOLD)
+        } else {
+            theme.get(SemanticRole::Muted)
+        };
+        if active {
+            style = style.add_modifier(Modifier::UNDERLINED);
+        }
+
+        spans.push(Span::styled(github_hub_label(state, *pane), style));
+    }
+
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+fn render_pr_list_placeholder(frame: &mut Frame<'_>, area: Rect, theme: &ThemePalette, state: &AppState) {
+    let message = if state.github.auth_ok {
+        "PR list loads in a later milestone (#59).\n\nPress Enter to open the PRs main tab."
+    } else {
+        "Authenticate with gh to browse pull requests."
+    };
+
+    frame.render_widget(
+        Paragraph::new(message)
+            .style(theme.get(SemanticRole::Muted))
+            .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
+fn render_prs_list_status_line(frame: &mut Frame<'_>, area: Rect, theme: &ThemePalette) {
+    frame.render_widget(
+        Paragraph::new(truncate_line("i/p switch · Enter main · R refresh", area.width as usize))
+            .style(theme.get(SemanticRole::Muted)),
+        area,
+    );
 }
 
 fn issue_detail_title(state: &AppState) -> String {
@@ -294,6 +457,14 @@ fn render_issue_detail_content(
         } else {
             fg
         };
+        let line = line_spans_with_selection(
+            &display,
+            line_index,
+            SelectionPane::IssueDetail,
+            &state.text_selection,
+            style,
+            theme,
+        );
 
         let row_area = Rect {
             x: area.x,
@@ -302,7 +473,7 @@ fn render_issue_detail_content(
             height: 1,
         };
         frame.render_widget(Clear, row_area);
-        frame.render_widget(Paragraph::new(display).style(style), row_area);
+        frame.render_widget(Paragraph::new(line), row_area);
     }
 }
 
@@ -328,7 +499,7 @@ fn render_issue_detail_message(
 fn render_issue_detail_status_line(
     frame: &mut Frame<'_>,
     area: Rect,
-    focused: bool,
+    _focused: bool,
     state: &AppState,
     theme: &ThemePalette,
 ) {
@@ -336,10 +507,8 @@ fn render_issue_detail_status_line(
         "Loading detail…"
     } else if state.github.selected_issue.is_none() {
         "Enter on GH left list to view"
-    } else if state.github.issue_detail.is_some() && focused {
-        "j/k scroll · PgUp/PgDn page · R refresh"
     } else if state.github.issue_detail.is_some() {
-        "j/k scroll · R refresh"
+        "j/k scroll · drag select · Ctrl+C copy · R refresh"
     } else {
         "Enter on GH left list · R refresh"
     };
@@ -448,7 +617,7 @@ fn render_issues_list_status_line(
     } else if state.github.issues.is_empty() {
         "R refresh"
     } else {
-        "j/k move · Enter view · R refresh"
+        "j/k move · Enter view · i/p switch · R refresh"
     };
 
     frame.render_widget(
@@ -605,7 +774,7 @@ mod tests {
     use ratatui::Terminal;
 
     use crate::config::ResolvedConfig;
-    use crate::github::{GitHubAuthErrorKind, Issue, IssueDetail, IssueState};
+    use crate::github::{GitHubAuthErrorKind, GitHubLeftPane, Issue, IssueDetail, IssueState};
     use crate::layout::compute_layout;
     use crate::navigation::{LeftNavTab, MainTab};
     use crate::state::AppState;
@@ -629,6 +798,98 @@ mod tests {
     }
 
     #[test]
+    fn github_issue_interaction_at_selects_issue_row() {
+        let mut state = test_state();
+        state.github.auth_checked = true;
+        state.github.auth_ok = true;
+        state.github.issues = vec![
+            Issue {
+                number: 1,
+                title: "First".to_string(),
+                state: IssueState::Open,
+                labels: Vec::new(),
+                assignees: Vec::new(),
+            },
+            Issue {
+                number: 2,
+                title: "Second".to_string(),
+                state: IssueState::Open,
+                labels: Vec::new(),
+                assignees: Vec::new(),
+            },
+        ];
+        state.github.left_pane = GitHubLeftPane::Issues;
+
+        let area = Rect::new(0, 0, 60, 12);
+        let row = (area.y..area.y.saturating_add(area.height))
+            .find(|row| github_issue_interaction_at(&state, area, area.x + 2, *row).is_some())
+            .expect("issue row");
+        let index = github_issue_interaction_at(&state, area, area.x + 2, row).expect("index");
+        assert_eq!(index, 0);
+    }
+
+    #[test]
+    fn github_left_pane_renders_issues_and_prs_hub() {
+        let mut state = test_state();
+        state.navigation.left_tab = LeftNavTab::Gh;
+        state.github.auth_checked = true;
+        state.github.auth_ok = true;
+        state.github.issues = vec![Issue {
+            number: 55,
+            title: "Issue list via gh json".to_string(),
+            state: IssueState::Open,
+            labels: Vec::new(),
+            assignees: Vec::new(),
+        }];
+        state.github.left_pane = GitHubLeftPane::Issues;
+
+        let backend = TestBackend::new(60, 12);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| {
+                render_github_left_pane(frame, frame.area(), true, &state.theme, &state);
+            })
+            .expect("draw");
+
+        let content = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(content.contains("Issues · 1"));
+        assert!(content.contains("PRs"));
+        assert!(content.contains("#55"));
+    }
+
+    #[test]
+    fn github_left_pane_shows_prs_placeholder_when_selected() {
+        let mut state = test_state();
+        state.navigation.left_tab = LeftNavTab::Gh;
+        state.github.auth_checked = true;
+        state.github.auth_ok = true;
+        state.github.left_pane = GitHubLeftPane::Prs;
+
+        let backend = TestBackend::new(60, 12);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| {
+                render_github_left_pane(frame, frame.area(), true, &state.theme, &state);
+            })
+            .expect("draw");
+
+        let content = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(content.contains("PR list loads"));
+    }
+
+    #[test]
     fn issues_list_pane_renders_in_left_gh_panel() {
         let mut state = test_state();
         state.navigation.left_tab = LeftNavTab::Gh;
@@ -648,7 +909,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).expect("terminal");
         terminal
             .draw(|frame| {
-                render_github_issues_list_pane(frame, frame.area(), true, &state.theme, &state);
+                render_github_left_pane(frame, frame.area(), true, &state.theme, &state);
             })
             .expect("draw");
 

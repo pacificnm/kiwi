@@ -12,11 +12,13 @@ Provide **lightweight mouse support** that complements keyboard workflows withou
 | Single click | Main tab label | Activate main tab and focus Main pane |
 | Single click | Agent pane (Agent tab) | Focus Main pane |
 | Single click | Shell pane | Focus Shell pane |
+| Single click | GH issue row (Issues hub) | Select issue |
+| Double click | GH issue row (Issues hub) | Open Issues main tab detail |
 | Single click | List/tree row | Select item |
 | Double click | File row (Files tab) | Open Preview tab |
 | Double click | Search result row | Open Preview tab at result line |
 | Scroll wheel | Scrollable under cursor | Scroll content |
-| Left drag | Preview, Agent, Shell text | Highlight selection for copy |
+| Left drag | Preview, Issues detail, Agent, Shell text | Highlight selection for copy |
 | Middle click | Focused input area | Paste (terminal convention) |
 
 ## Unsupported (v1)
@@ -27,7 +29,7 @@ Provide **lightweight mouse support** that complements keyboard workflows withou
 
 ## Terminal Text Selection
 
-Kiwi supports **in-app text selection** in Preview, Agent, and Shell panes: left-click and drag to highlight, then `Ctrl+C` to copy.
+Kiwi supports **in-app text selection** in Preview, Issues detail, Agent, and Shell panes: left-click and drag to highlight, then `Ctrl+C` to copy. Paste into Agent or Shell with `Ctrl+V` when that pane is focused.
 
 For hybrid mode, **Shift + drag** can still be used for terminal-native selection when needed.
 

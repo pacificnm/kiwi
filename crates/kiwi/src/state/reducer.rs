@@ -10,8 +10,9 @@ use crate::git::{
     git_move_selection, git_select_row, patch_git_file_entries, row_for_path, GitFileEntry,
 };
 use crate::github::{
-    ensure_issue_selection, issue_move_selection, page_scroll_issue_detail, scroll_issue_detail,
-    IssueDetailLoadResult, IssueListLoadResult, ISSUE_LIST_CACHE_SECS,
+    ensure_issue_selection, issue_move_selection, issue_select_row, page_scroll_issue_detail,
+    scroll_issue_detail, GitHubLeftPane, IssueDetailLoadResult, IssueListLoadResult,
+    ISSUE_LIST_CACHE_SECS,
 };
 use crate::layout::{agent_pty_size, compute_layout, shell_pty_size, FocusTarget};
 use crate::navigation::{LeftNavTab, MainTab, NavCommand};
@@ -86,7 +87,9 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         AppCommand::GitHubMoveIssueSelection(delta) => {
             reduce_github_move_issue_selection(state, delta)
         }
+        AppCommand::GitHubSelectIssue(index) => reduce_github_select_issue(state, index),
         AppCommand::GitHubOpenSelected => reduce_github_open_selected(state),
+        AppCommand::GitHubSelectLeftPane(pane) => reduce_github_select_left_pane(state, pane),
         AppCommand::GitHubIssueDetailScroll(delta) => {
             reduce_github_issue_detail_scroll(state, delta)
         }
@@ -152,11 +155,14 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
     }
 }
 
-fn apply_navigation(state: &mut AppState, command: NavCommand) {
+pub fn apply_navigation(state: &mut AppState, command: NavCommand) {
     let before = state.navigation.clone();
     state.navigation.apply(command);
     if state.navigation != before {
         state.dirty = true;
+    }
+    if state.navigation.left_tab == LeftNavTab::Gh {
+        sync_github_left_pane_from_main_tab(state);
     }
     if state.navigation.left_tab == LeftNavTab::Files {
         state.file_tree.ensure_selection();
@@ -164,6 +170,14 @@ fn apply_navigation(state: &mut AppState, command: NavCommand) {
     if state.navigation.left_tab == LeftNavTab::Git {
         ensure_git_selection(&mut state.git, state.config.git.show_untracked);
     }
+}
+
+fn sync_github_left_pane_from_main_tab(state: &mut AppState) {
+    state.github.left_pane = match state.navigation.main_tab {
+        MainTab::Issues => GitHubLeftPane::Issues,
+        MainTab::Prs => GitHubLeftPane::Prs,
+        _ => state.github.left_pane,
+    };
 }
 
 pub fn agent_spawn_effects_if_needed(state: &mut AppState) -> Vec<SideEffect> {
@@ -395,6 +409,7 @@ fn reduce_github_issue_detail_loaded(
     state.github.issue_detail_error = result.error;
     state.github.issue_detail = result.detail;
     if state.github.issue_detail.is_some() {
+        state.text_selection.clear();
         clamp_issue_detail_scroll(state);
     }
     state.dirty = true;
@@ -408,6 +423,13 @@ fn reduce_github_move_issue_selection(state: &mut AppState, delta: i32) -> Vec<S
     Vec::new()
 }
 
+fn reduce_github_select_issue(state: &mut AppState, row_index: usize) -> Vec<SideEffect> {
+    let viewport_rows = issues_viewport_rows(state);
+    issue_select_row(&mut state.github, row_index, viewport_rows);
+    state.dirty = true;
+    Vec::new()
+}
+
 fn issues_viewport_rows(state: &AppState) -> usize {
     crate::ui::issues_viewport_rows(state.layout.rects.left_content)
 }
@@ -417,12 +439,30 @@ fn reduce_github_open_selected(state: &mut AppState) -> Vec<SideEffect> {
         return Vec::new();
     };
 
+    state.github.left_pane = GitHubLeftPane::Issues;
     state.navigation.apply(NavCommand::SelectMainTab(MainTab::Issues));
     state
         .navigation
         .apply(NavCommand::SetFocus(FocusTarget::Main));
     state.dirty = true;
     github_issue_detail_effects(state, number, true)
+}
+
+fn reduce_github_select_left_pane(
+    state: &mut AppState,
+    pane: GitHubLeftPane,
+) -> Vec<SideEffect> {
+    state.github.left_pane = pane;
+    match pane {
+        GitHubLeftPane::Issues => {
+            state.navigation.apply(NavCommand::SelectMainTab(MainTab::Issues));
+        }
+        GitHubLeftPane::Prs => {
+            state.navigation.apply(NavCommand::SelectMainTab(MainTab::Prs));
+        }
+    }
+    state.dirty = true;
+    Vec::new()
 }
 
 fn reduce_github_issue_detail_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
@@ -1996,6 +2036,36 @@ mod tests {
     }
 
     #[test]
+    fn github_select_left_pane_switches_main_tab() {
+        let mut state = test_state();
+        state.navigation.left_tab = LeftNavTab::Gh;
+
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::GitHubSelectLeftPane(GitHubLeftPane::Prs)),
+        );
+
+        assert_eq!(state.github.left_pane, GitHubLeftPane::Prs);
+        assert_eq!(state.navigation.main_tab, MainTab::Prs);
+    }
+
+    #[test]
+    fn navigating_to_prs_on_gh_left_tab_selects_prs_hub() {
+        let mut state = test_state();
+        state.navigation.left_tab = LeftNavTab::Gh;
+        state.github.left_pane = GitHubLeftPane::Issues;
+
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::Navigation(NavCommand::SelectMainTab(
+                MainTab::Prs,
+            ))),
+        );
+
+        assert_eq!(state.github.left_pane, GitHubLeftPane::Prs);
+    }
+
+    #[test]
     fn github_open_selected_focuses_main_issues_tab_and_loads_detail() {
         let mut state = test_state();
         state.github.auth_ok = true;
@@ -2755,6 +2825,35 @@ mod tests {
 
         let effects = reduce(&mut state, AppEvent::Command(AppCommand::ClipboardCopy));
         assert!(effects.contains(&SideEffect::CopyToClipboard("selected".to_string())));
+    }
+
+    #[test]
+    fn clipboard_copy_issue_detail_selection() {
+        use crate::github::{IssueDetail, IssueState};
+        use crate::selection::{SelectionPane, TextPosition, TextSelection};
+
+        let mut state = test_state();
+        state
+            .navigation
+            .apply(NavCommand::SelectMainTab(MainTab::Issues));
+        state.github.issue_detail = Some(IssueDetail {
+            number: 42,
+            title: "Bug".to_string(),
+            state: IssueState::Open,
+            author: "dev".to_string(),
+            labels: vec![],
+            assignees: vec![],
+            display_lines: vec!["copy this text".to_string()],
+        });
+        state.text_selection = TextSelection {
+            pane: Some(SelectionPane::IssueDetail),
+            anchor: TextPosition { line: 0, col: 5 },
+            cursor: TextPosition { line: 0, col: 9 },
+            dragging: false,
+        };
+
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::ClipboardCopy));
+        assert!(effects.contains(&SideEffect::CopyToClipboard("this".to_string())));
     }
 
     #[test]

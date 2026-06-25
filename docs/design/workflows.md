@@ -36,7 +36,7 @@ flowchart LR
 | Branch | Git | — | Shell |
 | Agent | Files | Agent | — |
 | Review | Git, Diff | Diff | Preview |
-| PR | GH | PRs | Shell |
+| PR | GH (PRs hub) | PRs | Shell |
 
 ---
 

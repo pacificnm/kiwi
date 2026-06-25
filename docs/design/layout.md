@@ -43,7 +43,7 @@ Scrollable list or tree depending on tab:
 | Files | Tree view with indent guides |
 | Git | Flat list grouped by status |
 | Diff | Changed files list |
-| GH | Issue list (select → main Issues detail) |
+| GH | Issues/PRs hub + list (Issues now; PR list #59) |
 | Search | Input + results list |
 
 Left content scrolls independently of main content.

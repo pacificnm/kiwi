@@ -150,8 +150,9 @@ pub const COMMANDS: &[CommandDef] = &[
         shortcut: Some("3"),
         context: CommandContext::Always,
         action: PaletteAction::NavigationChain(&[
+            NavCommand::SelectLeftTab(LeftNavTab::Gh),
             NavCommand::SelectMainTab(MainTab::Prs),
-            NavCommand::SetFocus(FocusTarget::Main),
+            NavCommand::SetFocus(FocusTarget::Left),
         ]),
     },
     CommandDef {

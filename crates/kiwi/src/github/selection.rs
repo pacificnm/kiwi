@@ -46,6 +46,17 @@ pub fn issue_move_selection(state: &mut GitHubState, delta: i32, viewport_rows: 
         scroll_offset_for_row(next_index, state.issues_scroll_offset, viewport_rows);
 }
 
+pub fn issue_select_row(state: &mut GitHubState, row_index: usize, viewport_rows: usize) {
+    if state.issues.get(row_index).is_none() {
+        return;
+    }
+
+    let issue = &state.issues[row_index];
+    state.selected_issue = Some(u64::from(issue.number));
+    state.issues_scroll_offset =
+        scroll_offset_for_row(row_index, state.issues_scroll_offset, viewport_rows);
+}
+
 pub fn issue_at_viewport(state: &GitHubState, viewport_index: usize) -> Option<&Issue> {
     state
         .issues
@@ -100,6 +111,19 @@ mod tests {
                 assignees: Vec::new(),
             },
         ]
+    }
+
+    fn issue_select_row_updates_selection_and_scroll() {
+        let mut state = GitHubState {
+            issues: sample_issues(),
+            selected_issue: Some(1),
+            issues_scroll_offset: 0,
+            ..GitHubState::default()
+        };
+
+        issue_select_row(&mut state, 1, 1);
+        assert_eq!(state.selected_issue, Some(2));
+        assert_eq!(state.issues_scroll_offset, 0);
     }
 
     #[test]

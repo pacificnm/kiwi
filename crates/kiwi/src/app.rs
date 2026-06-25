@@ -35,9 +35,9 @@ use crate::state::{
 };
 use crate::ui::git_interaction_at;
 use crate::ui::{
-    draw_frame, file_tree_interaction_at, map_mouse_click, mouse_interactions_enabled,
-    palette_match_at, search_interaction_at, DoubleClickTarget, DoubleClickTracker,
-    FileTreeMouseAction,
+    draw_frame, file_tree_interaction_at, github_issue_interaction_at, map_mouse_click,
+    mouse_interactions_enabled, palette_match_at, search_interaction_at, DoubleClickTarget,
+    DoubleClickTracker, FileTreeMouseAction,
 };
 use crate::watcher::RepoWatcher;
 use crate::workspace::{load_palette_history, save_palette_history};
@@ -626,6 +626,10 @@ impl App {
                 NavCommand::SelectMainTab(MainTab::Preview),
                 NavCommand::SetFocus(FocusTarget::Main),
             ],
+            SelectionPane::IssueDetail => vec![
+                NavCommand::SelectMainTab(MainTab::Issues),
+                NavCommand::SetFocus(FocusTarget::Main),
+            ],
             SelectionPane::Agent => vec![
                 NavCommand::SelectMainTab(MainTab::Agent),
                 NavCommand::SetFocus(FocusTarget::Main),
@@ -719,6 +723,29 @@ impl App {
                     return self.dispatch(AppEvent::Command(AppCommand::GitOpenSelected));
                 }
                 return self.dispatch(AppEvent::Command(AppCommand::GitSelect(index)));
+            }
+        }
+
+        if self.state.navigation.left_tab == LeftNavTab::Gh
+            && self.state.github.left_pane == crate::github::GitHubLeftPane::Issues
+        {
+            if let Some(index) = github_issue_interaction_at(
+                &self.state,
+                self.state.layout.rects.left_content,
+                mouse.column,
+                mouse.row,
+            ) {
+                let _ = self.dispatch(AppEvent::Command(AppCommand::Navigation(
+                    crate::navigation::NavCommand::SetFocus(FocusTarget::Left),
+                )));
+                if self
+                    .double_click
+                    .register(DoubleClickTarget::GitHubIssue(index))
+                {
+                    let _ = self.dispatch(AppEvent::Command(AppCommand::GitHubSelectIssue(index)));
+                    return self.dispatch(AppEvent::Command(AppCommand::GitHubOpenSelected));
+                }
+                return self.dispatch(AppEvent::Command(AppCommand::GitHubSelectIssue(index)));
             }
         }
 
@@ -898,8 +925,12 @@ impl App {
             return false;
         }
 
-        let gh_list_focused = self.state.navigation.focus == FocusTarget::Left
+        let gh_left_focused = self.state.navigation.focus == FocusTarget::Left
             && self.state.navigation.left_tab == LeftNavTab::Gh;
+        let gh_issues_list_focused = gh_left_focused
+            && self.state.github.left_pane == crate::github::GitHubLeftPane::Issues;
+        let gh_prs_list_focused = gh_left_focused
+            && self.state.github.left_pane == crate::github::GitHubLeftPane::Prs;
         let issues_detail_focused = self.state.navigation.focus == FocusTarget::Main
             && self.state.navigation.main_tab == MainTab::Issues;
 
@@ -908,11 +939,23 @@ impl App {
                 self.dispatch(AppEvent::Command(AppCommand::GitHubRefresh));
                 true
             }
-            KeyCode::Char('j') if gh_list_focused => {
+            KeyCode::Char('i') if gh_left_focused => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubSelectLeftPane(
+                    crate::github::GitHubLeftPane::Issues,
+                )));
+                true
+            }
+            KeyCode::Char('p') if gh_left_focused => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubSelectLeftPane(
+                    crate::github::GitHubLeftPane::Prs,
+                )));
+                true
+            }
+            KeyCode::Char('j') if gh_issues_list_focused => {
                 self.dispatch(AppEvent::Command(AppCommand::GitHubMoveIssueSelection(1)));
                 true
             }
-            KeyCode::Char('k') if gh_list_focused => {
+            KeyCode::Char('k') if gh_issues_list_focused => {
                 self.dispatch(AppEvent::Command(AppCommand::GitHubMoveIssueSelection(-1)));
                 true
             }
@@ -932,8 +975,17 @@ impl App {
                 self.dispatch(AppEvent::Command(AppCommand::GitHubIssueDetailPageScroll(-1)));
                 true
             }
-            KeyCode::Enter if gh_list_focused => {
+            KeyCode::Enter if gh_issues_list_focused => {
                 self.dispatch(AppEvent::Command(AppCommand::GitHubOpenSelected));
+                true
+            }
+            KeyCode::Enter if gh_prs_list_focused => {
+                self.dispatch(AppEvent::Command(AppCommand::Navigation(
+                    NavCommand::SelectMainTab(MainTab::Prs),
+                )));
+                self.dispatch(AppEvent::Command(AppCommand::Navigation(
+                    NavCommand::SetFocus(FocusTarget::Main),
+                )));
                 true
             }
             _ => false,
@@ -1770,6 +1822,60 @@ mod tests {
         assert_eq!(app.state().navigation.main_tab, MainTab::Preview);
         assert_eq!(app.state().preview.path, Some(PathBuf::from("src/main.rs")));
         assert_eq!(app.state().search.selected, 0);
+    }
+
+    #[test]
+    fn double_click_github_issue_opens_issues_detail() {
+        use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+
+        use crate::layout::FocusTarget;
+        use crate::github::{GitHubLeftPane, Issue, IssueState};
+        use crate::navigation::{LeftNavTab, MainTab, NavCommand};
+        use crate::state::{AppCommand, AppEvent, GitHubState};
+        use crate::ui::github_issue_interaction_at;
+
+        let mut app = App::new(test_context());
+        app.state_mut().github = GitHubState {
+            auth_checked: true,
+            auth_ok: true,
+            issues: vec![Issue {
+                number: 42,
+                title: "Mouse issue".to_string(),
+                state: IssueState::Open,
+                labels: Vec::new(),
+                assignees: Vec::new(),
+            }],
+            selected_issue: None,
+            left_pane: GitHubLeftPane::Issues,
+            ..GitHubState::default()
+        };
+        app.event_sender()
+            .send(AppEvent::Command(AppCommand::Navigation(
+                NavCommand::SelectLeftTab(LeftNavTab::Gh),
+            )))
+            .expect("send");
+        app.process_pending_events();
+
+        let area = app.state().layout.rects.left_content;
+        let row = (area.y..area.y.saturating_add(area.height))
+            .find(|row| {
+                github_issue_interaction_at(app.state(), area, area.x + 2, *row).is_some()
+            })
+            .expect("github issue row");
+        let mouse = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: area.x + 2,
+            row,
+            modifiers: KeyModifiers::empty(),
+        };
+
+        app.dispatch_mouse(mouse);
+        assert_eq!(app.state().github.selected_issue, Some(42));
+
+        app.dispatch_mouse(mouse);
+        assert_eq!(app.state().navigation.main_tab, MainTab::Issues);
+        assert_eq!(app.state().navigation.focus, FocusTarget::Main);
+        assert!(app.state().github.issue_detail_loading);
     }
 
     #[test]
