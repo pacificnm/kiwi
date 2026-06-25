@@ -52,6 +52,7 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
             show_modal,
         } => reduce_editor_launch_failed(state, path, error, show_modal),
         AppEvent::FsChanged { paths } => reduce_fs_changed(state, paths),
+        AppEvent::DiffLoaded { result } => reduce_diff_loaded(state, result),
     }
 }
 
@@ -485,8 +486,19 @@ fn reduce_git_open_selected(state: &mut AppState) -> Vec<SideEffect> {
         return Vec::new();
     };
 
-    state.diff.selected_path = Some(path);
+    let source = state.diff.source;
+    state.diff.begin_load(path.clone());
     apply_navigation(state, NavCommand::SelectMainTab(MainTab::Diff));
+    state.dirty = true;
+    vec![SideEffect::LoadFileDiff { path, source }]
+}
+
+fn reduce_diff_loaded(
+    state: &mut AppState,
+    result: crate::diff::FileDiffLoadResult,
+) -> Vec<SideEffect> {
+    state.diff.apply_loaded(result);
+    state.dirty = true;
     Vec::new()
 }
 
@@ -1255,10 +1267,44 @@ mod tests {
         let mut state = test_state();
         state.git.selected_path = Some("src/main.rs".to_string());
 
-        reduce(&mut state, AppEvent::Command(AppCommand::GitOpenSelected));
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::GitOpenSelected));
 
         assert_eq!(state.navigation.main_tab, MainTab::Diff);
         assert_eq!(state.diff.selected_path.as_deref(), Some("src/main.rs"));
+        assert!(state.diff.loading);
+        assert!(
+            effects
+                .iter()
+                .any(|effect| matches!(effect, SideEffect::LoadFileDiff { path, .. } if path == "src/main.rs"))
+        );
+    }
+
+    #[test]
+    fn diff_loaded_populates_lines_for_selected_path() {
+        use crate::diff::{DiffLine, DiffLineKind, FileDiffLoadResult};
+
+        let mut state = test_state();
+        state.diff.begin_load("src/main.rs".to_string());
+
+        reduce(
+            &mut state,
+            AppEvent::DiffLoaded {
+                result: FileDiffLoadResult {
+                    path: "src/main.rs".to_string(),
+                    lines: vec![DiffLine {
+                        kind: DiffLineKind::Addition,
+                        content: "+hello".to_string(),
+                        old_lineno: None,
+                        new_lineno: Some(1),
+                    }],
+                    is_binary: false,
+                    error: None,
+                },
+            },
+        );
+
+        assert!(!state.diff.loading);
+        assert_eq!(state.diff.lines.len(), 1);
     }
 
     #[test]

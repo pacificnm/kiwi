@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use crate::diff::{DiffSource, FileDiffLoadResult};
 use crate::git::GitFileEntry;
 use crate::navigation::NavCommand;
 use crate::preview::PreviewLoadResult;
@@ -55,6 +56,9 @@ pub enum AppEvent {
     },
     FsChanged {
         paths: Vec<PathBuf>,
+    },
+    DiffLoaded {
+        result: FileDiffLoadResult,
     },
 }
 
@@ -148,6 +152,10 @@ pub enum SideEffect {
     SavePaletteHistory,
     LoadDirectoryChildren(PathBuf),
     LoadPreviewFile(PathBuf),
+    LoadFileDiff {
+        path: String,
+        source: DiffSource,
+    },
     CancelSearch,
     RunSearch {
         mode: SearchMode,

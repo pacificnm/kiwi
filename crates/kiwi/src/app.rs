@@ -15,6 +15,7 @@ use crate::bootstrap::StartupContext;
 use crate::clipboard::{
     clipboard_op_from_key, clipboard_shortcut_allowed, ClipboardOp, ClipboardService,
 };
+use crate::diff::spawn_file_diff_load;
 use crate::editor::{
     launch_gui_editor, prepare_editor_launch, resolve_editor_target, run_terminal_editor,
     EditorLaunchMode,
@@ -465,6 +466,15 @@ impl App {
                     spawn_preview_load(
                         path,
                         self.state.config.preview.max_size_bytes,
+                        self.events.sender(),
+                    );
+                }
+                SideEffect::LoadFileDiff { path, source } => {
+                    spawn_file_diff_load(
+                        self.state.repo_root.clone(),
+                        path,
+                        source,
+                        self.state.config.diff.context_lines,
                         self.events.sender(),
                     );
                 }
