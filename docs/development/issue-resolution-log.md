@@ -311,6 +311,14 @@ Format for new entries:
 - **Files:** `file_tree/invalidation.rs`, `state/reducer.rs`, `file_tree/mod.rs`
 - **Verify:** `directories_to_invalidate_*`, `apply_fs_invalidation_*`, `fs_changed_invalidates_expanded_file_tree_directory`; manual: create a file in an expanded folder and confirm it appears without pressing `r`.
 
+### Scroll/selection preservation tests (GitHub #49, ADR-007)
+
+- **Symptom:** Watcher and git refresh paths had scattered preservation behavior but no consolidated regression coverage for scroll offsets and focus.
+- **Cause:** ADR-007 follow-up and E12 backlog item #49 required explicit tests across git panel, file tree, preview, and navigation after `FsChanged` / `GitStatusUpdated`.
+- **Fix:** Added `state/preservation.rs` integration tests and extended `git/selection.rs` tests for scroll retention and reset rules.
+- **Files:** `state/preservation.rs`, `state/mod.rs`, `git/selection.rs`
+- **Verify:** `git_status_refresh_preserves_git_panel_scroll_and_selection`, `fs_changed_preserves_file_tree_scroll_selection_and_focus`, `file_tree_reload_after_fs_changed_preserves_scroll_and_selection`, `ensure_git_selection_preserves_scroll_when_path_remains`; manual: scroll git panel and file tree, save external edit, confirm position unchanged.
+
 ---
 
 ## Reporting New Issues

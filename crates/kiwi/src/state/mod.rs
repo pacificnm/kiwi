@@ -4,6 +4,9 @@ mod domains;
 mod event;
 mod reducer;
 
+#[cfg(test)]
+mod preservation;
+
 pub use app_state::AppState;
 pub use channel::EventChannel;
 #[allow(unused_imports)]

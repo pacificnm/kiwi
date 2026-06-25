@@ -79,4 +79,11 @@ AppState {
 - SPEC-016 State Management
 - Define `AppEvent` and `AppCommand` enums in specs
 - Unit tests for scroll preservation on Git file list updates
+
+## Acceptance criteria (scroll and selection preservation)
+
+- [x] Git panel selection and scroll offset survive `GitStatusUpdated` when the selected path remains
+- [x] File tree selection and scroll offset survive git status patches and watcher invalidation
+- [x] Preview scroll offset survives matching `FsChanged` reload requests
+- [x] Navigation focus and active tabs are unchanged by watcher-driven refreshes
 - Optional: `tracing` spans on state transitions for debug
