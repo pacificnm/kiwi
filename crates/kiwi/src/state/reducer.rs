@@ -164,7 +164,7 @@ fn reduce_terminal_resize(state: &mut AppState, width: u16, height: u16) -> Vec<
     vec![SideEffect::ResizeShell { cols, rows }]
 }
 
-fn reduce_git_refresh_requested(state: &mut AppState) -> Vec<SideEffect> {
+pub fn git_refresh_effects(state: &mut AppState) -> Vec<SideEffect> {
     state.dirty = true;
     if !state.workspace_meta.is_git_repo {
         return Vec::new();
@@ -172,6 +172,10 @@ fn reduce_git_refresh_requested(state: &mut AppState) -> Vec<SideEffect> {
 
     state.git.loading = true;
     vec![SideEffect::SpawnGitRefresh]
+}
+
+fn reduce_git_refresh_requested(state: &mut AppState) -> Vec<SideEffect> {
+    git_refresh_effects(state)
 }
 
 fn reduce_git_status_updated(
@@ -1181,6 +1185,16 @@ mod tests {
     }
 
     #[test]
+    fn request_git_refresh_sets_loading() {
+        let mut state = test_state();
+        state.workspace_meta.is_git_repo = true;
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::RequestGitRefresh));
+
+        assert!(effects.contains(&SideEffect::SpawnGitRefresh));
+        assert!(state.git.loading);
+    }
+
+    #[test]
     fn git_refresh_command_emits_side_effect() {
         let mut state = test_state();
         state.workspace_meta.is_git_repo = true;
@@ -1456,6 +1470,49 @@ mod tests {
             &mut state,
             AppEvent::Command(AppCommand::PaletteExecuteSelected),
         );
+        assert!(!state.palette.open);
+    }
+
+    #[test]
+    fn palette_execute_git_refresh_sets_loading() {
+        let mut state = test_state();
+        state.workspace_meta.is_git_repo = true;
+        reduce(&mut state, AppEvent::Command(AppCommand::PaletteOpen));
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PaletteAppendChar('g')),
+        );
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PaletteAppendChar('i')),
+        );
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PaletteAppendChar('t')),
+        );
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PaletteAppendChar(' ')),
+        );
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PaletteAppendChar('r')),
+        );
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PaletteAppendChar('e')),
+        );
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PaletteAppendChar('f')),
+        );
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PaletteExecuteSelected),
+        );
+
+        assert!(effects.contains(&SideEffect::SpawnGitRefresh));
+        assert!(state.git.loading);
         assert!(!state.palette.open);
     }
 
