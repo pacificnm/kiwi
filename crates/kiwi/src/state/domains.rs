@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::agent::AgentStatus;
 use crate::diff::{DiffLine, DiffSource, FileDiffLoadResult};
 use crate::git::GitFileEntry;
@@ -30,6 +32,7 @@ pub struct DiffState {
     pub lines: Vec<DiffLine>,
     pub scroll_offset: usize,
     pub horizontal_scroll_offset: usize,
+    pub scroll_by_path: HashMap<String, (usize, usize)>,
     pub loading: bool,
     pub is_binary: bool,
     pub error: Option<String>,
@@ -43,6 +46,7 @@ impl Default for DiffState {
             lines: Vec::new(),
             scroll_offset: 0,
             horizontal_scroll_offset: 0,
+            scroll_by_path: HashMap::new(),
             loading: false,
             is_binary: false,
             error: None,
@@ -51,14 +55,30 @@ impl Default for DiffState {
 }
 
 impl DiffState {
+    fn save_scroll_for_current(&mut self) {
+        if let Some(path) = self.selected_path.clone() {
+            self.scroll_by_path.insert(
+                path,
+                (self.scroll_offset, self.horizontal_scroll_offset),
+            );
+        }
+    }
+
     pub fn begin_load(&mut self, path: String) {
-        self.selected_path = Some(path);
+        self.save_scroll_for_current();
+        self.selected_path = Some(path.clone());
         self.loading = true;
         self.error = None;
         self.is_binary = false;
         self.lines.clear();
-        self.scroll_offset = 0;
-        self.horizontal_scroll_offset = 0;
+        if let Some((scroll_offset, horizontal_scroll_offset)) = self.scroll_by_path.get(&path).copied()
+        {
+            self.scroll_offset = scroll_offset;
+            self.horizontal_scroll_offset = horizontal_scroll_offset;
+        } else {
+            self.scroll_offset = 0;
+            self.horizontal_scroll_offset = 0;
+        }
     }
 
     pub fn begin_source_reload(&mut self) {

@@ -47,6 +47,20 @@ pub const COMMANDS: &[CommandDef] = &[
         action: PaletteAction::DiffToggleSource,
     },
     CommandDef {
+        id: "diff.next_file",
+        title: "Diff: Next Changed File",
+        shortcut: Some("n"),
+        context: CommandContext::DiffTab,
+        action: PaletteAction::DiffNextFile,
+    },
+    CommandDef {
+        id: "diff.prev_file",
+        title: "Diff: Previous Changed File",
+        shortcut: Some("p"),
+        context: CommandContext::DiffTab,
+        action: PaletteAction::DiffPrevFile,
+    },
+    CommandDef {
         id: "github.refresh",
         title: "GitHub: Refresh Issues and PRs",
         shortcut: Some("R"),

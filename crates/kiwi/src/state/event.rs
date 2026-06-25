@@ -107,6 +107,10 @@ pub enum AppCommand {
     DiffToggleSource,
     #[cfg_attr(not(test), allow(dead_code))]
     DiffSetSource(crate::diff::DiffSource),
+    DiffNextFile,
+    DiffPrevFile,
+    #[cfg_attr(not(test), allow(dead_code))]
+    DiffSelectFile(String),
     #[cfg_attr(not(test), allow(dead_code))]
     SearchSetQuery(String),
     SearchAppendChar(char),

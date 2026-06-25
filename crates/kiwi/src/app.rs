@@ -1030,6 +1030,14 @@ impl App {
                 self.dispatch(AppEvent::Command(AppCommand::DiffToggleSource));
                 true
             }
+            KeyCode::Char('n') => {
+                self.dispatch(AppEvent::Command(AppCommand::DiffNextFile));
+                true
+            }
+            KeyCode::Char('p') => {
+                self.dispatch(AppEvent::Command(AppCommand::DiffPrevFile));
+                true
+            }
             _ => false,
         }
     }
@@ -1775,6 +1783,38 @@ mod tests {
 
         assert!(!app.dispatch_key(key));
         assert_eq!(app.state().diff.source, DiffSource::Staged);
+    }
+
+    #[test]
+    fn diff_next_file_key_does_not_quit_app() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+        use crate::git::{GitFileEntry, GitFileStatus};
+        use crate::navigation::MainTab;
+
+        let mut app = App::new(test_context());
+        app.state_mut().navigation.main_tab = MainTab::Diff;
+        app.state_mut().git.file_entries = vec![
+            GitFileEntry {
+                path: "a.rs".to_string(),
+                status: GitFileStatus::Modified,
+            },
+            GitFileEntry {
+                path: "b.rs".to_string(),
+                status: GitFileStatus::Modified,
+            },
+        ];
+        app.state_mut().diff.selected_path = Some("a.rs".to_string());
+
+        let key = KeyEvent {
+            code: KeyCode::Char('n'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        };
+
+        assert!(!app.dispatch_key(key));
+        assert_eq!(app.state().diff.selected_path.as_deref(), Some("b.rs"));
     }
 }
 
