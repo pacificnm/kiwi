@@ -60,6 +60,9 @@ pub enum AppEvent {
     DiffLoaded {
         result: FileDiffLoadResult,
     },
+    GitHubAuthChecked {
+        result: crate::github::GitHubAuthCheckResult,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,6 +71,7 @@ pub enum AppCommand {
     Quit,
     #[cfg_attr(not(test), allow(dead_code))]
     RequestGitRefresh,
+    GitHubRefresh,
     ShellWrite(Vec<u8>),
     ShellScroll(i32),
     AgentWrite(Vec<u8>),
@@ -148,6 +152,7 @@ pub enum AppCommand {
 pub enum SideEffect {
     Quit,
     SpawnGitRefresh,
+    #[cfg_attr(not(test), allow(dead_code))]
     SpawnGitHubRefresh,
     SpawnAgent,
     RestartAgent,
@@ -179,6 +184,7 @@ pub enum SideEffect {
     },
     CopyToClipboard(String),
     PasteFromClipboard,
+    SpawnGitHubAuthCheck,
 }
 
 impl AppCommand {

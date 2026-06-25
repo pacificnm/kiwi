@@ -57,10 +57,8 @@ impl Default for DiffState {
 impl DiffState {
     fn save_scroll_for_current(&mut self) {
         if let Some(path) = self.selected_path.clone() {
-            self.scroll_by_path.insert(
-                path,
-                (self.scroll_offset, self.horizontal_scroll_offset),
-            );
+            self.scroll_by_path
+                .insert(path, (self.scroll_offset, self.horizontal_scroll_offset));
         }
     }
 
@@ -71,7 +69,8 @@ impl DiffState {
         self.error = None;
         self.is_binary = false;
         self.lines.clear();
-        if let Some((scroll_offset, horizontal_scroll_offset)) = self.scroll_by_path.get(&path).copied()
+        if let Some((scroll_offset, horizontal_scroll_offset)) =
+            self.scroll_by_path.get(&path).copied()
         {
             self.scroll_offset = scroll_offset;
             self.horizontal_scroll_offset = horizontal_scroll_offset;
@@ -144,6 +143,11 @@ impl DiffState {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GitHubState {
     pub selected_issue: Option<u64>,
+    pub auth_checked: bool,
+    pub auth_ok: bool,
+    pub loading: bool,
+    pub error_kind: Option<crate::github::GitHubAuthErrorKind>,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

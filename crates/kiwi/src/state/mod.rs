@@ -22,4 +22,5 @@ pub use reducer::agent_spawn_effects_if_needed;
 pub use reducer::diff_move_file_effects;
 pub use reducer::diff_set_source_effects;
 pub use reducer::git_refresh_effects;
+pub use reducer::github_refresh_effects;
 pub use reducer::reduce;
