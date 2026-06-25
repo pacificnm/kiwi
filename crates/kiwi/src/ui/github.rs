@@ -380,8 +380,11 @@ fn render_pr_list_placeholder(frame: &mut Frame<'_>, area: Rect, theme: &ThemePa
 
 fn render_prs_list_status_line(frame: &mut Frame<'_>, area: Rect, theme: &ThemePalette) {
     frame.render_widget(
-        Paragraph::new(truncate_line("i/p switch · Enter main · R refresh", area.width as usize))
-            .style(theme.get(SemanticRole::Muted)),
+        Paragraph::new(truncate_line(
+            "i/p switch · Enter main · R refresh · palette: Create PR",
+            area.width as usize,
+        ))
+        .style(theme.get(SemanticRole::Muted)),
         area,
     );
 }

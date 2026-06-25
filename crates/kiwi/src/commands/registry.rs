@@ -89,6 +89,13 @@ pub const COMMANDS: &[CommandDef] = &[
         action: PaletteAction::GitHubOpenInBrowser,
     },
     CommandDef {
+        id: "github.pr.create",
+        title: "GitHub: Create Pull Request",
+        shortcut: None,
+        context: CommandContext::RequiresGitRepo,
+        action: PaletteAction::GitHubPrCreatePrompt,
+    },
+    CommandDef {
         id: "agent.restart",
         title: "Agent: Restart",
         shortcut: Some("Ctrl+Shift+R"),
@@ -347,6 +354,7 @@ mod tests {
             "github.issue.comment",
             "github.issue.label",
             "github.open.browser",
+            "github.pr.create",
             "editor.open",
             "agent.restart",
             "focus.left",

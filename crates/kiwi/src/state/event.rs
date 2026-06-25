@@ -85,6 +85,9 @@ pub enum AppEvent {
         target: crate::github::GitHubBrowserTarget,
         result: crate::github::IssueActionResult,
     },
+    GitHubPrCreateCompleted {
+        result: crate::github::IssueActionResult,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -233,6 +236,9 @@ pub enum SideEffect {
     },
     SpawnGitHubOpenBrowser {
         target: crate::github::GitHubBrowserTarget,
+    },
+    SpawnGitHubPrCreate {
+        request: crate::github::PrCreateRequest,
     },
 }
 

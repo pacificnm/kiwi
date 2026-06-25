@@ -6,9 +6,13 @@ mod hub;
 mod io;
 mod issue;
 pub(crate) mod labels;
+mod pr_create;
 mod selection;
 
 pub use actions::IssueActionResult;
+pub use pr_create::{
+    advance_pr_create_prompt, PrCreatePromptAdvance, PrCreateRequest,
+};
 pub use auth::{GitHubAuthCheckResult, GitHubAuthErrorKind};
 pub use browser::{
     missing_browser_target_message, resolve_browser_target, GitHubBrowserTarget,
@@ -20,7 +24,7 @@ pub use hub::GitHubLeftPane;
 pub use io::{
     spawn_github_auth_check, spawn_github_issue_comment, spawn_github_issue_detail_load,
     spawn_github_issue_label_apply, spawn_github_issue_list_load, spawn_github_open_browser,
-    spawn_github_repo_labels_load,
+    spawn_github_pr_create, spawn_github_repo_labels_load,
 };
 pub use issue::{Issue, IssueListLoadResult, IssueState, ISSUE_LIST_CACHE_SECS};
 pub use labels::{apply_label_picker_load, LabelPickerState, RepoLabelsLoadResult};

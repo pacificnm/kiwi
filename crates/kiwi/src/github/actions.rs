@@ -7,6 +7,7 @@ use super::issue::command_on_path;
 pub struct IssueActionResult {
     pub success: bool,
     pub error: Option<String>,
+    pub detail: Option<String>,
 }
 
 pub fn post_issue_comment(
@@ -20,6 +21,7 @@ pub fn post_issue_comment(
         return IssueActionResult {
             success: false,
             error: Some("Comment body cannot be empty".to_string()),
+            detail: None,
         };
     }
 
@@ -27,6 +29,7 @@ pub fn post_issue_comment(
         return IssueActionResult {
             success: false,
             error: Some(format!("GitHub CLI ({command}) not found on PATH")),
+            detail: None,
         };
     }
 
@@ -39,6 +42,7 @@ pub fn post_issue_comment(
         Ok(result) if result.status.success() => IssueActionResult {
             success: true,
             error: None,
+            detail: None,
         },
         Ok(result) => IssueActionResult {
             success: false,
@@ -47,10 +51,12 @@ pub fn post_issue_comment(
                 &result.stderr,
                 &result.stdout,
             )),
+            detail: None,
         },
         Err(err) => IssueActionResult {
             success: false,
             error: Some(format!("Failed to run `{command} issue comment`: {err}")),
+            detail: None,
         },
     }
 }
@@ -65,6 +71,7 @@ pub fn add_issue_labels(
         return IssueActionResult {
             success: false,
             error: Some("Select at least one label".to_string()),
+            detail: None,
         };
     }
 
@@ -72,6 +79,7 @@ pub fn add_issue_labels(
         return IssueActionResult {
             success: false,
             error: Some(format!("GitHub CLI ({command}) not found on PATH")),
+            detail: None,
         };
     }
 
@@ -91,6 +99,7 @@ pub fn add_issue_labels(
         Ok(result) if result.status.success() => IssueActionResult {
             success: true,
             error: None,
+            detail: None,
         },
         Ok(result) => IssueActionResult {
             success: false,
@@ -99,10 +108,12 @@ pub fn add_issue_labels(
                 &result.stderr,
                 &result.stdout,
             )),
+            detail: None,
         },
         Err(err) => IssueActionResult {
             success: false,
             error: Some(format!("Failed to run `{command} issue edit`: {err}")),
+            detail: None,
         },
     }
 }

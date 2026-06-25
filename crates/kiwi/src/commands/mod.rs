@@ -10,7 +10,7 @@ use crate::layout::FocusTarget;
 use crate::navigation::{LeftNavTab, MainTab, NavCommand};
 use crate::state::{
     apply_navigation, diff_move_file_effects, diff_set_source_effects, git_refresh_effects,
-    github_refresh_effects, AppState, PalettePrompt, SideEffect,
+    github_refresh_effects, AppState, GitHubPrCreatePrompt, PalettePrompt, SideEffect,
 };
 
 pub use fuzzy::{best_fuzzy_score, filter_ranked};
@@ -45,6 +45,7 @@ pub enum PaletteAction {
     GitHubIssueCommentPrompt,
     GitHubIssueLabelPicker,
     GitHubOpenInBrowser,
+    GitHubPrCreatePrompt,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -110,19 +111,32 @@ pub fn refresh_matches(state: &mut AppState) {
 }
 
 fn prioritize_github_issue_commands(state: &AppState, matches: &mut Vec<usize>) {
-    let surface_active = state.navigation.main_tab == MainTab::Issues
-        || state.navigation.left_tab == LeftNavTab::Gh;
-    if !surface_active {
-        return;
-    }
+    let pr_surface = state.navigation.main_tab == MainTab::Prs
+        || (state.navigation.left_tab == LeftNavTab::Gh
+            && state.github.left_pane == crate::github::GitHubLeftPane::Prs);
+    let issue_surface = state.navigation.main_tab == MainTab::Issues
+        || (state.navigation.left_tab == LeftNavTab::Gh
+            && state.github.left_pane == crate::github::GitHubLeftPane::Issues);
 
-    for command_id in [
-        "github.open.browser",
-        "github.issue.comment",
-        "github.issue.label",
-        "github.refresh",
-    ] {
-        let Some(index) = COMMANDS.iter().position(|command| command.id == command_id) else {
+    let command_ids: &[&str] = if pr_surface {
+        &[
+            "github.pr.create",
+            "github.open.browser",
+            "github.refresh",
+        ]
+    } else if issue_surface {
+        &[
+            "github.open.browser",
+            "github.issue.comment",
+            "github.issue.label",
+            "github.refresh",
+        ]
+    } else {
+        return;
+    };
+
+    for command_id in command_ids {
+        let Some(index) = COMMANDS.iter().position(|command| command.id == *command_id) else {
             continue;
         };
         matches.retain(|candidate| *candidate != index);
@@ -155,7 +169,10 @@ pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideE
     };
 
     state.palette.record_history(command.id);
-    if !matches!(command.action, PaletteAction::GitHubIssueCommentPrompt) {
+    if !matches!(
+        command.action,
+        PaletteAction::GitHubIssueCommentPrompt | PaletteAction::GitHubPrCreatePrompt
+    ) {
         state.palette.close(&mut state.navigation.focus);
     }
 
@@ -211,6 +228,7 @@ pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideE
         PaletteAction::GitHubIssueCommentPrompt => github_issue_comment_prompt_effects(state),
         PaletteAction::GitHubIssueLabelPicker => github_issue_label_picker_effects(state),
         PaletteAction::GitHubOpenInBrowser => github_open_in_browser_effects(state),
+        PaletteAction::GitHubPrCreatePrompt => github_pr_create_prompt_effects(state),
     };
 
     if state.config.workspace.persist {
@@ -319,6 +337,23 @@ fn github_open_in_browser_effects(state: &mut AppState) -> Vec<SideEffect> {
 
     state.dirty = true;
     vec![SideEffect::SpawnGitHubOpenBrowser { target }]
+}
+
+fn github_pr_create_prompt_effects(state: &mut AppState) -> Vec<SideEffect> {
+    if !state.github.auth_ok {
+        state.notifications.show_toast("GitHub authentication required");
+        state.dirty = true;
+        return Vec::new();
+    }
+
+    let focus = state.navigation.focus;
+    state.palette.begin_prompt(
+        PalettePrompt::GitHubPrCreate(GitHubPrCreatePrompt::default()),
+        focus,
+    );
+    state.navigation.focus = FocusTarget::CommandPalette;
+    state.dirty = true;
+    Vec::new()
 }
 
 fn selected_issue_number(state: &AppState) -> Option<u32> {
@@ -564,6 +599,40 @@ mod tests {
         assert!(state.github.label_picker.is_some());
         assert!(effects.contains(&SideEffect::SpawnGitHubRepoLabels));
         assert!(!state.palette.open);
+    }
+
+    #[test]
+    fn execute_pr_create_prompt_opens_palette_prompt() {
+        let mut state = test_state();
+        state.github.auth_ok = true;
+        let index = COMMANDS
+            .iter()
+            .position(|command| command.id == "github.pr.create")
+            .expect("github pr create");
+        let effects = execute_command(&mut state, index);
+        assert!(!effects.iter().any(|effect| {
+            matches!(effect, SideEffect::SpawnGitHubPrCreate { .. })
+        }));
+        assert!(state.palette.open);
+        assert!(state.palette.prompt.is_some());
+        assert_eq!(state.navigation.focus, FocusTarget::CommandPalette);
+    }
+
+    #[test]
+    fn github_pr_create_command_surfaces_on_prs_tab() {
+        let mut state = test_state();
+        state
+            .navigation
+            .apply(NavCommand::SelectMainTab(MainTab::Prs));
+        refresh_matches(&mut state);
+        let ids: Vec<_> = state
+            .palette
+            .matches
+            .iter()
+            .map(|index| COMMANDS[*index].id)
+            .collect();
+        assert!(ids.contains(&"github.pr.create"));
+        assert!(ids.contains(&"github.open.browser"));
     }
 
     #[test]
