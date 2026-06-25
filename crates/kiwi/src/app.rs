@@ -12,12 +12,15 @@ use ratatui::Terminal;
 
 use crate::agent::{AgentOutputReader, AgentSession};
 use crate::bootstrap::StartupContext;
-use crate::clipboard::{clipboard_op_from_key, clipboard_shortcut_allowed, ClipboardOp, ClipboardService};
+use crate::clipboard::{
+    clipboard_op_from_key, clipboard_shortcut_allowed, ClipboardOp, ClipboardService,
+};
 use crate::editor::{
     launch_gui_editor, prepare_editor_launch, resolve_editor_target, run_terminal_editor,
     EditorLaunchMode,
 };
 use crate::file_tree::spawn_directory_load;
+use crate::git::spawn_git_refresh;
 use crate::layout::{agent_pty_size, shell_pty_size, FocusTarget};
 use crate::navigation::{map_key, LeftNavTab, MainTab, NavCommand};
 use crate::preview::spawn_preview_load;
@@ -129,6 +132,9 @@ impl App {
         };
         let spawn_effects = agent_spawn_effects_if_needed(&mut app.state);
         app.execute_effects(spawn_effects);
+        if app.state.workspace_meta.is_git_repo {
+            app.dispatch(AppEvent::GitRefreshRequested);
+        }
         app
     }
 
@@ -394,7 +400,9 @@ impl App {
             match effect {
                 SideEffect::Quit => return true,
                 SideEffect::SpawnGitRefresh => {
-                    // Services will enqueue GitStatusUpdated events in later milestones.
+                    if self.state.workspace_meta.is_git_repo {
+                        spawn_git_refresh(self.state.repo_root.clone(), self.events.sender());
+                    }
                 }
                 SideEffect::SpawnGitHubRefresh => {
                     // GitHub list refresh will enqueue events in later milestones.
@@ -604,7 +612,10 @@ impl App {
                 )));
                 return match action {
                     FileTreeMouseAction::Select(path) => {
-                        if self.double_click.register(DoubleClickTarget::FileTree(path.clone())) {
+                        if self
+                            .double_click
+                            .register(DoubleClickTarget::FileTree(path.clone()))
+                        {
                             return self.dispatch_file_tree_open(path);
                         }
                         self.dispatch(AppEvent::Command(AppCommand::FileTreeSelect(path)))
@@ -672,10 +683,7 @@ impl App {
         if let Some(op) = clipboard_op_from_key(key) {
             let shell_focused =
                 self.state.navigation.focus == FocusTarget::Shell && self.state.shell.running;
-            let shell_has_selection = self
-                .state
-                .text_selection
-                .applies_to(SelectionPane::Shell);
+            let shell_has_selection = self.state.text_selection.applies_to(SelectionPane::Shell);
             if clipboard_shortcut_allowed(op, shell_focused, shell_has_selection) {
                 return self.dispatch_clipboard_op(op);
             }
@@ -1534,10 +1542,7 @@ mod tests {
         app.dispatch_mouse(mouse);
         app.dispatch_mouse(mouse);
         assert_eq!(app.state().navigation.main_tab, MainTab::Preview);
-        assert_eq!(
-            app.state().preview.path,
-            Some(PathBuf::from("src/main.rs"))
-        );
+        assert_eq!(app.state().preview.path, Some(PathBuf::from("src/main.rs")));
         assert_eq!(app.state().search.selected, 0);
     }
 }

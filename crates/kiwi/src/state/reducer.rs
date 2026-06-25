@@ -16,9 +16,13 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
         AppEvent::Command(command) => reduce_command(state, command),
         AppEvent::TerminalResize { width, height } => reduce_terminal_resize(state, width, height),
         AppEvent::GitRefreshRequested => reduce_git_refresh_requested(state),
-        AppEvent::GitStatusUpdated { file_entries } => {
-            reduce_git_status_updated(state, file_entries)
-        }
+        AppEvent::GitStatusUpdated {
+            branch,
+            ahead,
+            behind,
+            file_entries,
+            error,
+        } => reduce_git_status_updated(state, branch, ahead, behind, file_entries, error),
         AppEvent::Quit => {
             state.dirty = true;
             vec![SideEffect::Quit]
@@ -153,17 +157,39 @@ fn reduce_terminal_resize(state: &mut AppState, width: u16, height: u16) -> Vec<
 
 fn reduce_git_refresh_requested(state: &mut AppState) -> Vec<SideEffect> {
     state.dirty = true;
+    if !state.workspace_meta.is_git_repo {
+        return Vec::new();
+    }
+
+    state.git.loading = true;
     vec![SideEffect::SpawnGitRefresh]
 }
 
 fn reduce_git_status_updated(
     state: &mut AppState,
+    branch: Option<String>,
+    ahead: u32,
+    behind: u32,
     file_entries: Vec<GitFileEntry>,
+    error: Option<String>,
 ) -> Vec<SideEffect> {
     let git_selected = state.git.selected_path.clone();
     let tree_selected = state.file_tree.selected.clone();
 
+    state.git.loading = false;
+    state.git.ahead = ahead;
+    state.git.behind = behind;
     state.git.file_entries = file_entries;
+
+    if let Some(message) = error {
+        state.git.error = Some(message.clone());
+        state
+            .logs
+            .push_error(format!("git refresh failed: {message}"));
+    } else {
+        state.git.error = None;
+        state.git.branch = branch;
+    }
 
     if let Some(path) = git_selected {
         if state
@@ -889,6 +915,9 @@ mod tests {
         reduce(
             &mut state,
             AppEvent::GitStatusUpdated {
+                branch: None,
+                ahead: 0,
+                behind: 0,
                 file_entries: vec![
                     GitFileEntry {
                         path: "src/main.rs".to_string(),
@@ -899,6 +928,7 @@ mod tests {
                         status: GitFileStatus::Added,
                     },
                 ],
+                error: None,
             },
         );
 
@@ -913,10 +943,14 @@ mod tests {
         reduce(
             &mut state,
             AppEvent::GitStatusUpdated {
+                branch: None,
+                ahead: 0,
+                behind: 0,
                 file_entries: vec![GitFileEntry {
                     path: "other.rs".to_string(),
                     status: GitFileStatus::Modified,
                 }],
+                error: None,
             },
         );
 
@@ -943,10 +977,14 @@ mod tests {
         reduce(
             &mut state,
             AppEvent::GitStatusUpdated {
+                branch: None,
+                ahead: 0,
+                behind: 0,
                 file_entries: vec![GitFileEntry {
                     path: "src/main.rs".to_string(),
                     status: GitFileStatus::Modified,
                 }],
+                error: None,
             },
         );
         assert_eq!(state.file_tree.selected, Some(selected));
@@ -957,10 +995,63 @@ mod tests {
     }
 
     #[test]
-    fn git_refresh_requested_emits_side_effect() {
+    fn git_refresh_requested_emits_side_effect_for_git_repo() {
         let mut state = test_state();
+        state.workspace_meta.is_git_repo = true;
         let effects = reduce(&mut state, AppEvent::GitRefreshRequested);
         assert!(effects.contains(&SideEffect::SpawnGitRefresh));
+        assert!(state.git.loading);
+    }
+
+    #[test]
+    fn git_refresh_requested_skips_non_git_repo() {
+        let mut state = test_state();
+        state.workspace_meta.is_git_repo = false;
+        let effects = reduce(&mut state, AppEvent::GitRefreshRequested);
+        assert!(effects.is_empty());
+        assert!(!state.git.loading);
+    }
+
+    #[test]
+    fn git_status_updated_sets_branch_and_tracking_counts() {
+        let mut state = test_state();
+        reduce(
+            &mut state,
+            AppEvent::GitStatusUpdated {
+                branch: Some("feature/42".to_string()),
+                ahead: 2,
+                behind: 1,
+                file_entries: Vec::new(),
+                error: None,
+            },
+        );
+
+        assert_eq!(state.git.branch.as_deref(), Some("feature/42"));
+        assert_eq!(state.git.ahead, 2);
+        assert_eq!(state.git.behind, 1);
+        assert!(!state.git.loading);
+        assert!(state.git.error.is_none());
+    }
+
+    #[test]
+    fn git_status_updated_records_error_without_branch() {
+        let mut state = test_state();
+        state.git.branch = Some("main".to_string());
+
+        reduce(
+            &mut state,
+            AppEvent::GitStatusUpdated {
+                branch: None,
+                ahead: 0,
+                behind: 0,
+                file_entries: Vec::new(),
+                error: Some("corrupt".to_string()),
+            },
+        );
+
+        assert_eq!(state.git.branch, Some("main".to_string()));
+        assert_eq!(state.git.error.as_deref(), Some("corrupt"));
+        assert_eq!(state.logs.entries.len(), 1);
     }
 
     #[test]

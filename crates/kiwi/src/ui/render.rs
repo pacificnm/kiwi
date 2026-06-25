@@ -350,6 +350,9 @@ mod tests {
         reduce(
             &mut state,
             AppEvent::GitStatusUpdated {
+                branch: None,
+                ahead: 0,
+                behind: 0,
                 file_entries: vec![
                     crate::git::GitFileEntry {
                         path: "src/main.rs".to_string(),
@@ -360,6 +363,7 @@ mod tests {
                         status: GitFileStatus::Modified,
                     },
                 ],
+                error: None,
             },
         );
 

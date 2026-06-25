@@ -79,7 +79,7 @@ show_untracked = true
 
 ## Acceptance Criteria
 
-- [ ] Branch name correct
+- [x] Branch name correct
 - [ ] Modified files listed with correct status
 - [ ] Saving file updates status within debounce window
 - [ ] No visible flicker on refresh (selection stable)
