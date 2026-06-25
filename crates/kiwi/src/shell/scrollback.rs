@@ -1,9 +1,17 @@
 const DEFAULT_CAPACITY: usize = 10_000;
+const DEFAULT_COLS: usize = 80;
+const DEFAULT_SCREEN_ROWS: usize = 256;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScrollbackBuffer {
-    lines: Vec<String>,
-    partial: String,
+    cols: usize,
+    screen: Vec<String>,
+    cursor_row: usize,
+    cursor_col: usize,
+    overwrite_line: bool,
+    history: Vec<String>,
+    pending: Vec<u8>,
+    text_pending: Vec<u8>,
     capacity: usize,
 }
 
@@ -17,42 +25,52 @@ impl ScrollbackBuffer {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            lines: Vec::new(),
-            partial: String::new(),
+            cols: DEFAULT_COLS,
+            screen: vec![String::new()],
+            cursor_row: 0,
+            cursor_col: 0,
+            overwrite_line: false,
+            history: Vec::new(),
+            pending: Vec::new(),
+            text_pending: Vec::new(),
             capacity: DEFAULT_CAPACITY,
         }
     }
 
-    #[must_use]
+    pub fn set_cols(&mut self, cols: u16) {
+        self.cols = usize::from(cols.max(1));
+    }
+
     pub fn line_count(&self) -> usize {
-        self.lines.len()
+        self.lines_for_display(true).len()
     }
 
     #[must_use]
     pub fn has_pending_line(&self) -> bool {
-        !self.partial.is_empty()
-    }
-
-    #[must_use]
-    pub fn pending_display(&self) -> String {
-        normalize_for_display(self.partial.trim_end_matches('\r'))
+        self.current_line()
+            .map(|line| !line.is_empty())
+            .unwrap_or(false)
     }
 
     pub fn clear(&mut self) {
-        self.lines.clear();
-        self.partial.clear();
+        self.history.clear();
+        self.screen = vec![String::new()];
+        self.cursor_row = 0;
+        self.cursor_col = 0;
+        self.overwrite_line = false;
+        self.pending.clear();
+        self.text_pending.clear();
     }
 
     pub fn append_bytes(&mut self, data: &[u8]) {
-        let chunk = String::from_utf8_lossy(data);
-        self.partial.push_str(&chunk);
-
-        while let Some(newline) = self.partial.find('\n') {
-            let mut line = self.partial.drain(..=newline).collect::<String>();
-            line.pop();
-            line = line.trim_end_matches('\r').to_string();
-            self.push_line(normalize_for_display(&line));
+        if self.pending.is_empty() {
+            self.process_bytes(data);
+            return;
         }
+
+        let mut combined = std::mem::take(&mut self.pending);
+        combined.extend_from_slice(data);
+        self.process_bytes(&combined);
     }
 
     #[must_use]
@@ -70,16 +88,15 @@ impl ScrollbackBuffer {
         }
     }
 
-    /// Last `max_lines` completed lines plus any pending partial line, normalized for display.
     #[must_use]
     pub fn recent_text(&self, max_lines: usize) -> String {
-        let start = self.lines.len().saturating_sub(max_lines);
-        let mut parts: Vec<&str> = self.lines[start..].iter().map(String::as_str).collect();
-        let pending = self.pending_display();
-        if !pending.is_empty() {
-            parts.push(&pending);
-        }
-        parts.join("\n")
+        let lines = self.lines_for_display(true);
+        let start = lines.len().saturating_sub(max_lines);
+        lines[start..]
+            .iter()
+            .map(|line| crate::ansi::strip_ansi(line))
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     #[must_use]
@@ -94,55 +111,396 @@ impl ScrollbackBuffer {
             return Vec::new();
         }
 
-        let mut lines: Vec<String> = self
-            .lines
-            .iter()
+        let lines = self.lines_for_display(include_pending);
+
+        lines
+            .into_iter()
             .skip(start)
             .take(visible_height)
-            .map(|line| truncate_line(&normalize_for_display(line), max_width))
-            .collect();
+            .map(|line| truncate_ansi_line(&line, max_width))
+            .collect()
+    }
 
-        if !include_pending {
-            return lines;
-        }
-
-        let pending = truncate_line(&self.pending_display(), max_width);
-        if pending.is_empty() {
-            return lines;
-        }
-
-        if lines.len() >= visible_height {
+    fn lines_for_display(&self, include_pending: bool) -> Vec<String> {
+        let mut lines = self.history.clone();
+        lines.extend(self.screen.clone());
+        while let Some(last) = lines.last() {
+            if !last.is_empty() {
+                break;
+            }
+            let last_index = lines.len() - 1;
+            if include_pending && last_index == self.cursor_row && self.cursor_col > 0 {
+                break;
+            }
             lines.pop();
         }
-        lines.push(pending);
         lines
     }
 
-    fn push_line(&mut self, line: String) {
-        self.lines.push(line);
-        if self.lines.len() > self.capacity {
-            let overflow = self.lines.len() - self.capacity;
-            self.lines.drain(0..overflow);
+    fn current_line(&self) -> Option<String> {
+        self.screen.get(self.cursor_row).cloned()
+    }
+
+    fn process_bytes(&mut self, data: &[u8]) {
+        let mut idx = 0;
+        while idx < data.len() {
+            if data[idx] == 0x1b {
+                self.flush_text_pending();
+                if let Some((consumed, action)) = parse_escape(&data[idx..]) {
+                    self.apply_action(action);
+                    idx += consumed;
+                    continue;
+                }
+                if escape_needs_more(&data[idx..]) {
+                    self.pending.extend_from_slice(&data[idx..]);
+                    return;
+                }
+                if let Some(consumed) = consume_non_csi_escape(&data[idx..]) {
+                    idx += consumed;
+                    continue;
+                }
+            }
+
+            if is_text_byte(data[idx]) {
+                self.text_pending.push(data[idx]);
+                idx += 1;
+                self.flush_text_pending();
+                continue;
+            }
+
+            self.flush_text_pending();
+
+            match data[idx] {
+                b'\n' | b'\x0c' => {
+                    self.commit_line();
+                    self.cursor_row += 1;
+                    self.cursor_col = 0;
+                    self.overwrite_line = true;
+                    self.ensure_screen_row(self.cursor_row);
+                    self.scroll_if_needed();
+                }
+                b'\r' => {
+                    self.cursor_col = 0;
+                    self.overwrite_line = true;
+                }
+                b'\t' => {
+                    let next = (self.cursor_col / 8 + 1) * 8;
+                    self.write_str(&" ".repeat(next - self.cursor_col));
+                }
+                b'\x08' => {
+                    self.cursor_col = self.cursor_col.saturating_sub(1);
+                }
+                _ => {}
+            }
+            idx += 1;
         }
     }
-}
 
-fn normalize_for_display(input: &str) -> String {
-    let mut line = strip_ansi(input);
-    if let Some(index) = line.rfind('\r') {
-        line = line[index + 1..].to_string();
+    fn flush_text_pending(&mut self) {
+        loop {
+            if self.text_pending.is_empty() {
+                return;
+            }
+
+            match std::str::from_utf8(&self.text_pending) {
+                Ok(text) => {
+                    let text = text.to_string();
+                    self.text_pending.clear();
+                    self.write_str(&text);
+                }
+                Err(error) => {
+                    let valid = error.valid_up_to();
+                    if valid > 0 {
+                        let text = std::str::from_utf8(&self.text_pending[..valid])
+                            .expect("valid utf-8 prefix")
+                            .to_string();
+                        self.text_pending.drain(0..valid);
+                        self.write_str(&text);
+                        continue;
+                    }
+
+                    match error.error_len() {
+                        Some(invalid_len) => {
+                            self.write_char('\u{FFFD}');
+                            self.text_pending.drain(0..invalid_len);
+                        }
+                        None => return,
+                    }
+                }
+            }
+        }
     }
-    line.replace('\t', "    ")
+
+    fn apply_action(&mut self, action: EscapeAction) {
+        match action {
+            EscapeAction::Ignore => {}
+            EscapeAction::ClearScreen => self.clear_screen(),
+            EscapeAction::ClearBelow => self.clear_below(),
+            EscapeAction::ClearLine => self.clear_line(),
+            EscapeAction::CursorPosition { row, col } => {
+                self.cursor_row = row.saturating_sub(1);
+                self.cursor_col = col.saturating_sub(1);
+                self.ensure_screen_row(self.cursor_row);
+            }
+            EscapeAction::CursorUp(n) => {
+                self.cursor_row = self.cursor_row.saturating_sub(n);
+            }
+            EscapeAction::CursorDown(n) => {
+                self.cursor_row += n;
+                self.ensure_screen_row(self.cursor_row);
+            }
+            EscapeAction::CursorForward(n) => {
+                self.cursor_col += n;
+            }
+            EscapeAction::CursorBack(n) => {
+                self.cursor_col = self.cursor_col.saturating_sub(n);
+            }
+            EscapeAction::Raw(sequence) => self.write_str(&sequence),
+        }
+    }
+
+    fn clear_screen(&mut self) {
+        self.screen = vec![String::new()];
+        self.cursor_row = 0;
+        self.cursor_col = 0;
+        self.overwrite_line = true;
+    }
+
+    fn clear_below(&mut self) {
+        self.clear_line();
+        if self.cursor_row + 1 < self.screen.len() {
+            self.screen.truncate(self.cursor_row + 1);
+        }
+        self.ensure_screen_row(self.cursor_row);
+    }
+
+    fn clear_line(&mut self) {
+        self.ensure_screen_row(self.cursor_row);
+        self.screen[self.cursor_row].clear();
+        self.cursor_col = 0;
+        self.overwrite_line = true;
+    }
+
+    fn commit_line(&mut self) {
+        self.ensure_screen_row(self.cursor_row);
+    }
+
+    fn write_char(&mut self, ch: char) {
+        self.write_str(&ch.to_string());
+    }
+
+    fn write_str(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+
+        self.ensure_screen_row(self.cursor_row);
+        let line = &mut self.screen[self.cursor_row];
+
+        if self.overwrite_line && self.cursor_col == 0 {
+            line.clear();
+            self.overwrite_line = false;
+        }
+
+        let visible_len = crate::ansi::visible_width(line);
+        if self.cursor_col > visible_len {
+            line.push_str(&" ".repeat(self.cursor_col - visible_len));
+        }
+
+        if self.cursor_col == visible_len {
+            line.push_str(text);
+        } else {
+            let (prefix, suffix) = split_at_visible(line, self.cursor_col);
+            *line = format!("{prefix}{text}{suffix}");
+        }
+
+        self.cursor_col += crate::ansi::visible_width(text);
+    }
+
+    fn ensure_screen_row(&mut self, row: usize) {
+        while self.screen.len() <= row {
+            self.screen.push(String::new());
+        }
+        if self.screen.len() > DEFAULT_SCREEN_ROWS {
+            let overflow = self.screen.len() - DEFAULT_SCREEN_ROWS;
+            self.history.extend(self.screen.drain(0..overflow));
+            self.cursor_row = self.cursor_row.saturating_sub(overflow);
+            self.trim_history();
+        }
+    }
+
+    fn scroll_if_needed(&mut self) {
+        if self.screen.len() > DEFAULT_SCREEN_ROWS {
+            let overflow = self.screen.len() - DEFAULT_SCREEN_ROWS;
+            self.history.extend(self.screen.drain(0..overflow));
+            self.cursor_row = self.cursor_row.saturating_sub(overflow);
+            self.trim_history();
+        }
+    }
+
+    fn trim_history(&mut self) {
+        let total = self.history.len().saturating_add(self.screen.len());
+        if total <= self.capacity {
+            return;
+        }
+        let overflow = total - self.capacity;
+        if overflow >= self.history.len() {
+            self.history.clear();
+            return;
+        }
+        self.history.drain(0..overflow);
+    }
 }
 
-fn strip_ansi(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
-    let mut chars = input.chars().peekable();
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum EscapeAction {
+    Ignore,
+    ClearScreen,
+    ClearBelow,
+    ClearLine,
+    CursorPosition { row: usize, col: usize },
+    CursorUp(usize),
+    CursorDown(usize),
+    CursorForward(usize),
+    CursorBack(usize),
+    Raw(String),
+}
 
-    while let Some(ch) = chars.next() {
+fn escape_needs_more(data: &[u8]) -> bool {
+    if data.first() != Some(&0x1b) {
+        return false;
+    }
+
+    match data.get(1) {
+        None => true,
+        Some(b'[') => !data[2..].iter().any(|byte| (0x40..=0x7E).contains(byte)),
+        Some(b']') => !data[2..].iter().any(|&byte| byte == 0x07 || byte == b'\\'),
+        Some(_) => data.len() < 2,
+    }
+}
+
+fn consume_non_csi_escape(data: &[u8]) -> Option<usize> {
+    if data.first() != Some(&0x1b) {
+        return None;
+    }
+
+    let next = *data.get(1)?;
+    if next == b'[' || next == b']' {
+        return None;
+    }
+
+    Some(2)
+}
+
+fn parse_escape(data: &[u8]) -> Option<(usize, EscapeAction)> {
+    if data.first() != Some(&0x1b) {
+        return None;
+    }
+
+    if data.get(1) == Some(&b']') {
+        return parse_osc(data);
+    }
+
+    if data.get(1) == Some(&b'[') {
+        return parse_csi(data);
+    }
+
+    None
+}
+
+fn parse_csi(data: &[u8]) -> Option<(usize, EscapeAction)> {
+    let mut idx = 2;
+    while idx < data.len() {
+        let byte = data[idx];
+        if (0x30..=0x3F).contains(&byte) || (0x20..=0x2F).contains(&byte) {
+            idx += 1;
+            continue;
+        }
+        if (0x40..=0x7E).contains(&byte) {
+            let params = String::from_utf8_lossy(&data[2..idx]).into_owned();
+            let action = if byte == b'm' {
+                EscapeAction::Raw(String::from_utf8_lossy(&data[..idx + 1]).into_owned())
+            } else {
+                decode_csi(byte, &params)
+            };
+            return Some((idx + 1, action));
+        }
+        return None;
+    }
+
+    None
+}
+
+fn parse_osc(data: &[u8]) -> Option<(usize, EscapeAction)> {
+    let mut idx = 2;
+    while idx < data.len() {
+        if data[idx] == 0x07
+            || (data[idx] == b'\\' && idx + 1 < data.len() && data[idx + 1] == b'\\')
+        {
+            return Some((idx + 1, EscapeAction::Ignore));
+        }
+        if data[idx] == b'\\' {
+            return Some((idx + 1, EscapeAction::Ignore));
+        }
+        idx += 1;
+    }
+    None
+}
+
+fn decode_csi(final_byte: u8, params: &str) -> EscapeAction {
+    let parts = params.split(';').collect::<Vec<_>>();
+    let n = |index: usize| -> usize {
+        parts
+            .get(index)
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0)
+    };
+    let first = parts.first().copied().unwrap_or("");
+
+    match final_byte {
+        b'H' | b'f' => EscapeAction::CursorPosition {
+            row: n(0).max(1),
+            col: n(1).max(1),
+        },
+        b'A' => EscapeAction::CursorUp(n(0).max(1)),
+        b'B' => EscapeAction::CursorDown(n(0).max(1)),
+        b'C' => EscapeAction::CursorForward(n(0).max(1)),
+        b'D' => EscapeAction::CursorBack(n(0).max(1)),
+        b'J' => match n(0) {
+            0 => EscapeAction::ClearBelow,
+            1 => EscapeAction::Ignore,
+            _ => EscapeAction::ClearScreen,
+        },
+        b'K' => EscapeAction::ClearLine,
+        b'h' | b'l' if first == "?1049" => {
+            if final_byte == b'h' {
+                EscapeAction::ClearScreen
+            } else {
+                EscapeAction::Ignore
+            }
+        }
+        b'h' | b'l' => EscapeAction::Ignore,
+        _ => EscapeAction::Ignore,
+    }
+}
+
+fn is_text_byte(byte: u8) -> bool {
+    byte >= 0x20 && byte != 0x7f || (0x80..=0xFF).contains(&byte)
+}
+
+fn split_at_visible(line: &str, col: usize) -> (String, String) {
+    if col == 0 {
+        return (String::new(), line.to_string());
+    }
+
+    let mut visible = 0usize;
+    let mut split_idx = 0usize;
+    let mut chars = line.char_indices().peekable();
+    while let Some((idx, ch)) = chars.next() {
         if ch == '\x1b' {
-            if chars.next_if_eq(&'[').is_some() {
-                for c in chars.by_ref() {
+            if chars.next_if_eq(&(0, '[')).is_some() {
+                for (_, c) in chars.by_ref() {
+                    split_idx = idx.saturating_add(1);
                     if ('@'..='~').contains(&c) {
                         break;
                     }
@@ -150,19 +508,23 @@ fn strip_ansi(input: &str) -> String {
             }
             continue;
         }
-        out.push(ch);
+        if visible == col {
+            return (line[..split_idx].to_string(), line[split_idx..].to_string());
+        }
+        visible += 1;
+        split_idx = idx + ch.len_utf8();
     }
 
-    out
+    (line.to_string(), String::new())
 }
 
-fn truncate_line(line: &str, width: usize) -> String {
+fn truncate_ansi_line(line: &str, width: usize) -> String {
     if width == 0 {
         return String::new();
     }
 
-    let char_count = line.chars().count();
-    if char_count <= width {
+    let visible = crate::ansi::visible_width(line);
+    if visible <= width {
         return line.to_string();
     }
 
@@ -170,8 +532,35 @@ fn truncate_line(line: &str, width: usize) -> String {
         return "…".to_string();
     }
 
-    let prefix: String = line.chars().take(width - 1).collect();
-    format!("{prefix}…")
+    let mut out = String::new();
+    let mut seen = 0usize;
+    let mut chars = line.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            out.push(ch);
+            if chars.next_if_eq(&'[').is_some() {
+                out.push('[');
+                for c in chars.by_ref() {
+                    out.push(c);
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+
+        if seen >= width - 1 {
+            out.push('…');
+            break;
+        }
+
+        out.push(ch);
+        seen += 1;
+    }
+
+    out
 }
 
 #[cfg(test)]
@@ -182,41 +571,43 @@ mod tests {
     fn append_bytes_splits_on_newlines() {
         let mut buffer = ScrollbackBuffer::new();
         buffer.append_bytes(b"hello\nworld");
-        assert_eq!(buffer.line_count(), 1);
-        assert_eq!(buffer.lines[0], "hello");
-
-        buffer.append_bytes(b"\n!");
         assert_eq!(buffer.line_count(), 2);
-        assert_eq!(buffer.lines[1], "world");
+        assert_eq!(buffer.lines_for_display(false)[0], "hello");
+        assert_eq!(buffer.lines_for_display(false)[1], "world");
     }
 
     #[test]
-    fn scrollback_caps_at_ten_thousand_lines() {
+    fn carriage_return_overwrites_current_line() {
         let mut buffer = ScrollbackBuffer::new();
-        for index in 0..10_001 {
-            buffer.append_bytes(format!("line {index}\n").as_bytes());
-        }
-
-        assert_eq!(buffer.line_count(), 10_000);
-        assert_eq!(buffer.lines.first(), Some(&"line 1".to_string()));
-        assert_eq!(buffer.lines.last(), Some(&"line 10000".to_string()));
+        buffer.append_bytes(b"prompt\rtyped");
+        assert_eq!(buffer.line_count(), 1);
+        assert_eq!(buffer.lines_for_display(true)[0], "typed");
     }
 
     #[test]
-    fn strip_ansi_removes_color_codes() {
-        assert_eq!(strip_ansi("\x1b[1;32mok\x1b[0m"), "ok");
-    }
-
-    #[test]
-    fn visible_lines_respects_viewport_and_width() {
+    fn clear_screen_drops_duplicate_prompts() {
         let mut buffer = ScrollbackBuffer::new();
-        buffer.append_bytes(b"one\n two\nthree\n");
-        let lines = buffer.viewport_lines(1, 2, 10, false);
-        assert_eq!(lines, vec![" two".to_string(), "three".to_string()]);
+        buffer.append_bytes(b"> prompt 1\n");
+        buffer.append_bytes(b"\x1b[2J\x1b[H> prompt 2");
+        let lines = buffer.lines_for_display(true);
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("prompt 2"));
+        assert!(!lines[0].contains("prompt 1"));
     }
 
     #[test]
-    fn viewport_lines_includes_pending_prompt_without_newline() {
+    fn cursor_up_allows_redrawing_previous_line() {
+        let mut buffer = ScrollbackBuffer::new();
+        buffer.append_bytes(b"line one\n");
+        buffer.append_bytes(b"line two\n");
+        buffer.append_bytes(b"\x1b[1A\rline two updated");
+        let lines = buffer.lines_for_display(true);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[1], "line two updated");
+    }
+
+    #[test]
+    fn viewport_lines_includes_current_screen_row() {
         let mut buffer = ScrollbackBuffer::new();
         buffer.append_bytes(b"user@host:~/kiwi$ ");
         let lines = buffer.viewport_lines(0, 3, 40, true);
@@ -224,35 +615,61 @@ mod tests {
     }
 
     #[test]
-    fn viewport_lines_replaces_last_row_with_pending_at_tail() {
+    fn viewport_lines_preserves_ansi_color_codes() {
         let mut buffer = ScrollbackBuffer::new();
-        buffer.append_bytes(b"line1\nline2\n");
-        buffer.append_bytes(b"partial");
-        let lines = buffer.viewport_lines(0, 2, 20, true);
-        assert_eq!(lines, vec!["line1".to_string(), "partial".to_string()]);
+        buffer.append_bytes(b"\x1b[32mgreen\x1b[0m\n");
+        let lines = buffer.viewport_lines(0, 1, 20, false);
+        assert_eq!(lines, vec!["\x1b[32mgreen\x1b[0m".to_string()]);
     }
 
     #[test]
-    fn normalize_for_display_keeps_text_after_carriage_return() {
-        assert_eq!(normalize_for_display("prompt\rtyped"), "typed");
-    }
-
-    #[test]
-    fn normalize_for_display_expands_tabs() {
-        assert_eq!(normalize_for_display("a\tb"), "a    b");
-    }
-
-    #[test]
-    fn recent_text_includes_pending_partial_line() {
+    fn recent_text_strips_ansi_for_heuristics() {
         let mut buffer = ScrollbackBuffer::new();
-        buffer.append_bytes(b"line1\n");
-        buffer.append_bytes(b"Running tool: ls");
-
-        assert!(buffer.recent_text(8).contains("Running tool: ls"));
+        buffer.append_bytes(b"\x1b[32mRunning tool\x1b[0m\n");
+        assert!(buffer.recent_text(4).contains("Running tool"));
     }
 
     #[test]
-    fn truncate_line_clips_to_width() {
-        assert_eq!(truncate_line("hello world", 5), "hell…");
+    fn truncate_ansi_line_clips_visible_width() {
+        assert_eq!(truncate_ansi_line("hello world", 5), "hell…");
+    }
+
+    #[test]
+    fn split_escape_sequence_across_reads_is_reassembled() {
+        let mut buffer = ScrollbackBuffer::new();
+        buffer.append_bytes(b"> prompt 1\n");
+        buffer.append_bytes(b"\x1b[2");
+        buffer.append_bytes(b"J\x1b[H> prompt 2");
+        let lines = buffer.lines_for_display(true);
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("prompt 2"));
+        assert!(!lines[0].contains("prompt 1"));
+    }
+
+    #[test]
+    fn utf8_multibyte_characters_decode_correctly() {
+        let mut buffer = ScrollbackBuffer::new();
+        buffer.append_bytes("arrow → ok\n".as_bytes());
+        let lines = buffer.lines_for_display(false);
+        assert_eq!(lines, vec!["arrow → ok".to_string()]);
+    }
+
+    #[test]
+    fn utf8_split_across_reads_is_reassembled() {
+        let mut buffer = ScrollbackBuffer::new();
+        let text = "→";
+        let bytes = text.as_bytes();
+        buffer.append_bytes(&bytes[..2]);
+        buffer.append_bytes(&bytes[2..]);
+        buffer.append_bytes(b"\n");
+        assert_eq!(buffer.lines_for_display(false), vec!["→".to_string()]);
+    }
+
+    #[test]
+    fn private_mode_sequences_are_not_printed() {
+        let mut buffer = ScrollbackBuffer::new();
+        buffer.append_bytes(b"\x1b[?25l\x1b[?2004hhello\n");
+        let lines = buffer.lines_for_display(false);
+        assert_eq!(lines, vec!["hello".to_string()]);
     }
 }

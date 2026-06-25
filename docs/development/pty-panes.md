@@ -38,13 +38,34 @@ Mouse:
 
 ## Scrollback Display
 
-Both panes share the `ScrollbackBuffer` implementation (10_000 line cap):
+Both panes share the `ScrollbackBuffer` implementation (10_000 line cap). The buffer is a **minimal PTY screen emulator**, not a naive line log — agent and shell use identical code paths.
 
-- Completed lines end with `\n`
-- The **current prompt / in-progress line** has no trailing newline and is shown from the pending buffer when following the tail
-- ANSI SGR sequences are stripped for display
-- `\r` (carriage return) keeps the segment after the last `\r` (terminal overwrite semantics)
-- Tabs expand to spaces; each row is clipped to the pane width
+### Screen model
+
+- **History** — committed rows scrolled off the active screen
+- **Screen** — cursor-addressable grid with row/column position
+- **Tail follow** — when `follow_tail` is true, the in-progress row at the cursor is included in the viewport even without a trailing `\n`
+
+### Text and encoding
+
+- PTY bytes are accumulated in a UTF-8 pending buffer and decoded before display; split reads across the I/O thread are reassembled
+- Invalid UTF-8 sequences render as U+FFFD
+- `\r` overwrites from column 0 on the current row; `\t` expands to spaces; `\b` moves the cursor back
+
+### Escape sequences
+
+- **CSI** — clear screen/line (`J`, `K`), cursor position (`H`/`f`), cursor movement (`A`–`D`), SGR color (`m` preserved in line text)
+- **Private modes** — `?25h`/`?25l`, `?2004h`, `?1049h`/`?1049l`, etc. are parsed and ignored (not printed)
+- **Split reads** — incomplete escapes are held in a pending buffer until the next PTY chunk arrives
+- **Non-CSI** — short sequences such as `\x1b(B` (charset) are consumed without rendering
+
+### Rendering and colors
+
+- Each viewport row is clipped to pane width (ANSI-aware visible width)
+- **PTY content** uses host terminal colors via `Color::Reset` and an SGR parser (`ansi.rs`) — child ANSI is not remapped to the Kiwi theme (see [themes.md](../design/themes.md))
+- **Chrome** (borders, tabs, status bar, hints) uses `ThemePalette`
+
+For symptom → cause → fix notes on scrollback bugs, see [issue-resolution-log.md](./issue-resolution-log.md).
 
 ## Quit and Interrupt
 
@@ -74,10 +95,10 @@ Bash is spawned with `-i` when not already specified so an interactive prompt ap
 ## Not Yet Implemented (see backlog)
 
 - Agent PTY resize on terminal resize (# follow-up to SPEC-010)
-- Agent status bar heuristics (#25)
-- Agent restart command (#26)
 - Bracketed paste forwarding into PTY (terminal enables paste; PTY routing TBD)
 - Mouse wheel scroll in PTY panes
+
+Implemented on branch `26-agent-restart-command` (pending merge): agent status bar heuristics (#25), agent restart `Ctrl+Shift+R` (#26; palette command deferred to #27).
 
 ## Related
 

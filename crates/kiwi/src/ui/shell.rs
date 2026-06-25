@@ -13,7 +13,7 @@ pub fn render_shell_pane(
     title: &str,
     focused: bool,
     theme: &ThemePalette,
-    chrome: Style,
+    hint_style: Style,
     state: &AppState,
 ) {
     render_scrollback_pane(
@@ -22,7 +22,7 @@ pub fn render_shell_pane(
         title,
         focused,
         theme,
-        chrome,
+        hint_style,
         ScrollbackPane {
             scrollback: &state.shell.scrollback,
             follow_tail: state.shell.follow_tail,
@@ -37,6 +37,7 @@ pub fn render_shell_pane(
             } else {
                 Some("Click or Tab to focus shell")
             },
+            footer: None,
         },
     );
 }

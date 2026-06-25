@@ -192,10 +192,7 @@ mod tests {
 
     #[test]
     fn status_bar_label_uses_running_fallback_for_idle() {
-        assert_eq!(
-            AgentStatus::Idle.status_bar_label(true),
-            "Agent Running"
-        );
+        assert_eq!(AgentStatus::Idle.status_bar_label(true), "Agent Running");
         assert_eq!(AgentStatus::Idle.status_bar_label(false), "Agent Idle");
     }
 

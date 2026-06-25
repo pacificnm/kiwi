@@ -34,6 +34,7 @@ pub enum AppCommand {
     ShellScroll(i32),
     AgentWrite(Vec<u8>),
     AgentScroll(i32),
+    AgentRestart,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,6 +42,7 @@ pub enum SideEffect {
     Quit,
     SpawnGitRefresh,
     SpawnAgent,
+    RestartAgent,
     WriteShell(Vec<u8>),
     WriteAgent(Vec<u8>),
     ResizeShell {

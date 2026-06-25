@@ -37,6 +37,14 @@ When the shell or agent PTY has keyboard focus, `Ctrl+C` once sends an interrupt
 | `5` | Preview |
 | `6` | Logs |
 
+## Agent (main, Agent tab)
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+Shift+R` | Restart agent (until command palette ships in #27) |
+
+When the agent process exits, the pane footer shows the exit code and the restart shortcut.
+
 ## Files (left, Files tab)
 
 | Key | Action |

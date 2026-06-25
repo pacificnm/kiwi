@@ -13,7 +13,7 @@ pub fn render_agent_pane(
     title: &str,
     focused: bool,
     theme: &ThemePalette,
-    chrome: Style,
+    hint_style: Style,
     state: &AppState,
 ) {
     render_scrollback_pane(
@@ -22,13 +22,14 @@ pub fn render_agent_pane(
         title,
         focused,
         theme,
-        chrome,
+        hint_style,
         ScrollbackPane {
             scrollback: &state.agent.scrollback,
             follow_tail: state.agent.follow_tail,
             viewport_offset: state.agent.viewport_offset,
-            spawn_error: state.agent.spawn_error.as_deref(),
+            spawn_error: None,
             idle_hint: None,
+            footer: state.agent.restart_hint.as_deref(),
         },
     );
 }

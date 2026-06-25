@@ -91,4 +91,4 @@ env = { KEY = "val" }  # optional
 - [x] Scrollback preserves history while scrolling
 - [ ] Resize propagates to PTY
 - [x] Status bar reflects running state (heuristics — #25)
-- [ ] Restart recovers from crash (#26)
+- [x] Restart recovers from crash (#26)
