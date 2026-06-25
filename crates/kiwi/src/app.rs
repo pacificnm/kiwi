@@ -1,14 +1,16 @@
 use std::io::stdout;
 use std::time::Duration;
 
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use crossterm::event::{
+    self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 use crate::bootstrap::StartupContext;
 use crate::navigation::map_key;
 use crate::state::{reduce, AppCommand, AppEvent, AppState, EventChannel, SideEffect};
-use crate::ui::draw_frame;
+use crate::ui::{draw_frame, map_tab_click, mouse_interactions_enabled};
 
 pub struct App {
     state: AppState,
@@ -39,6 +41,12 @@ impl App {
     #[cfg(test)]
     pub fn state(&self) -> &AppState {
         &self.state
+    }
+
+    #[must_use]
+    #[cfg(test)]
+    pub fn state_mut(&mut self) -> &mut AppState {
+        &mut self.state
     }
 
     #[must_use]
@@ -112,8 +120,29 @@ impl App {
                 }
                 self.handle_key(key)
             }
+            Event::Mouse(mouse) => self.handle_mouse(mouse),
             _ => false,
         }
+    }
+
+    fn handle_mouse(&mut self, mouse: MouseEvent) -> bool {
+        if !mouse_interactions_enabled(&self.state.config.mouse) {
+            return false;
+        }
+
+        if mouse.modifiers.contains(KeyModifiers::SHIFT) {
+            return false;
+        }
+
+        if !matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
+            return false;
+        }
+
+        if let Some(command) = map_tab_click(&self.state, mouse.column, mouse.row) {
+            return self.dispatch(AppEvent::Command(AppCommand::Navigation(command)));
+        }
+
+        false
     }
 
     fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
@@ -207,11 +236,54 @@ mod tests {
         assert!(!app.dispatch_key(key));
         assert_eq!(app.state().navigation.main_tab, before);
     }
+
+    #[test]
+    fn mouse_click_on_main_tab_updates_selection() {
+        use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+
+        let mut app = App::new(test_context());
+        let main_tabs = app.state().layout.rects.main_tabs;
+        let mouse = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: main_tabs.x + 8,
+            row: main_tabs.y,
+            modifiers: KeyModifiers::empty(),
+        };
+
+        assert!(!app.dispatch_mouse(mouse));
+        assert_eq!(
+            app.state().navigation.main_tab,
+            crate::navigation::MainTab::Issues
+        );
+    }
+
+    #[test]
+    fn mouse_click_ignored_when_mouse_disabled() {
+        use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+
+        let mut app = App::new(test_context());
+        app.state_mut().config.mouse.enabled = false;
+        let before = app.state().navigation.left_tab;
+        let left_tabs = app.state().layout.rects.left_tabs;
+        let mouse = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: left_tabs.x,
+            row: left_tabs.y,
+            modifiers: KeyModifiers::empty(),
+        };
+
+        assert!(!app.dispatch_mouse(mouse));
+        assert_eq!(app.state().navigation.left_tab, before);
+    }
 }
 
 #[cfg(test)]
 impl App {
     fn dispatch_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
         self.handle_key(key)
+    }
+
+    fn dispatch_mouse(&mut self, mouse: MouseEvent) -> bool {
+        self.handle_mouse(mouse)
     }
 }
