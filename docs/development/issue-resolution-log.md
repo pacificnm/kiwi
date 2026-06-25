@@ -159,6 +159,13 @@ Format for new entries:
 - **Files:** `crates/kiwi/src/file_tree/ignore.rs`, `file_tree/loader.rs`, `file_tree/mod.rs`
 - **Verify:** `read_directory_children_skips_default_ignored_names`, `is_default_ignored_matches_exact_names_only`; `cargo test`.
 
+### Git status badges on files (GitHub #33, SPEC-005)
+
+- **Symptom:** File tree showed no git status; `GitState` only tracked modified path strings.
+- **Fix:** Added `git/status.rs` with `GitFileStatus`/`GitFileEntry`; `FileNode.git_status`; `apply_git_statuses` maps repo-relative paths to nodes; tree rows render colored name + badge (`M`/`A`/`D`/`U`) using theme git roles; git refresh preserves file tree selection.
+- **Files:** `git/`, `file_tree/node.rs`, `file_tree/state.rs`, `state/domains.rs`, `state/event.rs`, `state/reducer.rs`, `ui/file_tree.rs`, `ui/status_bar.rs`
+- **Verify:** `apply_git_statuses_sets_file_badges`, `git_status_refresh_preserves_file_tree_selection`, `modified_file_renders_git_badge`; `cargo test`.
+
 ---
 
 ## Reporting New Issues

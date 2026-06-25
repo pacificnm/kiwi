@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use super::loader::detect_symlink_loop;
 use super::node::{DirectoryEntry, FileNode};
+use crate::git::{GitFileEntry, GitFileStatus};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VisibleTreeRow {
@@ -41,6 +42,7 @@ impl FileTreeState {
             expanded: false,
             children_loaded: false,
             load_error: None,
+            git_status: None,
         };
 
         let mut nodes = HashMap::new();
@@ -175,6 +177,7 @@ impl FileTreeState {
                     expanded: false,
                     children_loaded: false,
                     load_error: None,
+                    git_status: None,
                 },
             );
             child_paths.push(child.path);
@@ -198,6 +201,35 @@ impl FileTreeState {
             node.load_error = None;
         }
         self.loading.remove(path);
+    }
+
+    pub fn apply_git_statuses(
+        &mut self,
+        repo_root: &Path,
+        entries: &[GitFileEntry],
+        show_untracked: bool,
+    ) {
+        let mut status_by_path = HashMap::new();
+        for entry in entries {
+            if !show_untracked && entry.status == GitFileStatus::Untracked {
+                continue;
+            }
+            status_by_path.insert(entry.path.as_str(), entry.status);
+        }
+
+        for node in self.nodes.values_mut() {
+            if node.is_dir {
+                node.git_status = None;
+                continue;
+            }
+
+            let Some(relative) = relative_repo_path(repo_root, &node.path) else {
+                node.git_status = None;
+                continue;
+            };
+
+            node.git_status = status_by_path.get(relative.as_str()).copied();
+        }
     }
 
     fn collect_visible_rows(&self, path: &Path, depth: usize, rows: &mut Vec<VisibleTreeRow>) {
@@ -227,6 +259,13 @@ impl FileTreeState {
             .as_ref()
             .map(|path| path.display().to_string())
     }
+}
+
+fn relative_repo_path(repo_root: &Path, path: &Path) -> Option<String> {
+    path.strip_prefix(repo_root)
+        .ok()
+        .map(|relative| relative.to_string_lossy().replace('\\', "/"))
+        .filter(|relative| !relative.is_empty())
 }
 
 impl Default for FileTreeState {
@@ -358,5 +397,79 @@ mod tests {
             .map(|row| state.nodes[&row.path].name.as_str())
             .collect();
         assert_eq!(names, vec!["kiwi", "src", "main.rs"]);
+    }
+
+    #[test]
+    fn apply_git_statuses_sets_file_badges() {
+        let root = PathBuf::from("/tmp/kiwi");
+        let mut state = FileTreeState::at_root(root.clone());
+        let _ = state.expand(&root);
+        state.apply_children_loaded(
+            &root,
+            vec![
+                DirectoryEntry {
+                    path: root.join("src/main.rs"),
+                    name: "main.rs".to_string(),
+                    is_dir: false,
+                },
+                DirectoryEntry {
+                    path: root.join("README.md"),
+                    name: "README.md".to_string(),
+                    is_dir: false,
+                },
+            ],
+            None,
+        );
+
+        state.apply_git_statuses(
+            &root,
+            &[
+                GitFileEntry {
+                    path: "src/main.rs".to_string(),
+                    status: GitFileStatus::Modified,
+                },
+                GitFileEntry {
+                    path: "README.md".to_string(),
+                    status: GitFileStatus::Untracked,
+                },
+            ],
+            true,
+        );
+
+        assert_eq!(
+            state.nodes[&root.join("src/main.rs")].git_status,
+            Some(GitFileStatus::Modified)
+        );
+        assert_eq!(
+            state.nodes[&root.join("README.md")].git_status,
+            Some(GitFileStatus::Untracked)
+        );
+    }
+
+    #[test]
+    fn apply_git_statuses_hides_untracked_when_disabled() {
+        let root = PathBuf::from("/tmp/kiwi");
+        let mut state = FileTreeState::at_root(root.clone());
+        let _ = state.expand(&root);
+        state.apply_children_loaded(
+            &root,
+            vec![DirectoryEntry {
+                path: root.join("new.txt"),
+                name: "new.txt".to_string(),
+                is_dir: false,
+            }],
+            None,
+        );
+
+        state.apply_git_statuses(
+            &root,
+            &[GitFileEntry {
+                path: "new.txt".to_string(),
+                status: GitFileStatus::Untracked,
+            }],
+            false,
+        );
+
+        assert_eq!(state.nodes[&root.join("new.txt")].git_status, None);
     }
 }

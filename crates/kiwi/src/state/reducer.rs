@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use crate::agent::infer_status_from_scrollback;
 use crate::commands::{execute_command, history_input_for_id, refresh_matches};
 use crate::file_tree::ExpandAction;
+use crate::git::GitFileEntry;
 use crate::layout::{agent_pty_size, compute_layout, shell_pty_size, FocusTarget};
 use crate::navigation::{LeftNavTab, MainTab, NavCommand};
 
@@ -14,8 +15,8 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
         AppEvent::Command(command) => reduce_command(state, command),
         AppEvent::TerminalResize { width, height } => reduce_terminal_resize(state, width, height),
         AppEvent::GitRefreshRequested => reduce_git_refresh_requested(state),
-        AppEvent::GitStatusUpdated { modified_files } => {
-            reduce_git_status_updated(state, modified_files)
+        AppEvent::GitStatusUpdated { file_entries } => {
+            reduce_git_status_updated(state, file_entries)
         }
         AppEvent::Quit => {
             state.dirty = true;
@@ -116,20 +117,45 @@ fn reduce_git_refresh_requested(state: &mut AppState) -> Vec<SideEffect> {
     vec![SideEffect::SpawnGitRefresh]
 }
 
-fn reduce_git_status_updated(state: &mut AppState, modified_files: Vec<String>) -> Vec<SideEffect> {
-    let selected = state.git.selected_path.clone();
-    state.git.modified_files = modified_files;
+fn reduce_git_status_updated(
+    state: &mut AppState,
+    file_entries: Vec<GitFileEntry>,
+) -> Vec<SideEffect> {
+    let git_selected = state.git.selected_path.clone();
+    let tree_selected = state.file_tree.selected.clone();
 
-    if let Some(path) = selected {
-        if state.git.modified_files.iter().any(|file| file == &path) {
+    state.git.file_entries = file_entries;
+
+    if let Some(path) = git_selected {
+        if state
+            .git
+            .file_entries
+            .iter()
+            .any(|entry| entry.path == path)
+        {
             state.git.selected_path = Some(path);
         } else {
             state.git.selected_path = None;
         }
     }
 
+    sync_git_statuses_to_file_tree(state);
+
+    if let Some(path) = tree_selected {
+        if state.file_tree.nodes.contains_key(&path) {
+            state.file_tree.selected = Some(path);
+        }
+    }
+
     state.dirty = true;
     Vec::new()
+}
+
+fn sync_git_statuses_to_file_tree(state: &mut AppState) {
+    let entries = state.git.file_entries.clone();
+    state
+        .file_tree
+        .apply_git_statuses(&state.repo_root, &entries, state.config.git.show_untracked);
 }
 
 fn reduce_shell_output(state: &mut AppState, data: Vec<u8>) -> Vec<SideEffect> {
@@ -370,6 +396,7 @@ fn reduce_file_tree_children_loaded(
     state
         .file_tree
         .apply_children_loaded(&parent, children, error);
+    sync_git_statuses_to_file_tree(state);
     state.dirty = true;
     Vec::new()
 }
@@ -380,6 +407,7 @@ mod tests {
 
     use crate::agent::AgentStatus;
     use crate::config::ResolvedConfig;
+    use crate::git::{GitFileEntry, GitFileStatus};
     use crate::layout::compute_layout;
     use crate::layout::FocusTarget;
     use crate::navigation::{LeftNavTab, MainTab, NavCommand, NavigationState};
@@ -455,12 +483,30 @@ mod tests {
     fn git_refresh_preserves_selection_when_file_still_modified() {
         let mut state = test_state();
         state.git.selected_path = Some("src/main.rs".to_string());
-        state.git.modified_files = vec!["src/main.rs".to_string(), "other.rs".to_string()];
+        state.git.file_entries = vec![
+            GitFileEntry {
+                path: "src/main.rs".to_string(),
+                status: GitFileStatus::Modified,
+            },
+            GitFileEntry {
+                path: "other.rs".to_string(),
+                status: GitFileStatus::Modified,
+            },
+        ];
 
         reduce(
             &mut state,
             AppEvent::GitStatusUpdated {
-                modified_files: vec!["src/main.rs".to_string(), "new.rs".to_string()],
+                file_entries: vec![
+                    GitFileEntry {
+                        path: "src/main.rs".to_string(),
+                        status: GitFileStatus::Modified,
+                    },
+                    GitFileEntry {
+                        path: "new.rs".to_string(),
+                        status: GitFileStatus::Added,
+                    },
+                ],
             },
         );
 
@@ -475,11 +521,47 @@ mod tests {
         reduce(
             &mut state,
             AppEvent::GitStatusUpdated {
-                modified_files: vec!["other.rs".to_string()],
+                file_entries: vec![GitFileEntry {
+                    path: "other.rs".to_string(),
+                    status: GitFileStatus::Modified,
+                }],
             },
         );
 
         assert_eq!(state.git.selected_path, None);
+    }
+
+    #[test]
+    fn git_status_refresh_preserves_file_tree_selection() {
+        let mut state = test_state();
+        let selected = state.file_tree.root.join("src/main.rs");
+        state.file_tree.nodes.insert(
+            selected.clone(),
+            crate::file_tree::FileNode {
+                path: selected.clone(),
+                name: "main.rs".to_string(),
+                is_dir: false,
+                expanded: false,
+                children_loaded: true,
+                load_error: None,
+                git_status: None,
+            },
+        );
+        state.file_tree.selected = Some(selected.clone());
+        reduce(
+            &mut state,
+            AppEvent::GitStatusUpdated {
+                file_entries: vec![GitFileEntry {
+                    path: "src/main.rs".to_string(),
+                    status: GitFileStatus::Modified,
+                }],
+            },
+        );
+        assert_eq!(state.file_tree.selected, Some(selected));
+        assert_eq!(
+            state.file_tree.nodes[&state.file_tree.root.join("src/main.rs")].git_status,
+            Some(GitFileStatus::Modified)
+        );
     }
 
     #[test]
