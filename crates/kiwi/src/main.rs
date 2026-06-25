@@ -5,6 +5,7 @@ mod bootstrap;
 mod cli;
 mod commands;
 mod config;
+mod file_tree;
 mod layout;
 mod navigation;
 mod repo;

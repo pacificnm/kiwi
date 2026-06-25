@@ -9,6 +9,7 @@ use ratatui::Terminal;
 
 use crate::agent::{AgentOutputReader, AgentSession};
 use crate::bootstrap::StartupContext;
+use crate::file_tree::spawn_directory_load;
 use crate::layout::{agent_pty_size, shell_pty_size, FocusTarget};
 use crate::navigation::{map_key, MainTab};
 use crate::shell::{encode_key, ShellOutputReader, ShellSession};
@@ -289,6 +290,9 @@ impl App {
                             &self.state.palette.history,
                         );
                     }
+                }
+                SideEffect::LoadDirectoryChildren(path) => {
+                    spawn_directory_load(path, self.events.sender());
                 }
             }
         }

@@ -22,6 +22,11 @@ pub enum AppEvent {
     AgentOutput(Vec<u8>),
     #[cfg_attr(not(test), allow(dead_code))]
     AgentExited(i32),
+    FileTreeChildrenLoaded {
+        parent: PathBuf,
+        children: Vec<crate::file_tree::DirectoryEntry>,
+        error: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,6 +49,14 @@ pub enum AppCommand {
     PaletteHistoryDown,
     PaletteExecuteSelected,
     PaletteExecuteMatch(usize),
+    #[cfg_attr(not(test), allow(dead_code))]
+    FileTreeExpand(PathBuf),
+    #[cfg_attr(not(test), allow(dead_code))]
+    FileTreeCollapse(PathBuf),
+    #[cfg_attr(not(test), allow(dead_code))]
+    FileTreeSelect(PathBuf),
+    #[cfg_attr(not(test), allow(dead_code))]
+    FileTreeRefresh,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +75,7 @@ pub enum SideEffect {
     #[cfg_attr(not(test), allow(dead_code))]
     SaveWorkspace,
     SavePaletteHistory,
+    LoadDirectoryChildren(PathBuf),
     #[cfg_attr(not(test), allow(dead_code))]
     LaunchEditor(PathBuf),
 }
