@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use crate::navigation::{MainTab, NavCommand};
 use crate::state::{AppState, SideEffect};
 
-pub use fuzzy::{best_fuzzy_score, filter_ranked};
+pub use fuzzy::{best_fuzzy_score, filter_ranked, fuzzy_matches};
 pub use registry::COMMANDS;
 
 pub const MAX_VISIBLE_MATCHES: usize = 10;

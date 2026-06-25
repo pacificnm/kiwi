@@ -87,6 +87,6 @@ debounce_ms = 200
 
 - [ ] Fuzzy file find returns expected paths
 - [ ] Content search finds string in repo
-- [ ] Debounce prevents search storm while typing
+- [x] Debounce prevents search storm while typing
 - [ ] Selection opens correct file/line
 - [ ] Ignore dirs excluded from file search

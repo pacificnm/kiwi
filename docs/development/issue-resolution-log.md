@@ -173,6 +173,13 @@ Format for new entries:
 - **Files:** `preview/`, `ui/preview.rs`, `state/event.rs`, `state/reducer.rs`, `state/app_state.rs`, `app.rs`, `ui/render.rs`, `commands/mod.rs`
 - **Verify:** loader/reducer/render tests; `cargo test`, `cargo clippy -- -D warnings`.
 
+### Search debounce and cancel (GitHub #41, SPEC-007)
+
+- **Symptom:** Search queries had no debounce or cancellation; rapid typing would spawn overlapping searches.
+- **Fix:** Added `search/` module with `DebounceTimer`, generation-based stale-result filtering, and `SearchCancelHandle` for subprocess kill; reducer commands `SearchSetQuery`/`SearchExecute`/`SearchClear` with `CancelSearch`/`RunSearch` side effects; app loop polls debounce deadline (config `[search].debounce_ms`); Search left pane with result list, keyboard (`j`/`k`, `Enter`, `Ctrl+M` mode toggle, `Esc` clear), and mouse row selection.
+- **Files:** `search/`, `state/event.rs`, `state/reducer.rs`, `app.rs`, `ui/search.rs`, `ui/render.rs`, `commands/mod.rs`, `file_tree/mod.rs`
+- **Verify:** debounce/cancel/io/reducer/render tests; `cargo test` (250 tests), `cargo clippy -- -D warnings`.
+
 ---
 
 ## Reporting New Issues

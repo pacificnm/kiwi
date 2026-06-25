@@ -4,11 +4,6 @@ use crate::layout::FocusTarget;
 use crate::shell::ScrollbackBuffer;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct SearchState {
-    pub query: String,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GitState {
     pub branch: Option<String>,
     pub selected_path: Option<String>,

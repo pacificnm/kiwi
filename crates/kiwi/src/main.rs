@@ -11,6 +11,7 @@ mod layout;
 mod navigation;
 mod preview;
 mod repo;
+mod search;
 mod shell;
 mod shutdown;
 mod state;
