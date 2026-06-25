@@ -208,6 +208,13 @@ Format for new entries:
 - **Files:** `watcher/`, `state/event.rs`, `state/reducer.rs`, `state/channel.rs`, `preview/state.rs`, `app.rs`, `Cargo.toml`
 - **Verify:** watcher debounce/paths/io tests, reducer `fs_changed_*` tests, preview scroll preservation test; manual: open preview, edit file in external editor, confirm content refreshes without losing scroll position.
 
+### File fuzzy search (GitHub #38, SPEC-007, ADR-009)
+
+- **Symptom:** File search mode needed fuzzy path matching with ignore rules and relevance-ranked results; initial skeleton shipped in #41 without score-based ordering.
+- **Fix:** `search/file.rs` walks the repo with default ignore rules, scores matches via shared palette fuzzy matcher (`best_fuzzy_score` on relative path and basename), and returns results ranked by score with path tie-break. Max 10_000 results with truncation flag.
+- **Files:** `search/file.rs`, `commands/fuzzy.rs` (shared scorer), SPEC-007
+- **Verify:** `search_files_*` unit tests; manual: Search tab → Files mode, type partial path/filename, confirm best matches appear first and ignored dirs (e.g. `node_modules`) are excluded.
+
 ---
 
 ## Reporting New Issues
