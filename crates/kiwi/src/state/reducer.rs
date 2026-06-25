@@ -10,10 +10,10 @@ use crate::git::{
     git_move_selection, git_select_row, patch_git_file_entries, row_for_path, GitFileEntry,
 };
 use crate::github::{
-    apply_label_picker_load, ensure_issue_selection, issue_move_selection, issue_select_row,
-    missing_browser_target_message, page_scroll_issue_detail, resolve_browser_target,
-    scroll_issue_detail, GitHubLeftPane, IssueDetailLoadResult, IssueListLoadResult,
-    ISSUE_LIST_CACHE_SECS,
+    advance_pr_create_prompt, apply_label_picker_load, ensure_issue_selection,
+    issue_move_selection, issue_select_row, missing_browser_target_message,
+    page_scroll_issue_detail, resolve_browser_target, scroll_issue_detail, GitHubLeftPane,
+    IssueDetailLoadResult, IssueListLoadResult, PrCreatePromptAdvance, ISSUE_LIST_CACHE_SECS,
 };
 use crate::layout::{agent_pty_size, compute_layout, shell_pty_size, FocusTarget};
 use crate::navigation::{LeftNavTab, MainTab, NavCommand};
@@ -78,6 +78,9 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
         }
         AppEvent::GitHubOpenBrowserCompleted { target, result } => {
             reduce_github_open_browser_completed(state, target, result)
+        }
+        AppEvent::GitHubPrCreateCompleted { result } => {
+            reduce_github_pr_create_completed(state, result)
         }
     }
 }
@@ -675,11 +678,28 @@ fn reduce_github_open_browser_completed(
     result: crate::github::IssueActionResult,
 ) -> Vec<SideEffect> {
     if result.success {
-        state.github.issue_action_message = Some(format!(
-            "Opened {} #{} in browser",
-            target.label(),
-            target.number()
-        ));
+        state.github.issue_action_message = result.detail.or_else(|| {
+            Some(format!(
+                "Opened {} #{} in browser",
+                target.label(),
+                target.number()
+            ))
+        });
+    } else if let Some(error) = result.error {
+        state.github.issue_action_message = Some(error);
+    }
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_github_pr_create_completed(
+    state: &mut AppState,
+    result: crate::github::IssueActionResult,
+) -> Vec<SideEffect> {
+    if result.success {
+        state.github.issue_action_message = result
+            .detail
+            .or_else(|| Some("Pull request created".to_string()));
     } else if let Some(error) = result.error {
         state.github.issue_action_message = Some(error);
     }
@@ -933,6 +953,27 @@ fn reduce_palette_prompt_submit(state: &mut AppState, prompt: PalettePrompt) -> 
             state.palette.close(&mut state.navigation.focus);
             state.dirty = true;
             vec![SideEffect::SpawnGitHubIssueComment { number, body }]
+        }
+        PalettePrompt::GitHubPrCreate(prompt) => {
+            let input = state.palette.input.clone();
+            match advance_pr_create_prompt(prompt, &input) {
+                Ok(PrCreatePromptAdvance::Continue(next)) => {
+                    state.palette.input.clear();
+                    state.palette.prompt = Some(PalettePrompt::GitHubPrCreate(next));
+                    state.dirty = true;
+                    Vec::new()
+                }
+                Ok(PrCreatePromptAdvance::Submit(request)) => {
+                    state.palette.close(&mut state.navigation.focus);
+                    state.dirty = true;
+                    vec![SideEffect::SpawnGitHubPrCreate { request }]
+                }
+                Err(message) => {
+                    state.notifications.show_toast(message);
+                    state.dirty = true;
+                    Vec::new()
+                }
+            }
         }
     }
 }
@@ -2159,7 +2200,7 @@ mod tests {
 
     #[test]
     fn github_auth_success_on_issues_tab_loads_issue_list() {
-        use crate::github::{GitHubAuthCheckResult, GitHubAuthErrorKind};
+        use crate::github::GitHubAuthCheckResult;
 
         let mut state = test_state();
         state.navigation.main_tab = MainTab::Issues;
@@ -2378,6 +2419,7 @@ mod tests {
                 result: IssueActionResult {
                     success: true,
                     error: None,
+                    detail: None,
                 },
             },
         );
@@ -2448,6 +2490,68 @@ mod tests {
     }
 
     #[test]
+    fn palette_prompt_submits_pr_create() {
+        use crate::github::PrCreateRequest;
+        use crate::state::{GitHubPrCreatePrompt, PalettePrompt};
+
+        let mut state = test_state();
+        state
+            .palette
+            .begin_prompt(
+                PalettePrompt::GitHubPrCreate(GitHubPrCreatePrompt::default()),
+                FocusTarget::Main,
+            );
+        state.navigation.focus = FocusTarget::CommandPalette;
+        state.palette.input = "Fix login".to_string();
+
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::PaletteExecuteSelected));
+        assert!(state.palette.open);
+        assert!(effects.is_empty());
+
+        state.palette.input = "Fixes #42".to_string();
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::PaletteExecuteSelected));
+        assert!(state.palette.open);
+        assert!(effects.is_empty());
+
+        state.palette.input = "main".to_string();
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::PaletteExecuteSelected));
+        assert!(!state.palette.open);
+        assert!(effects.iter().any(|effect| {
+            matches!(
+                effect,
+                SideEffect::SpawnGitHubPrCreate { request }
+                if *request == PrCreateRequest {
+                    title: "Fix login".to_string(),
+                    body: "Fixes #42".to_string(),
+                    base: Some("main".to_string()),
+                }
+            )
+        }));
+    }
+
+    #[test]
+    fn github_pr_create_completed_sets_status_message() {
+        use crate::github::IssueActionResult;
+
+        let mut state = test_state();
+        reduce(
+            &mut state,
+            AppEvent::GitHubPrCreateCompleted {
+                result: IssueActionResult {
+                    success: true,
+                    error: None,
+                    detail: Some("https://github.com/org/repo/pull/99".to_string()),
+                },
+            },
+        );
+
+        assert_eq!(
+            state.github.issue_action_message.as_deref(),
+            Some("https://github.com/org/repo/pull/99")
+        );
+    }
+
+    #[test]
     fn github_open_browser_completed_sets_status_message() {
         use crate::github::{GitHubBrowserTarget, IssueActionResult};
 
@@ -2459,6 +2563,7 @@ mod tests {
                 result: IssueActionResult {
                     success: true,
                     error: None,
+                    detail: None,
                 },
             },
         );

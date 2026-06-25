@@ -375,6 +375,31 @@ impl ShellState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PalettePrompt {
     GitHubIssueComment { number: u32 },
+    GitHubPrCreate(GitHubPrCreatePrompt),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GitHubPrCreateStep {
+    Title,
+    Body,
+    Base,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitHubPrCreatePrompt {
+    pub step: GitHubPrCreateStep,
+    pub title: String,
+    pub body: String,
+}
+
+impl Default for GitHubPrCreatePrompt {
+    fn default() -> Self {
+        Self {
+            step: GitHubPrCreateStep::Title,
+            title: String::new(),
+            body: String::new(),
+        }
+    }
 }
 
 impl PalettePrompt {
@@ -382,6 +407,11 @@ impl PalettePrompt {
     pub fn title(&self) -> String {
         match self {
             Self::GitHubIssueComment { number } => format!("Comment on issue #{number}"),
+            Self::GitHubPrCreate(prompt) => match prompt.step {
+                GitHubPrCreateStep::Title => "Create pull request — title".to_string(),
+                GitHubPrCreateStep::Body => "Create pull request — body".to_string(),
+                GitHubPrCreateStep::Base => "Create pull request — base branch".to_string(),
+            },
         }
     }
 
@@ -389,6 +419,11 @@ impl PalettePrompt {
     pub fn hint(&self) -> &'static str {
         match self {
             Self::GitHubIssueComment { .. } => "Enter to post · Esc to cancel",
+            Self::GitHubPrCreate(prompt) => match prompt.step {
+                GitHubPrCreateStep::Title => "Enter to continue · Esc to cancel",
+                GitHubPrCreateStep::Body => "Enter to continue · Esc to cancel",
+                GitHubPrCreateStep::Base => "Enter to create · leave empty for default base",
+            },
         }
     }
 }

@@ -83,6 +83,7 @@ pub fn open_in_browser(
         return IssueActionResult {
             success: false,
             error: Some(format!("GitHub CLI ({command}) not found on PATH")),
+            detail: None,
         };
     }
 
@@ -100,14 +101,17 @@ pub fn open_in_browser(
         Ok(result) if result.status.success() => IssueActionResult {
             success: true,
             error: None,
+            detail: None,
         },
         Ok(result) => IssueActionResult {
             success: false,
             error: Some(format_browser_failure(kind, &result.stderr, &result.stdout)),
+            detail: None,
         },
         Err(err) => IssueActionResult {
             success: false,
             error: Some(format!("Failed to run `{command} {kind} view --web`: {err}")),
+            detail: None,
         },
     }
 }

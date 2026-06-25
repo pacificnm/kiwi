@@ -25,7 +25,7 @@ use crate::git::spawn_git_refresh;
 use crate::github::{
     spawn_github_auth_check, spawn_github_issue_comment, spawn_github_issue_detail_load,
     spawn_github_issue_label_apply, spawn_github_issue_list_load, spawn_github_open_browser,
-    spawn_github_repo_labels_load,
+    spawn_github_pr_create, spawn_github_repo_labels_load,
 };
 use crate::layout::{agent_pty_size, shell_pty_size, FocusTarget};
 use crate::navigation::{map_key, LeftNavTab, MainTab, NavCommand};
@@ -482,6 +482,14 @@ impl App {
                         self.state.repo_root.clone(),
                         self.state.config.github.command.clone(),
                         target,
+                        self.events.sender(),
+                    );
+                }
+                SideEffect::SpawnGitHubPrCreate { request } => {
+                    spawn_github_pr_create(
+                        self.state.repo_root.clone(),
+                        self.state.config.github.command.clone(),
+                        request,
                         self.events.sender(),
                     );
                 }
