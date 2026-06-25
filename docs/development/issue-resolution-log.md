@@ -152,6 +152,13 @@ Format for new entries:
 - **Files:** `ui/file_tree.rs`, `file_tree/state.rs`, `state/event.rs`, `state/reducer.rs`, `app.rs`, `ui/render.rs`, `ui/mouse.rs`
 - **Verify:** `file_tree_j_moves_selection_when_left_files_focused`, `interaction_on_chevron_expands_directory`, `draw_frame` tree glyph test; `cargo test` (210 tests).
 
+### Default ignore rules (GitHub #32, SPEC-005 / ADR-008)
+
+- **Symptom:** File tree listed `.git`, `node_modules`, `target`, and other heavy directories.
+- **Fix:** Added `file_tree/ignore.rs` with SPEC default name list; `read_directory_children` skips exact-name matches before sorting.
+- **Files:** `crates/kiwi/src/file_tree/ignore.rs`, `file_tree/loader.rs`, `file_tree/mod.rs`
+- **Verify:** `read_directory_children_skips_default_ignored_names`, `is_default_ignored_matches_exact_names_only`; `cargo test`.
+
 ---
 
 ## Reporting New Issues

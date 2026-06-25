@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use super::ignore::is_default_ignored;
 use super::node::DirectoryEntry;
 
 pub const MAX_EXPAND_DEPTH: usize = 40;
@@ -33,6 +34,9 @@ pub fn read_directory_children(path: &Path) -> DirectoryLoadResult {
         };
 
         let name = entry.file_name().to_string_lossy().into_owned();
+        if is_default_ignored(&name) {
+            continue;
+        }
         children.push(DirectoryEntry {
             path: entry.path(),
             name,
@@ -112,6 +116,29 @@ mod tests {
             .map(|entry| entry.name.as_str())
             .collect();
         assert_eq!(names, vec!["alpha", "Zebra", "a.txt", "Beta.txt"]);
+
+        let _ = fs::remove_dir_all(temp);
+    }
+
+    #[test]
+    fn read_directory_children_skips_default_ignored_names() {
+        let temp =
+            std::env::temp_dir().join(format!("kiwi-file-tree-ignore-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp);
+        fs::create_dir_all(temp.join(".git")).expect("mkdir");
+        fs::create_dir_all(temp.join("node_modules")).expect("mkdir");
+        fs::create_dir_all(temp.join("target")).expect("mkdir");
+        fs::create_dir_all(temp.join("src")).expect("mkdir");
+        fs::write(temp.join("Cargo.toml"), "pkg").expect("write");
+
+        let result = read_directory_children(&temp);
+        assert!(result.error.is_none());
+        let names: Vec<_> = result
+            .children
+            .iter()
+            .map(|entry| entry.name.as_str())
+            .collect();
+        assert_eq!(names, vec!["src", "Cargo.toml"]);
 
         let _ = fs::remove_dir_all(temp);
     }
