@@ -18,6 +18,14 @@ Format for new entries:
 
 ## M2 — Agent and Shell PTY (2026-06)
 
+### Fuzzy filter for command palette (GitHub #28, SPEC-013)
+
+- **Symptom:** #27 shipped a minimal subsequence matcher with flat scoring; ranking was weak (e.g. id/title tie-break only) and there was no performance guard for the SPEC-013 `< 5ms for 100 commands` budget.
+- **Cause:** Basic `fuzzy_score` used fixed bonuses without gap penalties or word-boundary weighting; needle whitespace handling and consecutive-match detection had edge-case bugs.
+- **Fix:** Replaced palette fuzzy logic with a scored matcher (`FuzzyMatch`, gap penalties, word-boundary and consecutive bonuses, whitespace-insensitive queries). Added reusable `filter_ranked` helper and a perf regression test over 100 synthetic commands.
+- **Files:** `crates/kiwi/src/commands/fuzzy.rs`, `crates/kiwi/src/commands/mod.rs`
+- **Verify:** `git_ref_ranks_refresh_above_left_git`, `filter_updates_within_spec_budget_for_100_commands`, existing palette fuzzy tests; 184 tests pass.
+
 ### Command registry and palette UI (GitHub #27, SPEC-013)
 
 - **Symptom:** Commands pane showed only a static `Ctrl+P` hint; no searchable command list, no palette execution path, agent restart deferred to #27.
