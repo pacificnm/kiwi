@@ -73,8 +73,8 @@ None v1.
 
 ## Acceptance Criteria
 
-- [ ] Ctrl+P opens palette
-- [ ] Fuzzy find "git ref" matches "Git: Refresh Status"
-- [ ] Enter executes and closes palette
-- [ ] Esc restores previous focus
-- [ ] Mouse click executes command
+- [x] Ctrl+P opens palette
+- [x] Fuzzy find "git ref" matches "Git: Refresh Status"
+- [x] Enter executes and closes palette
+- [x] Esc restores previous focus
+- [x] Mouse click executes command

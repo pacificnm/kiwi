@@ -16,12 +16,7 @@ pub fn map_key(event: KeyEvent, focus: FocusTarget) -> Option<NavCommand> {
     }
 
     if event.modifiers.contains(KeyModifiers::CONTROL) {
-        return match event.code {
-            KeyCode::Char('p') | KeyCode::Char('P') => {
-                Some(NavCommand::SetFocus(FocusTarget::CommandPalette))
-            }
-            _ => None,
-        };
+        return None;
     }
 
     if event.modifiers.contains(KeyModifiers::ALT) {
@@ -157,12 +152,12 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_p_focuses_palette() {
+    fn ctrl_p_is_not_handled_by_navigation_mapper() {
         let cmd = map_key(
             press_with_modifiers(KeyCode::Char('p'), KeyModifiers::CONTROL),
             FocusTarget::Main,
         );
-        assert_eq!(cmd, Some(NavCommand::SetFocus(FocusTarget::CommandPalette)));
+        assert_eq!(cmd, None);
     }
 
     #[test]
