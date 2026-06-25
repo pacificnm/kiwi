@@ -17,6 +17,7 @@ use crate::state::{
     agent_spawn_effects_if_needed, reduce, AppCommand, AppEvent, AppState, EventChannel, SideEffect,
 };
 use crate::ui::{draw_frame, map_mouse_click, mouse_interactions_enabled, palette_match_at};
+use crate::workspace::{load_palette_history, save_palette_history};
 
 const SHELL_FORCE_QUIT_WINDOW: Duration = Duration::from_millis(500);
 
@@ -46,6 +47,11 @@ impl App {
 
         let mut state =
             AppState::from_startup(repo_root.clone(), is_git_repo, config, theme, layout);
+        if state.config.workspace.persist {
+            if let Some(history) = load_palette_history(&repo_root) {
+                state.palette.history = history;
+            }
+        }
         let events = EventChannel::new();
         let (cols, rows) = shell_pty_size(&state.layout.rects);
         let shell = match ShellSession::spawn(&repo_root, &state.config.shell, cols, rows) {
@@ -223,6 +229,10 @@ impl App {
         if let Some(mut agent) = self.agent.take() {
             agent.shutdown();
         }
+
+        if self.state.config.workspace.persist {
+            let _ = save_palette_history(&self.state.repo_root, &self.state.palette.history);
+        }
     }
 
     fn process_pending_events(&mut self) -> bool {
@@ -247,6 +257,9 @@ impl App {
                 SideEffect::SpawnGitRefresh => {
                     // Services will enqueue GitStatusUpdated events in later milestones.
                 }
+                SideEffect::SpawnGitHubRefresh => {
+                    // GitHub list refresh will enqueue events in later milestones.
+                }
                 SideEffect::SpawnAgent => {
                     self.spawn_agent();
                 }
@@ -269,6 +282,14 @@ impl App {
                     }
                 }
                 SideEffect::SaveWorkspace | SideEffect::LaunchEditor(_) => {}
+                SideEffect::SavePaletteHistory => {
+                    if self.state.config.workspace.persist {
+                        let _ = save_palette_history(
+                            &self.state.repo_root,
+                            &self.state.palette.history,
+                        );
+                    }
+                }
             }
         }
         false

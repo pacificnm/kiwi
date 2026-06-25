@@ -130,6 +130,14 @@ Format for new entries:
 - **Files:** `shell/scrollback.rs`, `ui/scrollback.rs`
 - **Verify:** `draw_frame_keeps_shell_output_inside_shell_pane` test.
 
+### Initial command set and palette history persistence (GitHub #29, SPEC-013)
+
+- **Symptom:** Command palette UI and fuzzy filter existed (#27–#28) but only a handful of commands were registered; history was in-memory only.
+- **Cause:** Registry stub; no workspace persistence slice for `palette_history` (ADR-016 / SPEC-013 req. 7).
+- **Fix:** Added `commands/registry.rs` with ~32 navigation, focus, git/github refresh, editor, agent restart, and quit commands; `workspace/persistence.rs` loads/saves history to `~/.local/state/kiwi/workspaces/<repo-hash>.json` when `workspace.persist` is enabled; palette history up/down shows command titles; execute and quit persist history.
+- **Files:** `commands/registry.rs`, `commands/mod.rs`, `workspace/`, `state/domains.rs`, `state/event.rs`, `state/reducer.rs`, `app.rs`, `main.rs`
+- **Verify:** `initial_command_set_meets_adr_minimum`, `spec_required_commands_are_registered`, `save_and_load_palette_history_round_trip`, `palette_execute_persists_history_when_enabled`; `cargo test` (193 tests).
+
 ---
 
 ## Reporting New Issues

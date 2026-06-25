@@ -78,3 +78,5 @@ None v1.
 - [x] Enter executes and closes palette
 - [x] Esc restores previous focus
 - [x] Mouse click executes command
+- [x] Initial command set (~28+ commands: navigation, focus, git/github refresh, editor, agent restart, quit)
+- [x] Palette history persisted per repo when `workspace.persist` is enabled

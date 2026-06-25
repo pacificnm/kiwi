@@ -1,5 +1,5 @@
 use crate::agent::infer_status_from_scrollback;
-use crate::commands::{execute_command, refresh_matches};
+use crate::commands::{execute_command, history_input_for_id, refresh_matches};
 use crate::layout::{agent_pty_size, compute_layout, shell_pty_size, FocusTarget};
 use crate::navigation::{MainTab, NavCommand};
 
@@ -233,7 +233,9 @@ fn reduce_palette_history_up(state: &mut AppState) -> Vec<SideEffect> {
         return Vec::new();
     }
 
-    state.palette.history_up();
+    if let Some(command_id) = state.palette.history_up() {
+        state.palette.input = history_input_for_id(&command_id);
+    }
     refresh_matches(state);
     state.dirty = true;
     Vec::new()
@@ -244,7 +246,11 @@ fn reduce_palette_history_down(state: &mut AppState) -> Vec<SideEffect> {
         return Vec::new();
     }
 
-    state.palette.history_down();
+    match state.palette.history_down() {
+        None => {}
+        Some(None) => state.palette.input.clear(),
+        Some(Some(command_id)) => state.palette.input = history_input_for_id(&command_id),
+    }
     refresh_matches(state);
     state.dirty = true;
     Vec::new()
@@ -646,5 +652,25 @@ mod tests {
             AppEvent::Command(AppCommand::PaletteExecuteSelected),
         );
         assert!(!state.palette.open);
+    }
+
+    #[test]
+    fn palette_execute_persists_history_when_enabled() {
+        let mut state = test_state();
+        reduce(&mut state, AppEvent::Command(AppCommand::PaletteOpen));
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PaletteExecuteSelected),
+        );
+        assert!(effects.contains(&SideEffect::SavePaletteHistory));
+    }
+
+    #[test]
+    fn palette_history_up_uses_command_title() {
+        let mut state = test_state();
+        state.palette.history = vec!["git.refresh".to_string()];
+        reduce(&mut state, AppEvent::Command(AppCommand::PaletteOpen));
+        reduce(&mut state, AppEvent::Command(AppCommand::PaletteHistoryUp));
+        assert_eq!(state.palette.input, "Git: Refresh Status");
     }
 }

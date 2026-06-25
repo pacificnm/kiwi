@@ -240,6 +240,10 @@ impl ShellState {
     }
 }
 
+use crate::workspace::MAX_PALETTE_HISTORY_ENTRIES;
+
+const MAX_PALETTE_HISTORY: usize = MAX_PALETTE_HISTORY_ENTRIES;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandPaletteState {
     pub open: bool,
@@ -290,8 +294,8 @@ impl CommandPaletteState {
             self.history.remove(position);
         }
         self.history.push(command_id.to_string());
-        if self.history.len() > 20 {
-            let overflow = self.history.len() - 20;
+        if self.history.len() > MAX_PALETTE_HISTORY {
+            let overflow = self.history.len() - MAX_PALETTE_HISTORY;
             self.history.drain(0..overflow);
         }
     }
@@ -308,33 +312,30 @@ impl CommandPaletteState {
         self.selected = usize::try_from(next).unwrap_or(0);
     }
 
-    pub fn history_up(&mut self) {
+    pub fn history_up(&mut self) -> Option<String> {
         if self.history.is_empty() {
-            return;
+            return None;
         }
 
         let cursor = match self.history_cursor {
             None => self.history.len() - 1,
-            Some(0) => return,
+            Some(0) => return None,
             Some(value) => value - 1,
         };
         self.history_cursor = Some(cursor);
-        self.input = self.history[cursor].clone();
+        Some(self.history[cursor].clone())
     }
 
-    pub fn history_down(&mut self) {
-        let Some(cursor) = self.history_cursor else {
-            return;
-        };
+    pub fn history_down(&mut self) -> Option<Option<String>> {
+        let cursor = self.history_cursor?;
 
         if cursor + 1 >= self.history.len() {
             self.history_cursor = None;
-            self.input.clear();
-            return;
+            return Some(None);
         }
 
         self.history_cursor = Some(cursor + 1);
-        self.input = self.history[cursor + 1].clone();
+        Some(Some(self.history[cursor + 1].clone()))
     }
 }
 
