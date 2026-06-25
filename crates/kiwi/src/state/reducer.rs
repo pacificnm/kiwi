@@ -74,6 +74,9 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
         AppEvent::GitHubIssueCommentCompleted { number, result } => {
             reduce_github_issue_comment_completed(state, number, result)
         }
+        AppEvent::GitHubIssueCreateBranchCompleted { number, result } => {
+            reduce_github_issue_create_branch_completed(state, number, result)
+        }
         AppEvent::GitHubRepoLabelsLoaded { result } => {
             reduce_github_repo_labels_loaded(state, result)
         }
@@ -712,6 +715,28 @@ fn reduce_github_issue_comment_completed(
         effects.extend(github_issue_detail_effects(state, number, true));
         state.dirty = true;
         return effects;
+    }
+
+    state.github.issue_action_message = result.error.clone();
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_github_issue_create_branch_completed(
+    state: &mut AppState,
+    number: u32,
+    result: crate::github::IssueActionResult,
+) -> Vec<SideEffect> {
+    if state.github.selected_issue != Some(u64::from(number)) {
+        return Vec::new();
+    }
+
+    if result.success {
+        state.github.issue_action_message = result.detail.or_else(|| {
+            Some(format!("Checked out branch for issue #{number}"))
+        });
+        state.dirty = true;
+        return git_refresh_effects(state);
     }
 
     state.github.issue_action_message = result.error.clone();
@@ -2676,6 +2701,37 @@ mod tests {
         assert!(state.github.issue_detail.is_none());
         assert!(effects.contains(&SideEffect::SpawnGitHubIssueList));
         assert!(effects.contains(&SideEffect::SpawnGitHubIssueDetail { number: 42 }));
+    }
+
+    #[test]
+    fn github_issue_create_branch_completed_refreshes_git() {
+        use crate::github::IssueActionResult;
+
+        let mut state = test_state();
+        state.workspace_meta.is_git_repo = true;
+        state.github.auth_ok = true;
+        state.github.selected_issue = Some(42);
+        state
+            .navigation
+            .apply(NavCommand::SelectMainTab(MainTab::Issues));
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::GitHubIssueCreateBranchCompleted {
+                number: 42,
+                result: IssueActionResult {
+                    success: true,
+                    error: None,
+                    detail: Some("58-create-branch-from-issue".to_string()),
+                },
+            },
+        );
+
+        assert_eq!(
+            state.github.issue_action_message.as_deref(),
+            Some("58-create-branch-from-issue")
+        );
+        assert!(effects.contains(&SideEffect::SpawnGitRefresh));
     }
 
     #[test]

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::state::{AppEvent, EventSender};
 
-use super::actions::{add_issue_labels, post_issue_comment};
+use super::actions::{add_issue_labels, create_branch_from_issue, post_issue_comment};
 use super::auth::check_github_auth;
 use super::browser::{open_in_browser, GitHubBrowserTarget};
 use super::detail::load_issue_detail;
@@ -47,6 +47,18 @@ pub fn spawn_github_issue_comment(
     std::thread::spawn(move || {
         let result = post_issue_comment(&repo_root, &command, number, &body);
         let _ = sender.send(AppEvent::GitHubIssueCommentCompleted { number, result });
+    });
+}
+
+pub fn spawn_github_issue_create_branch(
+    repo_root: PathBuf,
+    command: String,
+    number: u32,
+    sender: EventSender,
+) {
+    std::thread::spawn(move || {
+        let result = create_branch_from_issue(&repo_root, &command, number);
+        let _ = sender.send(AppEvent::GitHubIssueCreateBranchCompleted { number, result });
     });
 }
 

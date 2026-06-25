@@ -78,6 +78,10 @@ pub enum AppEvent {
         number: u32,
         result: crate::github::IssueActionResult,
     },
+    GitHubIssueCreateBranchCompleted {
+        number: u32,
+        result: crate::github::IssueActionResult,
+    },
     GitHubRepoLabelsLoaded {
         result: crate::github::RepoLabelsLoadResult,
     },
@@ -237,6 +241,9 @@ pub enum SideEffect {
     SpawnGitHubIssueComment {
         number: u32,
         body: String,
+    },
+    SpawnGitHubIssueCreateBranch {
+        number: u32,
     },
     SpawnGitHubRepoLabels,
     SpawnGitHubIssueLabelApply {
