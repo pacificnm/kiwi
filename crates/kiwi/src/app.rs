@@ -9,11 +9,11 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 use crate::bootstrap::StartupContext;
-use crate::layout::shell_pty_size;
+use crate::layout::{shell_pty_size, FocusTarget};
 use crate::navigation::map_key;
-use crate::shell::{spawn_output_reader, ShellSession};
+use crate::shell::{encode_key, spawn_output_reader, ShellSession};
 use crate::state::{reduce, AppCommand, AppEvent, AppState, EventChannel, SideEffect};
-use crate::ui::{draw_frame, map_tab_click, mouse_interactions_enabled};
+use crate::ui::{draw_frame, map_mouse_click, mouse_interactions_enabled};
 
 pub struct App {
     state: AppState,
@@ -143,6 +143,11 @@ impl App {
                 SideEffect::SpawnGitRefresh => {
                     // Services will enqueue GitStatusUpdated events in later milestones.
                 }
+                SideEffect::WriteShell(data) => {
+                    if let Some(shell) = self.shell.as_mut() {
+                        let _ = shell.write(&data);
+                    }
+                }
                 SideEffect::SaveWorkspace | SideEffect::LaunchEditor(_) => {}
             }
         }
@@ -178,7 +183,7 @@ impl App {
             return false;
         }
 
-        if let Some(command) = map_tab_click(&self.state, mouse.column, mouse.row) {
+        if let Some(command) = map_mouse_click(&self.state, mouse.column, mouse.row) {
             return self.dispatch(AppEvent::Command(AppCommand::Navigation(command)));
         }
 
@@ -186,6 +191,10 @@ impl App {
     }
 
     fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        if self.state.navigation.focus == FocusTarget::Shell {
+            return self.handle_shell_key(key);
+        }
+
         let quit = matches!(key.code, KeyCode::Char('q'))
             || (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL));
 
@@ -198,6 +207,24 @@ impl App {
         }
 
         false
+    }
+
+    fn handle_shell_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        if !self.state.shell.running {
+            return false;
+        }
+
+        match key.code {
+            KeyCode::PageUp => self.dispatch(AppEvent::Command(AppCommand::ShellScroll(-1))),
+            KeyCode::PageDown => self.dispatch(AppEvent::Command(AppCommand::ShellScroll(1))),
+            _ => {
+                if let Some(bytes) = encode_key(key) {
+                    self.dispatch(AppEvent::Command(AppCommand::ShellWrite(bytes)))
+                } else {
+                    false
+                }
+            }
+        }
     }
 }
 
@@ -256,6 +283,58 @@ mod tests {
             .expect("send");
         app.process_pending_events();
         assert!(app.state().dirty);
+    }
+
+    #[test]
+    fn shell_focus_forwards_keys_instead_of_quitting() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+        use crate::layout::FocusTarget;
+        use crate::navigation::NavCommand;
+        use crate::state::AppCommand;
+
+        let mut app = App::new(test_context());
+        app.event_sender()
+            .send(AppEvent::Command(AppCommand::Navigation(
+                NavCommand::SetFocus(FocusTarget::Shell),
+            )))
+            .expect("send");
+        app.process_pending_events();
+
+        let key = KeyEvent {
+            code: KeyCode::Char('q'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        };
+        assert!(!app.dispatch_key(key));
+
+        let ctrl_c = KeyEvent {
+            code: KeyCode::Char('c'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        };
+        assert!(!app.dispatch_key(ctrl_c));
+    }
+
+    #[test]
+    fn mouse_click_on_shell_pane_focuses_shell() {
+        use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+
+        use crate::layout::FocusTarget;
+
+        let mut app = App::new(test_context());
+        let shell = app.state().layout.rects.shell;
+        let mouse = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: shell.x + 2,
+            row: shell.y + 2,
+            modifiers: KeyModifiers::empty(),
+        };
+
+        assert!(!app.dispatch_mouse(mouse));
+        assert_eq!(app.state().navigation.focus, FocusTarget::Shell);
     }
 
     #[test]

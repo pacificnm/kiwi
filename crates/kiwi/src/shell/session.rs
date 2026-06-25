@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::Path;
 
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
@@ -10,6 +10,7 @@ use super::error::ShellError;
 
 pub struct ShellSession {
     master: Box<dyn MasterPty + Send>,
+    writer: Box<dyn Write + Send>,
     child: Box<dyn Child + Send + Sync>,
     pub spec: ShellLaunchSpec,
     pub cols: u16,
@@ -47,8 +48,14 @@ impl ShellSession {
 
         drop(pair.slave);
 
+        let writer = pair
+            .master
+            .take_writer()
+            .map_err(|err| ShellError::spawn(err.to_string()))?;
+
         Ok(Self {
             master: pair.master,
+            writer,
             child,
             spec,
             cols,
@@ -65,6 +72,12 @@ impl ShellSession {
         self.master
             .try_clone_reader()
             .map_err(|err| ShellError::spawn(err.to_string()))
+    }
+
+    pub fn write(&mut self, data: &[u8]) -> Result<(), ShellError> {
+        self.writer
+            .write_all(data)
+            .map_err(|err| ShellError::write(err.to_string()))
     }
 
     #[must_use]

@@ -21,18 +21,21 @@ pub enum AppEvent {
     ShellExited(i32),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppCommand {
     Navigation(NavCommand),
     Quit,
     #[cfg_attr(not(test), allow(dead_code))]
     RequestGitRefresh,
+    ShellWrite(Vec<u8>),
+    ShellScroll(i32),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SideEffect {
     Quit,
     SpawnGitRefresh,
+    WriteShell(Vec<u8>),
     #[cfg_attr(not(test), allow(dead_code))]
     SaveWorkspace,
     #[cfg_attr(not(test), allow(dead_code))]

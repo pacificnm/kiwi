@@ -1,4 +1,5 @@
 use crate::layout::compute_layout;
+use crate::layout::shell_pty_size;
 use crate::navigation::NavCommand;
 
 use super::app_state::AppState;
@@ -32,6 +33,8 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
             vec![SideEffect::Quit]
         }
         AppCommand::RequestGitRefresh => reduce_git_refresh_requested(state),
+        AppCommand::ShellWrite(data) => vec![SideEffect::WriteShell(data)],
+        AppCommand::ShellScroll(delta) => reduce_shell_scroll(state, delta),
     }
 }
 
@@ -82,6 +85,17 @@ fn reduce_shell_output(state: &mut AppState, data: Vec<u8>) -> Vec<SideEffect> {
 
 fn reduce_shell_exited(state: &mut AppState) -> Vec<SideEffect> {
     state.shell.running = false;
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_shell_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    if delta == 0 {
+        return Vec::new();
+    }
+
+    let (_, page_size) = shell_pty_size(&state.layout.rects);
+    state.shell.scroll_by(delta, page_size);
     state.dirty = true;
     Vec::new()
 }
@@ -225,6 +239,32 @@ mod tests {
         let mut state = test_state();
         reduce(&mut state, AppEvent::ShellOutput(b"hello\nworld".to_vec()));
         assert_eq!(state.shell.scrollback.line_count(), 1);
+        assert!(state.dirty);
+    }
+
+    #[test]
+    fn shell_write_emits_side_effect() {
+        let mut state = test_state();
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::ShellWrite(b"ls\n".to_vec())),
+        );
+        assert!(effects.contains(&SideEffect::WriteShell(b"ls\n".to_vec())));
+    }
+
+    #[test]
+    fn shell_scroll_moves_viewport_and_clears_follow_tail() {
+        let mut state = test_state();
+        for index in 0..20 {
+            state
+                .shell
+                .scrollback
+                .append_bytes(format!("line {index}\n").as_bytes());
+        }
+
+        reduce(&mut state, AppEvent::Command(AppCommand::ShellScroll(-1)));
+
+        assert!(!state.shell.follow_tail);
         assert!(state.dirty);
     }
 }
