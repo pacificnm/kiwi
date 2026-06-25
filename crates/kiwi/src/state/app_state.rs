@@ -2,14 +2,15 @@ use std::path::PathBuf;
 
 use crate::agent::agent_launch_spec;
 use crate::config::ResolvedConfig;
+use crate::file_tree::FileTreeState;
 use crate::layout::LayoutState;
 use crate::navigation::NavigationState;
 use crate::shell::shell_launch_spec;
 use crate::theme::ThemePalette;
 
 use super::domains::{
-    AgentState, CommandPaletteState, DiffState, FileTreeState, GitHubState, GitState, PreviewState,
-    SearchState, ShellState, StatusBarState, WorkspaceMeta,
+    AgentState, CommandPaletteState, DiffState, GitHubState, GitState, PreviewState, SearchState,
+    ShellState, StatusBarState, WorkspaceMeta,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,7 +59,7 @@ impl AppState {
             theme,
             repo_root: repo_root.clone(),
             dirty: true,
-            file_tree: FileTreeState::default(),
+            file_tree: FileTreeState::at_root(repo_root.clone()),
             preview: PreviewState::default(),
             search: SearchState::default(),
             git: GitState::default(),

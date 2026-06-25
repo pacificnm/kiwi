@@ -1,5 +1,8 @@
+use std::path::PathBuf;
+
 use crate::agent::infer_status_from_scrollback;
 use crate::commands::{execute_command, history_input_for_id, refresh_matches};
+use crate::file_tree::ExpandAction;
 use crate::layout::{agent_pty_size, compute_layout, shell_pty_size, FocusTarget};
 use crate::navigation::{MainTab, NavCommand};
 
@@ -22,6 +25,11 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
         AppEvent::ShellExited(_code) => reduce_shell_exited(state),
         AppEvent::AgentOutput(data) => reduce_agent_output(state, data),
         AppEvent::AgentExited(code) => reduce_agent_exited(state, code),
+        AppEvent::FileTreeChildrenLoaded {
+            parent,
+            children,
+            error,
+        } => reduce_file_tree_children_loaded(state, parent, children, error),
     }
 }
 
@@ -50,6 +58,10 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         AppCommand::PaletteHistoryDown => reduce_palette_history_down(state),
         AppCommand::PaletteExecuteSelected => reduce_palette_execute_selected(state),
         AppCommand::PaletteExecuteMatch(index) => reduce_palette_execute_match(state, index),
+        AppCommand::FileTreeExpand(path) => reduce_file_tree_expand(state, path),
+        AppCommand::FileTreeCollapse(path) => reduce_file_tree_collapse(state, path),
+        AppCommand::FileTreeSelect(path) => reduce_file_tree_select(state, path),
+        AppCommand::FileTreeRefresh => reduce_file_tree_refresh(state),
     }
 }
 
@@ -280,6 +292,72 @@ fn reduce_palette_execute_match(state: &mut AppState, match_index: usize) -> Vec
     execute_command(state, registry_index)
 }
 
+fn reduce_file_tree_expand(state: &mut AppState, path: PathBuf) -> Vec<SideEffect> {
+    match state.file_tree.expand(&path) {
+        Ok(ExpandAction::NeedsLoad) => {
+            state.dirty = true;
+            vec![SideEffect::LoadDirectoryChildren(path)]
+        }
+        Ok(ExpandAction::AlreadyExpanded) => {
+            state.dirty = true;
+            Vec::new()
+        }
+        Err(_) => {
+            state.dirty = true;
+            Vec::new()
+        }
+    }
+}
+
+fn reduce_file_tree_collapse(state: &mut AppState, path: PathBuf) -> Vec<SideEffect> {
+    state.file_tree.collapse(&path);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_file_tree_select(state: &mut AppState, path: PathBuf) -> Vec<SideEffect> {
+    state.file_tree.select(path);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_file_tree_refresh(state: &mut AppState) -> Vec<SideEffect> {
+    let expanded: Vec<PathBuf> = state
+        .file_tree
+        .nodes
+        .values()
+        .filter(|node| node.expanded)
+        .map(|node| node.path.clone())
+        .collect();
+
+    for path in &expanded {
+        state.file_tree.invalidate_children(path);
+    }
+
+    let mut effects = Vec::new();
+    for path in expanded {
+        if let Ok(ExpandAction::NeedsLoad) = state.file_tree.expand(&path) {
+            effects.push(SideEffect::LoadDirectoryChildren(path));
+        }
+    }
+
+    state.dirty = true;
+    effects
+}
+
+fn reduce_file_tree_children_loaded(
+    state: &mut AppState,
+    parent: PathBuf,
+    children: Vec<crate::file_tree::DirectoryEntry>,
+    error: Option<String>,
+) -> Vec<SideEffect> {
+    state
+        .file_tree
+        .apply_children_loaded(&parent, children, error);
+    state.dirty = true;
+    Vec::new()
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -293,9 +371,10 @@ mod tests {
     use crate::theme::loader::load_theme_with_capabilities;
 
     use super::*;
+    use crate::file_tree::{DirectoryEntry, FileTreeState};
     use crate::state::domains::{
-        AgentState, CommandPaletteState, DiffState, FileTreeState, GitHubState, GitState,
-        PreviewState, SearchState, ShellState, StatusBarState, WorkspaceMeta,
+        AgentState, CommandPaletteState, DiffState, GitHubState, GitState, PreviewState,
+        SearchState, ShellState, StatusBarState, WorkspaceMeta,
     };
 
     fn test_state() -> AppState {
@@ -310,7 +389,7 @@ mod tests {
             .expect("theme"),
             repo_root: PathBuf::from("."),
             dirty: false,
-            file_tree: FileTreeState::default(),
+            file_tree: FileTreeState::at_root(PathBuf::from(".")),
             preview: PreviewState::default(),
             search: SearchState::default(),
             git: GitState::default(),
@@ -672,5 +751,48 @@ mod tests {
         reduce(&mut state, AppEvent::Command(AppCommand::PaletteOpen));
         reduce(&mut state, AppEvent::Command(AppCommand::PaletteHistoryUp));
         assert_eq!(state.palette.input, "Git: Refresh Status");
+    }
+
+    #[test]
+    fn startup_file_tree_contains_root_only() {
+        let state = test_state();
+        assert_eq!(state.file_tree.nodes.len(), 1);
+        assert!(state.file_tree.children.is_empty());
+    }
+
+    #[test]
+    fn file_tree_expand_emits_load_side_effect() {
+        let mut state = test_state();
+        let root = state.file_tree.root.clone();
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::FileTreeExpand(root.clone())),
+        );
+        assert!(effects.contains(&SideEffect::LoadDirectoryChildren(root)));
+        assert!(state.file_tree.loading.contains(&state.file_tree.root));
+    }
+
+    #[test]
+    fn file_tree_children_loaded_updates_state() {
+        let mut state = test_state();
+        let root = state.file_tree.root.clone();
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::FileTreeExpand(root.clone())),
+        );
+        reduce(
+            &mut state,
+            AppEvent::FileTreeChildrenLoaded {
+                parent: root.clone(),
+                children: vec![DirectoryEntry {
+                    path: root.join("src"),
+                    name: "src".to_string(),
+                    is_dir: true,
+                }],
+                error: None,
+            },
+        );
+        assert_eq!(state.file_tree.children[&root].len(), 1);
+        assert!(state.file_tree.nodes.contains_key(&root.join("src")));
     }
 }

@@ -82,8 +82,8 @@ show_untracked = true
 
 ## Acceptance Criteria
 
-- [ ] Large repo opens instantly showing root only
-- [ ] Expand loads children
+- [x] Large repo opens instantly showing root only
+- [x] Expand loads children
 - [ ] Ignored dirs not shown
 - [ ] Selection survives git status refresh
 - [ ] Double-click opens editor (mouse)

@@ -138,6 +138,13 @@ Format for new entries:
 - **Files:** `commands/registry.rs`, `commands/mod.rs`, `workspace/`, `state/domains.rs`, `state/event.rs`, `state/reducer.rs`, `app.rs`, `main.rs`
 - **Verify:** `initial_command_set_meets_adr_minimum`, `spec_required_commands_are_registered`, `save_and_load_palette_history_round_trip`, `palette_execute_persists_history_when_enabled`; `cargo test` (193 tests).
 
+### Lazy directory loading (GitHub #30, SPEC-005 / ADR-008)
+
+- **Symptom:** File tree was a stub (`selected_path` only); no lazy loading or per-directory cache.
+- **Fix:** Added `file_tree` module with `FileNode`/`FileTreeState`, synchronous directory reader (dirs-first sort), background load via `std::thread`, `FileTreeChildrenLoaded` events, reducer commands, and `LoadDirectoryChildren` side effect. Startup initializes root node only.
+- **Files:** `crates/kiwi/src/file_tree/`, `state/event.rs`, `state/reducer.rs`, `state/app_state.rs`, `app.rs`, `ui/render.rs`
+- **Verify:** `file_tree::*` and reducer tests; `cargo test` (204 tests). Tree widget UI (#31) and ignore rules (#32) follow.
+
 ---
 
 ## Reporting New Issues

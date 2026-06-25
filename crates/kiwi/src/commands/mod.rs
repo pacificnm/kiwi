@@ -165,7 +165,7 @@ fn editor_target(state: &AppState) -> Option<PathBuf> {
         .preview
         .path
         .as_deref()
-        .or(state.file_tree.selected_path.as_deref())
+        .or(state.file_tree.selected_path_string().as_deref())
         .map(PathBuf::from)
 }
 
