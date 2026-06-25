@@ -26,3 +26,4 @@ portable-pty.workspace = true
 signal-hook.workspace = true
 notify.workspace = true
 arboard.workspace = true
+git2.workspace = true

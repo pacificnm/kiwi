@@ -6,8 +6,12 @@ use crate::shell::ScrollbackBuffer;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GitState {
     pub branch: Option<String>,
+    pub ahead: u32,
+    pub behind: u32,
     pub selected_path: Option<String>,
     pub file_entries: Vec<GitFileEntry>,
+    pub loading: bool,
+    pub error: Option<String>,
 }
 
 impl GitState {

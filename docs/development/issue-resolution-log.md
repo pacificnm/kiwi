@@ -253,6 +253,16 @@ Format for new entries:
 - **Files:** `ui/mouse_clicks.rs`, `app.rs`, `docs/design/mouse-interaction.md`, SPEC-005/007/014
 - **Verify:** `double_click_file_tree_file_opens_preview_tab`, `double_click_search_result_opens_preview_tab`.
 
+## M4 — Git Integration (2026-06)
+
+### git2 repository open and branch info (GitHub #42, SPEC-008, ADR-010)
+
+- **Symptom:** Status bar showed `no git` even inside a repository; `SpawnGitRefresh` was a no-op stub.
+- **Cause:** No `git2` dependency or git service; `GitState` had no ahead/behind or async refresh path.
+- **Fix:** Added `git/repository.rs` (open repo, branch name, upstream ahead/behind via `graph_ahead_behind`) and `git/io.rs` (`spawn_git_refresh` on a background thread). Extended `GitStatusUpdated` with branch/tracking fields; startup and palette refresh enqueue refresh when `is_git_repo`.
+- **Files:** `git/repository.rs`, `git/io.rs`, `state/domains.rs`, `state/event.rs`, `state/reducer.rs`, `app.rs`, `Cargo.toml`
+- **Verify:** `load_branch_info_*`, `spawn_git_refresh_enqueues_branch_update`, reducer git tests; manual: open Kiwi in a git repo, status bar shows branch name.
+
 ---
 
 ## Reporting New Issues
