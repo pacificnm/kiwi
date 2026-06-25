@@ -90,5 +90,5 @@ env = { KEY = "val" }  # optional
 - [x] Interactive prompts work (Main focus + Agent tab; keyboard forwarded)
 - [x] Scrollback preserves history while scrolling
 - [ ] Resize propagates to PTY
-- [ ] Status bar reflects running state (heuristics — #25)
+- [x] Status bar reflects running state (heuristics — #25)
 - [ ] Restart recovers from crash (#26)

@@ -3,6 +3,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
+use crate::agent::AgentStatus;
 use crate::state::AppState;
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
@@ -17,13 +18,13 @@ pub struct StatusBarSnapshot {
     pub agent_label: String,
     pub git_label: String,
     pub issue_label: Option<String>,
+    pub agent_status: AgentStatus,
     pub agent_running: bool,
     pub git_modified: bool,
 }
 
 pub fn compute_status_bar(state: &AppState) -> StatusBarSnapshot {
     let git_modified = !state.git.modified_files.is_empty();
-    let agent_running = state.agent.running;
 
     StatusBarSnapshot {
         repo_name: state.status_bar.repo_name.clone(),
@@ -31,7 +32,8 @@ pub fn compute_status_bar(state: &AppState) -> StatusBarSnapshot {
         agent_label: agent_label(state),
         git_label: git_label(state),
         issue_label: issue_label(state),
-        agent_running,
+        agent_status: state.agent.status,
+        agent_running: state.agent.running,
         git_modified,
     }
 }
@@ -45,11 +47,11 @@ fn branch_label(state: &AppState) -> String {
 }
 
 fn agent_label(state: &AppState) -> String {
-    if state.agent.running {
-        "Agent Running".to_string()
-    } else {
-        "Agent Idle".to_string()
-    }
+    state
+        .agent
+        .status
+        .status_bar_label(state.agent.running)
+        .to_string()
 }
 
 fn git_label(state: &AppState) -> String {
@@ -220,10 +222,19 @@ pub fn status_bar_line(
     } else {
         normal
     };
-    let highlight_agent = if snapshot.agent_running {
-        accent
+    let agent_style = if snapshot.agent_status == AgentStatus::Idle {
+        if snapshot.agent_running {
+            accent
+        } else {
+            normal
+        }
     } else {
-        normal
+        let role_style = theme.get(snapshot.agent_status.semantic_role());
+        if role_style.fg.is_some() {
+            role_style
+        } else {
+            accent
+        }
     };
 
     let mut spans = Vec::new();
@@ -231,7 +242,7 @@ pub fn status_bar_line(
         (BRAND.to_string(), normal),
         (segments.repo, normal),
         (segments.branch, normal),
-        (segments.agent, highlight_agent),
+        (segments.agent, agent_style),
         (segments.git, highlight_git),
     ];
 
@@ -264,6 +275,7 @@ pub fn render_status_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState) {
 mod tests {
     use std::path::PathBuf;
 
+    use crate::agent::AgentStatus;
     use crate::config::ResolvedConfig;
     use crate::layout::compute_layout;
     use crate::state::AppState;
@@ -302,11 +314,12 @@ mod tests {
         state.git.branch = Some("feature/42".to_string());
         state.git.modified_files = vec!["a.rs".to_string(), "b.rs".to_string(), "c.rs".to_string()];
         state.agent.running = true;
+        state.agent.status = AgentStatus::Executing;
         state.github.selected_issue = Some(42);
 
         let snapshot = compute_status_bar(&state);
         assert_eq!(snapshot.branch, "feature/42");
-        assert_eq!(snapshot.agent_label, "Agent Running");
+        assert_eq!(snapshot.agent_label, "Agent Executing");
         assert_eq!(snapshot.git_label, "3 Modified");
         assert_eq!(snapshot.issue_label, Some("#42".to_string()));
     }
@@ -335,9 +348,10 @@ mod tests {
         let snapshot = StatusBarSnapshot {
             repo_name: "cityartwalks".to_string(),
             branch: "feature/42".to_string(),
-            agent_label: "Agent Running".to_string(),
+            agent_label: "Agent Executing".to_string(),
             git_label: "3 Modified".to_string(),
             issue_label: Some("#42".to_string()),
+            agent_status: AgentStatus::Executing,
             agent_running: true,
             git_modified: true,
         };
@@ -345,7 +359,7 @@ mod tests {
         let line = format_status_line(&snapshot, 120);
         assert_eq!(
             line,
-            "Kiwi | cityartwalks | feature/42 | Agent Running | 3 Modified | #42"
+            "Kiwi | cityartwalks | feature/42 | Agent Executing | 3 Modified | #42"
         );
     }
 
@@ -354,9 +368,10 @@ mod tests {
         let snapshot = StatusBarSnapshot {
             repo_name: "cityartwalks".to_string(),
             branch: "feature/very-long-branch-name".to_string(),
-            agent_label: "Agent Running".to_string(),
+            agent_label: "Agent Executing".to_string(),
             git_label: "2 Modified".to_string(),
             issue_label: Some("#99".to_string()),
+            agent_status: AgentStatus::Executing,
             agent_running: true,
             git_modified: true,
         };
@@ -376,6 +391,7 @@ mod tests {
         state.git.branch = Some("feature/very-long-branch-name".to_string());
         state.git.modified_files = vec!["a.rs".to_string(), "b.rs".to_string()];
         state.agent.running = true;
+        state.agent.status = AgentStatus::Executing;
         state.github.selected_issue = Some(99);
 
         let backend = TestBackend::new(80, 3);
@@ -393,6 +409,7 @@ mod tests {
             agent_label: "Agent Idle".to_string(),
             git_label: "Clean".to_string(),
             issue_label: None,
+            agent_status: AgentStatus::Idle,
             agent_running: false,
             git_modified: false,
         };

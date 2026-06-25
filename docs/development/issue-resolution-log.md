@@ -18,6 +18,14 @@ Format for new entries:
 
 ## M2 — Agent and Shell PTY (2026-06)
 
+### Agent status heuristics for status bar (GitHub #25, SPEC-010 / SPEC-019)
+
+- **Symptom:** Status bar only showed generic "Agent Running" / "Agent Idle" regardless of agent output.
+- **Cause:** No `AgentStatus` field or output parsing; status bar keyed off `running` only.
+- **Fix:** Added `agent/status.rs` with keyword heuristics over recent scrollback; `AgentState.status` updated on output and exit; status bar uses semantic theme roles (`agent_thinking`, etc.).
+- **Files:** `crates/kiwi/src/agent/status.rs`, `state/domains.rs`, `state/reducer.rs`, `ui/status_bar.rs`, `shell/scrollback.rs`
+- **Verify:** `agent_output_updates_status_from_heuristics` and status bar unit tests; `cargo test` (155 tests).
+
 ### Agent I/O and viewport render (GitHub #24, SPEC-010)
 
 - **Symptom:** Agent tab showed placeholder text; no agent output in the main pane.

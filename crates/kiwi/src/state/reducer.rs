@@ -1,3 +1,4 @@
+use crate::agent::infer_status_from_scrollback;
 use crate::layout::{agent_pty_size, compute_layout, shell_pty_size};
 use crate::navigation::{MainTab, NavCommand};
 
@@ -19,7 +20,7 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
         AppEvent::ShellOutput(data) => reduce_shell_output(state, data),
         AppEvent::ShellExited(_code) => reduce_shell_exited(state),
         AppEvent::AgentOutput(data) => reduce_agent_output(state, data),
-        AppEvent::AgentExited(_code) => reduce_agent_exited(state),
+        AppEvent::AgentExited(code) => reduce_agent_exited(state, code),
     }
 }
 
@@ -118,12 +119,15 @@ fn reduce_shell_exited(state: &mut AppState) -> Vec<SideEffect> {
 
 fn reduce_agent_output(state: &mut AppState, data: Vec<u8>) -> Vec<SideEffect> {
     state.agent.scrollback.append_bytes(&data);
+    if let Some(status) = infer_status_from_scrollback(&state.agent.scrollback) {
+        state.agent.status = status;
+    }
     state.dirty = true;
     Vec::new()
 }
 
-fn reduce_agent_exited(state: &mut AppState) -> Vec<SideEffect> {
-    state.agent.running = false;
+fn reduce_agent_exited(state: &mut AppState, code: i32) -> Vec<SideEffect> {
+    state.agent.apply_exit(code);
     state.dirty = true;
     Vec::new()
 }
@@ -154,6 +158,7 @@ fn reduce_agent_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
 mod tests {
     use std::path::PathBuf;
 
+    use crate::agent::AgentStatus;
     use crate::config::ResolvedConfig;
     use crate::layout::compute_layout;
     use crate::navigation::{LeftNavTab, MainTab, NavCommand, NavigationState};
@@ -363,9 +368,30 @@ mod tests {
     fn agent_exited_clears_running_and_sets_dirty() {
         let mut state = test_state();
         state.agent.running = true;
+        state.agent.status = AgentStatus::Executing;
         reduce(&mut state, AppEvent::AgentExited(1));
         assert!(!state.agent.running);
+        assert_eq!(state.agent.status, AgentStatus::Error);
         assert!(state.dirty);
+    }
+
+    #[test]
+    fn agent_output_updates_status_from_heuristics() {
+        let mut state = test_state();
+        state.agent.running = true;
+        reduce(
+            &mut state,
+            AppEvent::AgentOutput(b"Thinking about the next step\n".to_vec()),
+        );
+        assert_eq!(state.agent.status, AgentStatus::Thinking);
+    }
+
+    #[test]
+    fn agent_exited_zero_sets_success_status() {
+        let mut state = test_state();
+        state.agent.running = true;
+        reduce(&mut state, AppEvent::AgentExited(0));
+        assert_eq!(state.agent.status, AgentStatus::Success);
     }
 
     #[test]

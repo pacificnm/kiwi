@@ -1,3 +1,4 @@
+use crate::agent::AgentStatus;
 use crate::shell::ScrollbackBuffer;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -45,6 +46,7 @@ pub struct AgentState {
     pub scrollback: ScrollbackBuffer,
     pub viewport_offset: usize,
     pub follow_tail: bool,
+    pub status: AgentStatus,
 }
 
 impl Default for AgentState {
@@ -61,6 +63,7 @@ impl Default for AgentState {
             scrollback: ScrollbackBuffer::new(),
             viewport_offset: 0,
             follow_tail: true,
+            status: AgentStatus::Idle,
         }
     }
 }
@@ -85,6 +88,7 @@ impl AgentState {
         self.scrollback.clear();
         self.viewport_offset = 0;
         self.follow_tail = true;
+        self.status = AgentStatus::Executing;
     }
 
     pub fn apply_spawn_error(&mut self, message: String) {
@@ -92,6 +96,13 @@ impl AgentState {
         self.running = false;
         self.child_pid = None;
         self.spawn_error = Some(message);
+        self.status = AgentStatus::Error;
+    }
+
+    pub fn apply_exit(&mut self, code: i32) {
+        self.running = false;
+        self.child_pid = None;
+        self.status = AgentStatus::from_exit_code(code);
     }
 
     pub fn scroll_by(&mut self, delta: i32, page_size: u16) {
