@@ -105,11 +105,7 @@ fn parse_issue_detail_json(bytes: &[u8]) -> Result<IssueDetail, String> {
         serde_json::from_slice(bytes).map_err(|err| format!("Invalid gh issue JSON: {err}"))?;
 
     let labels: Vec<String> = raw.labels.into_iter().map(|label| label.name).collect();
-    let assignees: Vec<String> = raw
-        .assignees
-        .into_iter()
-        .map(|user| user.login)
-        .collect();
+    let assignees: Vec<String> = raw.assignees.into_iter().map(|user| user.login).collect();
     let comments: Vec<IssueComment> = raw
         .comments
         .into_iter()
@@ -222,7 +218,12 @@ fn format_issue_detail_failure(stderr: &[u8], stdout: &[u8]) -> String {
     "gh issue view failed".to_string()
 }
 
-pub fn scroll_issue_detail(scroll_offset: &mut usize, delta: i32, line_count: usize, viewport_rows: usize) {
+pub fn scroll_issue_detail(
+    scroll_offset: &mut usize,
+    delta: i32,
+    line_count: usize,
+    viewport_rows: usize,
+) {
     if viewport_rows == 0 {
         return;
     }
@@ -276,9 +277,18 @@ mod tests {
         assert_eq!(detail.title, "Issue detail view");
         assert_eq!(detail.state, IssueState::Open);
         assert_eq!(detail.author, "pacificnm");
-        assert!(detail.display_lines.iter().any(|line| line.contains("First line")));
-        assert!(detail.display_lines.iter().any(|line| line.contains("@reviewer")));
-        assert!(detail.display_lines.iter().any(|line| line.contains("Looks good")));
+        assert!(detail
+            .display_lines
+            .iter()
+            .any(|line| line.contains("First line")));
+        assert!(detail
+            .display_lines
+            .iter()
+            .any(|line| line.contains("@reviewer")));
+        assert!(detail
+            .display_lines
+            .iter()
+            .any(|line| line.contains("Looks good")));
         assert!(detail
             .display_lines
             .iter()

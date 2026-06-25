@@ -9,6 +9,7 @@ use super::detail::load_issue_detail;
 use super::issue::load_issue_list;
 use super::labels::load_repo_labels;
 use super::pr_create::{create_pull_request, PrCreateRequest};
+use super::pr_detail::load_pr_detail;
 
 pub fn spawn_github_auth_check(command: String, sender: EventSender) {
     std::thread::spawn(move || {
@@ -78,6 +79,18 @@ pub fn spawn_github_open_browser(
     std::thread::spawn(move || {
         let result = open_in_browser(&repo_root, &command, target);
         let _ = sender.send(AppEvent::GitHubOpenBrowserCompleted { target, result });
+    });
+}
+
+pub fn spawn_github_pr_detail_load(
+    repo_root: PathBuf,
+    command: String,
+    number: u32,
+    sender: EventSender,
+) {
+    std::thread::spawn(move || {
+        let result = load_pr_detail(&repo_root, &command, number);
+        let _ = sender.send(AppEvent::GitHubPrDetailLoaded { number, result });
     });
 }
 

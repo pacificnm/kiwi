@@ -64,9 +64,7 @@ impl LabelPickerState {
         self.labels
             .iter()
             .zip(self.selected.iter())
-            .filter(|(label, selected)| {
-                **selected && !self.existing_labels.contains(&label.name)
-            })
+            .filter(|(label, selected)| **selected && !self.existing_labels.contains(&label.name))
             .map(|(label, _)| label.name.clone())
             .collect()
     }

@@ -110,7 +110,9 @@ pub fn open_in_browser(
         },
         Err(err) => IssueActionResult {
             success: false,
-            error: Some(format!("Failed to run `{command} {kind} view --web`: {err}")),
+            error: Some(format!(
+                "Failed to run `{command} {kind} view --web`: {err}"
+            )),
             detail: None,
         },
     }

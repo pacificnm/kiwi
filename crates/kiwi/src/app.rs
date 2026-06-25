@@ -25,7 +25,7 @@ use crate::git::spawn_git_refresh;
 use crate::github::{
     spawn_github_auth_check, spawn_github_issue_comment, spawn_github_issue_detail_load,
     spawn_github_issue_label_apply, spawn_github_issue_list_load, spawn_github_open_browser,
-    spawn_github_pr_create, spawn_github_repo_labels_load,
+    spawn_github_pr_create, spawn_github_pr_detail_load, spawn_github_repo_labels_load,
 };
 use crate::layout::{agent_pty_size, shell_pty_size, FocusTarget};
 use crate::navigation::{map_key, LeftNavTab, MainTab, NavCommand};
@@ -452,6 +452,14 @@ impl App {
                         self.events.sender(),
                     );
                 }
+                SideEffect::SpawnGitHubPrDetail { number } => {
+                    spawn_github_pr_detail_load(
+                        self.state.repo_root.clone(),
+                        self.state.config.github.command.clone(),
+                        number,
+                        self.events.sender(),
+                    );
+                }
                 SideEffect::SpawnGitHubIssueComment { number, body } => {
                     spawn_github_issue_comment(
                         self.state.repo_root.clone(),
@@ -673,6 +681,10 @@ impl App {
             ],
             SelectionPane::IssueDetail => vec![
                 NavCommand::SelectMainTab(MainTab::Issues),
+                NavCommand::SetFocus(FocusTarget::Main),
+            ],
+            SelectionPane::PrDetail => vec![
+                NavCommand::SelectMainTab(MainTab::Prs),
                 NavCommand::SetFocus(FocusTarget::Main),
             ],
             SelectionPane::Agent => vec![
@@ -916,12 +928,8 @@ impl App {
 
     fn handle_label_picker_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
         match key.code {
-            KeyCode::Esc => {
-                self.dispatch(AppEvent::Command(AppCommand::GitHubLabelPickerCancel))
-            }
-            KeyCode::Enter => {
-                self.dispatch(AppEvent::Command(AppCommand::GitHubLabelPickerApply))
-            }
+            KeyCode::Esc => self.dispatch(AppEvent::Command(AppCommand::GitHubLabelPickerCancel)),
+            KeyCode::Enter => self.dispatch(AppEvent::Command(AppCommand::GitHubLabelPickerApply)),
             KeyCode::Char(' ') => {
                 self.dispatch(AppEvent::Command(AppCommand::GitHubLabelPickerToggle))
             }
@@ -1000,12 +1008,14 @@ impl App {
 
         let gh_left_focused = self.state.navigation.focus == FocusTarget::Left
             && self.state.navigation.left_tab == LeftNavTab::Gh;
-        let gh_issues_list_focused = gh_left_focused
-            && self.state.github.left_pane == crate::github::GitHubLeftPane::Issues;
-        let gh_prs_list_focused = gh_left_focused
-            && self.state.github.left_pane == crate::github::GitHubLeftPane::Prs;
+        let gh_issues_list_focused =
+            gh_left_focused && self.state.github.left_pane == crate::github::GitHubLeftPane::Issues;
+        let gh_prs_list_focused =
+            gh_left_focused && self.state.github.left_pane == crate::github::GitHubLeftPane::Prs;
         let issues_detail_focused = self.state.navigation.focus == FocusTarget::Main
             && self.state.navigation.main_tab == MainTab::Issues;
+        let prs_detail_focused = self.state.navigation.focus == FocusTarget::Main
+            && self.state.navigation.main_tab == MainTab::Prs;
 
         match key.code {
             KeyCode::Char('R') => {
@@ -1045,11 +1055,31 @@ impl App {
                 true
             }
             KeyCode::PageDown if issues_detail_focused => {
-                self.dispatch(AppEvent::Command(AppCommand::GitHubIssueDetailPageScroll(1)));
+                self.dispatch(AppEvent::Command(AppCommand::GitHubIssueDetailPageScroll(
+                    1,
+                )));
                 true
             }
             KeyCode::PageUp if issues_detail_focused => {
-                self.dispatch(AppEvent::Command(AppCommand::GitHubIssueDetailPageScroll(-1)));
+                self.dispatch(AppEvent::Command(AppCommand::GitHubIssueDetailPageScroll(
+                    -1,
+                )));
+                true
+            }
+            KeyCode::Char('j') if prs_detail_focused => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubPrDetailScroll(1)));
+                true
+            }
+            KeyCode::Char('k') if prs_detail_focused => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubPrDetailScroll(-1)));
+                true
+            }
+            KeyCode::PageDown if prs_detail_focused => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubPrDetailPageScroll(1)));
+                true
+            }
+            KeyCode::PageUp if prs_detail_focused => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubPrDetailPageScroll(-1)));
                 true
             }
             KeyCode::Enter if gh_issues_list_focused => {
@@ -1057,12 +1087,7 @@ impl App {
                 true
             }
             KeyCode::Enter if gh_prs_list_focused => {
-                self.dispatch(AppEvent::Command(AppCommand::Navigation(
-                    NavCommand::SelectMainTab(MainTab::Prs),
-                )));
-                self.dispatch(AppEvent::Command(AppCommand::Navigation(
-                    NavCommand::SetFocus(FocusTarget::Main),
-                )));
+                self.dispatch(AppEvent::Command(AppCommand::GitHubOpenSelected));
                 true
             }
             _ => false,
@@ -1905,8 +1930,8 @@ mod tests {
     fn double_click_github_issue_opens_issues_detail() {
         use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 
-        use crate::layout::FocusTarget;
         use crate::github::{GitHubLeftPane, Issue, IssueState};
+        use crate::layout::FocusTarget;
         use crate::navigation::{LeftNavTab, MainTab, NavCommand};
         use crate::state::{AppCommand, AppEvent, GitHubState};
         use crate::ui::github_issue_interaction_at;
@@ -1935,9 +1960,7 @@ mod tests {
 
         let area = app.state().layout.rects.left_content;
         let row = (area.y..area.y.saturating_add(area.height))
-            .find(|row| {
-                github_issue_interaction_at(app.state(), area, area.x + 2, *row).is_some()
-            })
+            .find(|row| github_issue_interaction_at(app.state(), area, area.x + 2, *row).is_some())
             .expect("github issue row");
         let mouse = MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
