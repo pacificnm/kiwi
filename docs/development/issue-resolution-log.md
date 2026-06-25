@@ -222,6 +222,13 @@ Format for new entries:
 - **Files:** `search/content.rs`, `search/io.rs`, SPEC-007
 - **Verify:** JSON/line parser tests, ripgrep/grep integration tests when tools installed; manual: Search tab → Content mode (`Ctrl+M`), search for a string, confirm matches with line previews.
 
+### Search UI in left Search tab (GitHub #40, SPEC-007)
+
+- **Symptom:** Search left pane needed complete interaction wiring: global focus shortcut, result selection affordances, and preview navigation to content line numbers.
+- **Fix:** Extended `PreviewFile` with optional `line` so Enter on a content hit scrolls Preview to that line; added global `/` to focus Search tab; improved search pane with selection marker (`▸`), empty-state hints, and status shortcuts (`Enter`, `e`, `Ctrl+M`).
+- **Files:** `ui/search.rs`, `app.rs`, `preview/state.rs`, `state/event.rs`, `state/reducer.rs`, keyboard-shortcuts.md, SPEC-007
+- **Verify:** preview line scroll + search selection reducer tests, search render tests; manual: `/` opens Search, pick content result with Enter, confirm Preview jumps to match line.
+
 ---
 
 ## Reporting New Issues

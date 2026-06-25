@@ -83,7 +83,10 @@ pub enum AppCommand {
     #[cfg_attr(not(test), allow(dead_code))]
     FileTreeRefresh,
     FileTreeMoveSelection(i32),
-    PreviewFile(PathBuf),
+    PreviewFile {
+        path: PathBuf,
+        line: Option<u32>,
+    },
     PreviewScroll(i32),
     PreviewPageScroll(i32),
     #[cfg_attr(not(test), allow(dead_code))]

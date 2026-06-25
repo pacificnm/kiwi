@@ -14,10 +14,11 @@ pub struct PreviewState {
     pub load_error: Option<String>,
     pub loading: bool,
     pub preserve_scroll_on_load: bool,
+    pub goto_line: Option<u32>,
 }
 
 impl PreviewState {
-    pub fn begin_load(&mut self, path: PathBuf) {
+    pub fn begin_load(&mut self, path: PathBuf, line: Option<u32>) {
         self.path = Some(path);
         self.lines.clear();
         self.scroll_offset = 0;
@@ -30,12 +31,14 @@ impl PreviewState {
         self.load_error = None;
         self.loading = true;
         self.preserve_scroll_on_load = false;
+        self.goto_line = line;
     }
 
     pub fn begin_reload(&mut self) {
         self.load_error = None;
         self.loading = true;
         self.preserve_scroll_on_load = true;
+        self.goto_line = None;
     }
 
     pub fn apply_loaded(
@@ -58,6 +61,10 @@ impl PreviewState {
         if preserve_scroll {
             let max_offset = self.lines.len().saturating_sub(viewport_rows.max(1));
             self.scroll_offset = previous_scroll.min(max_offset);
+        } else if let Some(line) = self.goto_line.take() {
+            let line_index = line.saturating_sub(1) as usize;
+            let max_offset = self.lines.len().saturating_sub(viewport_rows.max(1));
+            self.scroll_offset = line_index.min(max_offset);
         } else {
             self.scroll_offset = 0;
         }
@@ -99,6 +106,26 @@ impl PreviewState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn apply_loaded_scrolls_to_requested_line() {
+        let mut state = PreviewState::default();
+        state.begin_load(PathBuf::from("/tmp/a.rs"), Some(42));
+        state.apply_loaded(
+            PathBuf::from("/tmp/a.rs"),
+            super::super::loader::PreviewLoadResult {
+                lines: (0..100).map(|index| format!("line {index}")).collect(),
+                truncated: false,
+                oversize: false,
+                binary: false,
+                lossy_utf8: false,
+                file_size: 1,
+                error: None,
+            },
+            10,
+        );
+        assert_eq!(state.scroll_offset, 41);
+    }
 
     #[test]
     fn apply_loaded_preserves_scroll_when_requested() {

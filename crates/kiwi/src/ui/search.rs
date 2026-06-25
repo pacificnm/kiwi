@@ -158,9 +158,19 @@ fn render_status_line(frame: &mut Frame<'_>, area: Rect, state: &AppState, theme
     } else if let Some(error) = &state.search.error {
         error.clone()
     } else if state.search.truncated {
-        format!("{} results (truncated)", state.search.results.len())
+        format!(
+            "{} results (truncated) · Enter open · e editor · Ctrl+M mode",
+            state.search.results.len()
+        )
+    } else if state.search.query.is_empty() {
+        "Type to search · Ctrl+M mode".to_string()
+    } else if state.search.results.is_empty() {
+        "No results · Ctrl+M mode".to_string()
     } else {
-        format!("{} results", state.search.results.len())
+        format!(
+            "{} results · Enter open · e editor · Ctrl+M mode",
+            state.search.results.len()
+        )
     };
 
     frame.render_widget(
@@ -189,6 +199,20 @@ fn render_results(
         lines.push(line);
     }
 
+    if lines.is_empty() {
+        let hint = if state.search.query.is_empty() {
+            "Type to search files or content"
+        } else if state.search.running {
+            "Searching…"
+        } else {
+            "No matches"
+        };
+        lines.push(Line::from(Span::styled(
+            truncate_line(hint, max_width),
+            theme.get(SemanticRole::Muted),
+        )));
+    }
+
     frame.render_widget(Clear, area);
     frame.render_widget(Paragraph::new(lines).style(chrome_style(theme)), area);
 }
@@ -215,8 +239,9 @@ fn render_result_line(
     }
 
     let label = result_label(result, state.search.mode);
+    let prefix = if selected { "▸ " } else { "  " };
     Some(Line::from(Span::styled(
-        truncate_line(&label, max_width),
+        truncate_line(&format!("{prefix}{label}"), max_width),
         style,
     )))
 }
