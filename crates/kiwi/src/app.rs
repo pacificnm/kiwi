@@ -1,5 +1,4 @@
 use std::io::stdout;
-use std::thread::JoinHandle;
 use std::time::Duration;
 
 use crossterm::event::{
@@ -11,7 +10,7 @@ use ratatui::Terminal;
 use crate::bootstrap::StartupContext;
 use crate::layout::{shell_pty_size, FocusTarget};
 use crate::navigation::map_key;
-use crate::shell::{encode_key, spawn_output_reader, ShellSession};
+use crate::shell::{encode_key, ShellOutputReader, ShellSession};
 use crate::state::{reduce, AppCommand, AppEvent, AppState, EventChannel, SideEffect};
 use crate::ui::{draw_frame, map_mouse_click, mouse_interactions_enabled};
 
@@ -20,7 +19,7 @@ pub struct App {
     terminal: crate::terminal::TerminalGuard,
     events: EventChannel,
     shell: Option<ShellSession>,
-    shell_io: Option<JoinHandle<()>>,
+    shell_io: Option<ShellOutputReader>,
 }
 
 impl App {
@@ -58,7 +57,7 @@ impl App {
         let shell_io = shell
             .as_ref()
             .and_then(|session| session.try_clone_reader().ok())
-            .map(|reader| spawn_output_reader(reader, events.sender()));
+            .map(|reader| ShellOutputReader::spawn(reader, events.sender()));
 
         Self {
             state,
@@ -110,15 +109,19 @@ impl App {
             }
         }
 
-        self.shutdown();
+        self.shutdown(&mut terminal);
     }
 
-    fn shutdown(&mut self) {
-        if let Some(handle) = self.shell_io.take() {
-            let _ = handle.join();
-        }
-        self.shell.take();
+    fn shutdown(&mut self, terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) {
+        let _ = terminal.show_cursor();
         crate::shutdown::cleanup_terminal(&mut self.terminal);
+
+        if let Some(mut shell) = self.shell.take() {
+            shell.shutdown();
+        }
+        if let Some(reader) = self.shell_io.take() {
+            reader.abandon();
+        }
     }
 
     fn process_pending_events(&mut self) -> bool {
