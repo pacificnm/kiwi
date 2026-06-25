@@ -592,6 +592,7 @@ mod tests {
                 effect,
                 SideEffect::SpawnGitHubIssueComment { .. }
                     | SideEffect::SpawnGitHubIssueList
+                    | SideEffect::SpawnGitHubPrList
                     | SideEffect::SpawnGitHubIssueDetail { .. }
                     | SideEffect::SpawnGitHubPrDetail { .. }
             )

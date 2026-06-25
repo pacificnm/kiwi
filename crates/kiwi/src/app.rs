@@ -26,7 +26,7 @@ use crate::github::{
     spawn_github_auth_check, spawn_github_issue_comment, spawn_github_issue_create_branch,
     spawn_github_issue_detail_load, spawn_github_issue_label_apply, spawn_github_issue_list_load,
     spawn_github_open_browser, spawn_github_pr_create, spawn_github_pr_detail_load,
-    spawn_github_repo_labels_load,
+    spawn_github_pr_list_load, spawn_github_repo_labels_load,
 };
 use crate::layout::{agent_pty_size, shell_pty_size, FocusTarget};
 use crate::navigation::{map_key, LeftNavTab, MainTab, NavCommand};
@@ -40,9 +40,9 @@ use crate::state::{
 };
 use crate::ui::git_interaction_at;
 use crate::ui::{
-    draw_frame, file_tree_interaction_at, github_issue_interaction_at, map_mouse_click,
-    mouse_interactions_enabled, palette_match_at, search_interaction_at, DoubleClickTarget,
-    DoubleClickTracker, FileTreeMouseAction,
+    draw_frame, file_tree_interaction_at, github_issue_interaction_at, github_pr_interaction_at,
+    map_mouse_click, mouse_interactions_enabled, palette_match_at, search_interaction_at,
+    DoubleClickTarget, DoubleClickTracker, FileTreeMouseAction,
 };
 use crate::watcher::RepoWatcher;
 use crate::workspace::{load_palette_history, save_palette_history};
@@ -445,6 +445,13 @@ impl App {
                         self.events.sender(),
                     );
                 }
+                SideEffect::SpawnGitHubPrList => {
+                    spawn_github_pr_list_load(
+                        self.state.repo_root.clone(),
+                        self.state.config.github.command.clone(),
+                        self.events.sender(),
+                    );
+                }
                 SideEffect::SpawnGitHubIssueDetail { number } => {
                     spawn_github_issue_detail_load(
                         self.state.repo_root.clone(),
@@ -793,6 +800,29 @@ impl App {
         }
 
         if self.state.navigation.left_tab == LeftNavTab::Gh
+            && self.state.github.left_pane == crate::github::GitHubLeftPane::Prs
+        {
+            if let Some(index) = github_pr_interaction_at(
+                &self.state,
+                self.state.layout.rects.left_content,
+                mouse.column,
+                mouse.row,
+            ) {
+                let _ = self.dispatch(AppEvent::Command(AppCommand::Navigation(
+                    crate::navigation::NavCommand::SetFocus(FocusTarget::Left),
+                )));
+                if self
+                    .double_click
+                    .register(DoubleClickTarget::GitHubPr(index))
+                {
+                    let _ = self.dispatch(AppEvent::Command(AppCommand::GitHubSelectPr(index)));
+                    return self.dispatch(AppEvent::Command(AppCommand::GitHubOpenSelected));
+                }
+                return self.dispatch(AppEvent::Command(AppCommand::GitHubSelectPr(index)));
+            }
+        }
+
+        if self.state.navigation.left_tab == LeftNavTab::Gh
             && self.state.github.left_pane == crate::github::GitHubLeftPane::Issues
         {
             if let Some(index) = github_issue_interaction_at(
@@ -1045,6 +1075,14 @@ impl App {
                 self.dispatch(AppEvent::Command(AppCommand::GitHubSelectLeftPane(
                     crate::github::GitHubLeftPane::Prs,
                 )));
+                true
+            }
+            KeyCode::Char('j') if gh_prs_list_focused => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubMovePrSelection(1)));
+                true
+            }
+            KeyCode::Char('k') if gh_prs_list_focused => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubMovePrSelection(-1)));
                 true
             }
             KeyCode::Char('j') if gh_issues_list_focused => {

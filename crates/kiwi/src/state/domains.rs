@@ -4,7 +4,7 @@ use std::time::SystemTime;
 use crate::agent::AgentStatus;
 use crate::diff::{DiffLine, DiffSource, FileDiffLoadResult};
 use crate::git::GitFileEntry;
-use crate::github::Issue;
+use crate::github::{Issue, PullRequest};
 use crate::layout::FocusTarget;
 use crate::shell::ScrollbackBuffer;
 
@@ -156,6 +156,11 @@ pub struct GitHubState {
     pub issues_error: Option<String>,
     pub issues_scroll_offset: usize,
     pub issues_loaded_at: Option<SystemTime>,
+    pub prs: Vec<PullRequest>,
+    pub prs_loading: bool,
+    pub prs_error: Option<String>,
+    pub prs_scroll_offset: usize,
+    pub prs_loaded_at: Option<SystemTime>,
     pub issue_detail_number: Option<u64>,
     pub issue_detail: Option<crate::github::IssueDetail>,
     pub issue_detail_loading: bool,

@@ -66,6 +66,9 @@ pub enum AppEvent {
     GitHubIssuesLoaded {
         result: crate::github::IssueListLoadResult,
     },
+    GitHubPrsLoaded {
+        result: crate::github::PrListLoadResult,
+    },
     GitHubIssueDetailLoaded {
         number: u32,
         result: crate::github::IssueDetailLoadResult,
@@ -106,7 +109,9 @@ pub enum AppCommand {
     RequestGitRefresh,
     GitHubRefresh,
     GitHubMoveIssueSelection(i32),
+    GitHubMovePrSelection(i32),
     GitHubSelectIssue(usize),
+    GitHubSelectPr(usize),
     GitHubOpenSelected,
     GitHubSelectLeftPane(crate::github::GitHubLeftPane),
     GitHubIssueDetailScroll(i32),
@@ -232,6 +237,7 @@ pub enum SideEffect {
     PasteFromClipboard,
     SpawnGitHubAuthCheck,
     SpawnGitHubIssueList,
+    SpawnGitHubPrList,
     SpawnGitHubIssueDetail {
         number: u32,
     },

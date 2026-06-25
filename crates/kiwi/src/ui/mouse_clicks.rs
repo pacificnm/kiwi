@@ -9,6 +9,7 @@ pub enum DoubleClickTarget {
     SearchResult(usize),
     GitFile(usize),
     GitHubIssue(usize),
+    GitHubPr(usize),
 }
 
 #[derive(Debug, Default)]
