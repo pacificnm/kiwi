@@ -93,6 +93,9 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         AppCommand::PreviewFile { path, line } => reduce_preview_file(state, path, line),
         AppCommand::PreviewScroll(delta) => reduce_preview_scroll(state, delta),
         AppCommand::PreviewPageScroll(delta) => reduce_preview_page_scroll(state, delta),
+        AppCommand::DiffScroll(delta) => reduce_diff_scroll(state, delta),
+        AppCommand::DiffPageScroll(delta) => reduce_diff_page_scroll(state, delta),
+        AppCommand::DiffHorizontalScroll(delta) => reduce_diff_horizontal_scroll(state, delta),
         AppCommand::SearchSetQuery(query) => reduce_search_set_query(state, query),
         AppCommand::SearchAppendChar(ch) => reduce_search_append_char(state, ch),
         AppCommand::SearchBackspace => reduce_search_backspace(state),
@@ -541,7 +544,33 @@ fn reduce_file_tree_children_loaded(
 }
 
 fn preview_viewport_rows(state: &AppState) -> usize {
+    diff_viewport_rows(state)
+}
+
+fn diff_viewport_rows(state: &AppState) -> usize {
     state.layout.rects.main_content.height.saturating_sub(4) as usize
+}
+
+fn diff_text_width(state: &AppState) -> usize {
+    let area_width = state.layout.rects.main_content.width.saturating_sub(4) as usize;
+    let gutter = diff_gutter_width(&state.diff.lines);
+    area_width.saturating_sub(gutter).max(1)
+}
+
+fn diff_gutter_width(lines: &[crate::diff::DiffLine]) -> usize {
+    let old_width = max_lineno_width(lines.iter().filter_map(|line| line.old_lineno));
+    let new_width = max_lineno_width(lines.iter().filter_map(|line| line.new_lineno));
+    if old_width == 0 && new_width == 0 {
+        return 0;
+    }
+    old_width + 1 + new_width + 2
+}
+
+fn max_lineno_width(values: impl Iterator<Item = u32>) -> usize {
+    values
+        .map(|value| value.ilog10() as usize + 1)
+        .max()
+        .unwrap_or(1)
 }
 
 fn reduce_preview_file(state: &mut AppState, path: PathBuf, line: Option<u32>) -> Vec<SideEffect> {
@@ -590,6 +619,36 @@ fn reduce_preview_page_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffec
     state
         .preview
         .page_scroll(delta, preview_viewport_rows(state));
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_diff_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    if delta == 0 {
+        return Vec::new();
+    }
+
+    state.diff.scroll(delta, diff_viewport_rows(state));
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_diff_page_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    if delta == 0 {
+        return Vec::new();
+    }
+
+    state.diff.page_scroll(delta, diff_viewport_rows(state));
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_diff_horizontal_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    if delta == 0 || state.config.diff.word_wrap {
+        return Vec::new();
+    }
+
+    state.diff.scroll_horizontal(delta, diff_text_width(state));
     state.dirty = true;
     Vec::new()
 }
@@ -1305,6 +1364,26 @@ mod tests {
 
         assert!(!state.diff.loading);
         assert_eq!(state.diff.lines.len(), 1);
+    }
+
+    #[test]
+    fn diff_scroll_moves_viewport() {
+        let mut state = test_state();
+        state.diff.selected_path = Some("src/main.rs".to_string());
+        state.diff.lines = (0..100)
+            .map(|index| crate::diff::DiffLine {
+                kind: crate::diff::DiffLineKind::Context,
+                content: format!(" line {index}"),
+                old_lineno: Some(index as u32 + 1),
+                new_lineno: Some(index as u32 + 1),
+            })
+            .collect();
+
+        reduce(&mut state, AppEvent::Command(AppCommand::DiffScroll(10)));
+        assert_eq!(state.diff.scroll_offset, 10);
+
+        reduce(&mut state, AppEvent::Command(AppCommand::DiffScroll(-20)));
+        assert_eq!(state.diff.scroll_offset, 0);
     }
 
     #[test]

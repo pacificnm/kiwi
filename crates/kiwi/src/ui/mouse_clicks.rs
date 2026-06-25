@@ -7,6 +7,7 @@ pub const DOUBLE_CLICK_INTERVAL: Duration = Duration::from_millis(500);
 pub enum DoubleClickTarget {
     FileTree(PathBuf),
     SearchResult(usize),
+    GitFile(usize),
 }
 
 #[derive(Debug, Default)]

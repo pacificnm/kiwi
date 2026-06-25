@@ -11,6 +11,7 @@ use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
 
 use super::agent::render_agent_pane;
+use super::diff::render_diff_pane;
 use super::file_tree::render_file_tree_pane;
 use super::git::render_git_pane;
 use super::logs::render_logs_pane;
@@ -93,6 +94,14 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
         );
     } else if state.navigation.main_tab == MainTab::Preview {
         render_preview_pane(
+            frame,
+            state.layout.rects.main_content,
+            state.navigation.focus.is_focused(Region::MainContent),
+            &state.theme,
+            state,
+        );
+    } else if state.navigation.main_tab == MainTab::Diff {
+        render_diff_pane(
             frame,
             state.layout.rects.main_content,
             state.navigation.focus.is_focused(Region::MainContent),
