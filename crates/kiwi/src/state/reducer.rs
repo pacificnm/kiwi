@@ -47,13 +47,28 @@ fn apply_navigation(state: &mut AppState, command: NavCommand) {
 }
 
 fn reduce_terminal_resize(state: &mut AppState, width: u16, height: u16) -> Vec<SideEffect> {
-    if let Ok(layout) = compute_layout(width, height, state.config.app.left_width) {
-        if state.layout != layout {
-            state.layout = layout;
-            state.dirty = true;
-        }
+    let Ok(layout) = compute_layout(width, height, state.config.app.left_width) else {
+        return Vec::new();
+    };
+
+    if state.layout == layout {
+        return Vec::new();
     }
-    Vec::new()
+
+    state.layout = layout;
+    state.dirty = true;
+
+    if !state.shell.running {
+        return Vec::new();
+    }
+
+    let (cols, rows) = shell_pty_size(&state.layout.rects);
+    if cols == state.shell.cols && rows == state.shell.rows {
+        return Vec::new();
+    }
+
+    state.shell.apply_resize(cols, rows);
+    vec![SideEffect::ResizeShell { cols, rows }]
 }
 
 fn reduce_git_refresh_requested(state: &mut AppState) -> Vec<SideEffect> {
@@ -232,6 +247,27 @@ mod tests {
         );
         assert_ne!(state.layout, before);
         assert!(state.dirty);
+    }
+
+    #[test]
+    fn terminal_resize_emits_shell_resize_when_running() {
+        let mut state = test_state();
+        state.shell.running = true;
+        state.shell.cols = shell_pty_size(&state.layout.rects).0;
+        state.shell.rows = shell_pty_size(&state.layout.rects).1;
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::TerminalResize {
+                width: 160,
+                height: 50,
+            },
+        );
+
+        let (cols, rows) = shell_pty_size(&state.layout.rects);
+        assert!(effects.contains(&SideEffect::ResizeShell { cols, rows }));
+        assert_eq!(state.shell.cols, cols);
+        assert_eq!(state.shell.rows, rows);
     }
 
     #[test]

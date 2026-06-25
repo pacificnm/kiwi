@@ -4,6 +4,7 @@ use std::fmt;
 pub enum ShellError {
     Spawn { message: String },
     Write { message: String },
+    Resize { message: String },
 }
 
 impl ShellError {
@@ -18,6 +19,12 @@ impl ShellError {
             message: message.into(),
         }
     }
+
+    pub fn resize(message: impl Into<String>) -> Self {
+        Self::Resize {
+            message: message.into(),
+        }
+    }
 }
 
 impl fmt::Display for ShellError {
@@ -25,6 +32,7 @@ impl fmt::Display for ShellError {
         match self {
             Self::Spawn { message } => write!(f, "failed to spawn shell: {message}"),
             Self::Write { message } => write!(f, "failed to write to shell: {message}"),
+            Self::Resize { message } => write!(f, "failed to resize shell pty: {message}"),
         }
     }
 }

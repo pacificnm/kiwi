@@ -86,6 +86,25 @@ impl ShellSession {
             .map_err(|err| ShellError::write(err.to_string()))
     }
 
+    pub fn resize(&mut self, cols: u16, rows: u16) -> Result<(), ShellError> {
+        if cols == self.cols && rows == self.rows {
+            return Ok(());
+        }
+
+        self.master
+            .resize(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|err| ShellError::resize(err.to_string()))?;
+
+        self.cols = cols;
+        self.rows = rows;
+        Ok(())
+    }
+
     pub fn shutdown(&mut self) {
         self.writer.take();
         let _ = self.child.kill();
@@ -149,5 +168,25 @@ mod tests {
         assert!(session.is_running());
         session.shutdown();
         assert!(!session.is_running());
+    }
+
+    #[test]
+    fn resize_updates_pty_dimensions() {
+        if !Path::new("/bin/bash").exists() && !Path::new("/usr/bin/bash").exists() {
+            return;
+        }
+
+        let repo = std::env::temp_dir().join("kiwi-shell-resize-test");
+        std::fs::create_dir_all(&repo).expect("create temp repo");
+
+        let settings = ShellSettings {
+            command: "bash".to_string(),
+            args: Vec::new(),
+        };
+        let mut session = ShellSession::spawn(&repo, &settings, 80, 24).expect("spawn shell");
+        session.resize(100, 30).expect("resize pty");
+        assert_eq!(session.cols, 100);
+        assert_eq!(session.rows, 30);
+        session.shutdown();
     }
 }

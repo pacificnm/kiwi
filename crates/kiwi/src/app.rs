@@ -151,6 +151,11 @@ impl App {
                         let _ = shell.write(&data);
                     }
                 }
+                SideEffect::ResizeShell { cols, rows } => {
+                    if let Some(shell) = self.shell.as_mut() {
+                        let _ = shell.resize(cols, rows);
+                    }
+                }
                 SideEffect::SaveWorkspace | SideEffect::LaunchEditor(_) => {}
             }
         }
