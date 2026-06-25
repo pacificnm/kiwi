@@ -18,7 +18,7 @@ use crate::editor::{
 };
 use crate::file_tree::spawn_directory_load;
 use crate::layout::{agent_pty_size, shell_pty_size, FocusTarget};
-use crate::navigation::{map_key, LeftNavTab, MainTab};
+use crate::navigation::{map_key, LeftNavTab, MainTab, NavCommand};
 use crate::preview::spawn_preview_load;
 use crate::search::{spawn_search, DebounceTimer, SearchCancelHandle, SearchJob, SearchMode};
 use crate::shell::{encode_key, ShellOutputReader, ShellSession};
@@ -570,6 +570,10 @@ impl App {
             return self.dispatch(AppEvent::Command(AppCommand::PaletteOpen));
         }
 
+        if self.is_search_focus_key(key) {
+            return self.dispatch_search_focus();
+        }
+
         if self.state.palette.open {
             return self.handle_palette_key(key);
         }
@@ -702,9 +706,27 @@ impl App {
         let Some(result) = self.state.search.results.get(self.state.search.selected) else {
             return false;
         };
-        self.dispatch(AppEvent::Command(AppCommand::PreviewFile(
-            result.path.clone(),
+        self.dispatch(AppEvent::Command(AppCommand::PreviewFile {
+            path: result.path.clone(),
+            line: result.line,
+        }))
+    }
+
+    fn dispatch_search_focus(&mut self) -> bool {
+        if self.search_input_active() {
+            return false;
+        }
+
+        let _ = self.dispatch(AppEvent::Command(AppCommand::Navigation(
+            NavCommand::SelectLeftTab(LeftNavTab::Search),
+        )));
+        self.dispatch(AppEvent::Command(AppCommand::Navigation(
+            NavCommand::SetFocus(FocusTarget::Left),
         )))
+    }
+
+    fn is_search_focus_key(&self, key: crossterm::event::KeyEvent) -> bool {
+        key.modifiers.is_empty() && matches!(key.code, KeyCode::Char('/'))
     }
 
     fn dispatch_open_editor(&mut self) -> bool {
@@ -765,7 +787,10 @@ impl App {
         if node.is_dir {
             self.dispatch(AppEvent::Command(AppCommand::FileTreeExpand(path)))
         } else {
-            self.dispatch(AppEvent::Command(AppCommand::PreviewFile(path)))
+            self.dispatch(AppEvent::Command(AppCommand::PreviewFile {
+                path,
+                line: None,
+            }))
         }
     }
 
@@ -781,7 +806,10 @@ impl App {
             return false;
         }
 
-        self.dispatch(AppEvent::Command(AppCommand::PreviewFile(path)))
+        self.dispatch(AppEvent::Command(AppCommand::PreviewFile {
+            path,
+            line: None,
+        }))
     }
 
     fn handle_preview_key(&mut self, key: crossterm::event::KeyEvent) -> bool {

@@ -76,10 +76,12 @@ When the agent process exits, the pane footer shows the exit code and the restar
 
 | Key | Action |
 |-----|--------|
-| `/` | Focus search input |
+| `/` (global) | Focus Search tab and input |
+| `/` (while focused) | Ignored (use query prefix in input) |
 | `Ctrl+M` | Toggle file/content mode |
-| `Enter` | Open selection |
+| `Enter` | Open selection in Preview (content hits jump to line) |
 | `e` | Open in editor |
+| `j` / `k` | Move selection |
 | `Esc` | Clear query |
 
 ## Preview (main, Preview tab)

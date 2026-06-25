@@ -78,7 +78,7 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         AppCommand::FileTreeSelect(path) => reduce_file_tree_select(state, path),
         AppCommand::FileTreeRefresh => reduce_file_tree_refresh(state),
         AppCommand::FileTreeMoveSelection(delta) => reduce_file_tree_move_selection(state, delta),
-        AppCommand::PreviewFile(path) => reduce_preview_file(state, path),
+        AppCommand::PreviewFile { path, line } => reduce_preview_file(state, path, line),
         AppCommand::PreviewScroll(delta) => reduce_preview_scroll(state, delta),
         AppCommand::PreviewPageScroll(delta) => reduce_preview_page_scroll(state, delta),
         AppCommand::SearchSetQuery(query) => reduce_search_set_query(state, query),
@@ -433,8 +433,12 @@ fn preview_viewport_rows(state: &AppState) -> usize {
     state.layout.rects.main_content.height.saturating_sub(4) as usize
 }
 
-fn reduce_preview_file(state: &mut AppState, path: PathBuf) -> Vec<SideEffect> {
-    state.preview.begin_load(path.clone());
+fn reduce_preview_file(
+    state: &mut AppState,
+    path: PathBuf,
+    line: Option<u32>,
+) -> Vec<SideEffect> {
+    state.preview.begin_load(path.clone(), line);
     state
         .navigation
         .apply(NavCommand::SelectMainTab(MainTab::Preview));
@@ -663,7 +667,7 @@ mod tests {
     use super::*;
     use crate::file_tree::{DirectoryEntry, FileTreeState};
     use crate::preview::{PreviewLoadResult, PreviewState};
-    use crate::search::{SearchMode, SearchState};
+    use crate::search::{SearchMode, SearchResult, SearchState};
     use crate::state::domains::{
         AgentState, CommandPaletteState, DiffState, GitHubState, GitState, ShellState,
         StatusBarState, WorkspaceMeta,
@@ -1184,7 +1188,10 @@ mod tests {
         let path = PathBuf::from("src/main.rs");
         let effects = reduce(
             &mut state,
-            AppEvent::Command(AppCommand::PreviewFile(path.clone())),
+            AppEvent::Command(AppCommand::PreviewFile {
+                path: path.clone(),
+                line: None,
+            }),
         );
         assert!(effects.contains(&SideEffect::LoadPreviewFile(path)));
         assert_eq!(state.navigation.main_tab, MainTab::Preview);
@@ -1198,7 +1205,10 @@ mod tests {
         let path = PathBuf::from("README.md");
         reduce(
             &mut state,
-            AppEvent::Command(AppCommand::PreviewFile(path.clone())),
+            AppEvent::Command(AppCommand::PreviewFile {
+                path: path.clone(),
+                line: None,
+            }),
         );
         reduce(
             &mut state,
@@ -1217,6 +1227,59 @@ mod tests {
         );
         assert!(!state.preview.loading);
         assert_eq!(state.preview.lines, vec!["hello".to_string()]);
+    }
+
+    #[test]
+    fn preview_file_scrolls_to_requested_line() {
+        let mut state = test_state();
+        let path = PathBuf::from("/tmp/repo/src/main.rs");
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PreviewFile {
+                path: path.clone(),
+                line: Some(25),
+            }),
+        );
+        reduce(
+            &mut state,
+            AppEvent::PreviewLoaded {
+                path: path.clone(),
+                result: PreviewLoadResult {
+                    lines: (1..=50).map(|index| format!("line {index}")).collect(),
+                    truncated: false,
+                    oversize: false,
+                    binary: false,
+                    lossy_utf8: false,
+                    file_size: 1,
+                    error: None,
+                },
+            },
+        );
+        assert_eq!(state.preview.scroll_offset, 24);
+        assert_eq!(state.navigation.main_tab, MainTab::Preview);
+    }
+
+    #[test]
+    fn search_selection_preview_command_includes_content_line() {
+        let mut state = test_state();
+        let path = PathBuf::from("src/main.rs");
+        state.search.results = vec![SearchResult::content(
+            path.clone(),
+            12,
+            "fn main()".to_string(),
+        )];
+        state.search.selected = 0;
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PreviewFile {
+                path: path.clone(),
+                line: Some(12),
+            }),
+        );
+
+        assert!(effects.contains(&SideEffect::LoadPreviewFile(path)));
+        assert_eq!(state.navigation.main_tab, MainTab::Preview);
     }
 
     #[test]
