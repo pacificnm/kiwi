@@ -5,7 +5,8 @@ use crate::clipboard::resolve_copy_text_for_focus;
 use crate::editor::resolve_editor_target;
 use crate::navigation::{MainTab, NavCommand};
 use crate::state::{
-    diff_move_file_effects, diff_set_source_effects, git_refresh_effects, AppState, SideEffect,
+    diff_move_file_effects, diff_set_source_effects, git_refresh_effects, github_refresh_effects,
+    AppState, SideEffect,
 };
 
 pub use fuzzy::{best_fuzzy_score, filter_ranked};
@@ -129,10 +130,7 @@ pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideE
             vec![SideEffect::Quit]
         }
         PaletteAction::RequestGitRefresh => git_refresh_effects(state),
-        PaletteAction::RequestGitHubRefresh => {
-            state.dirty = true;
-            vec![SideEffect::SpawnGitHubRefresh]
-        }
+        PaletteAction::RequestGitHubRefresh => github_refresh_effects(state),
         PaletteAction::AgentRestart => {
             if state.navigation.main_tab != MainTab::Agent {
                 return Vec::new();
@@ -294,7 +292,7 @@ mod tests {
             .position(|command| command.id == "github.refresh")
             .expect("github refresh");
         let effects = execute_command(&mut state, index);
-        assert!(effects.contains(&SideEffect::SpawnGitHubRefresh));
+        assert!(effects.contains(&SideEffect::SpawnGitHubAuthCheck));
     }
 
     #[test]

@@ -54,6 +54,7 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
         } => reduce_editor_launch_failed(state, path, error, show_modal),
         AppEvent::FsChanged { paths } => reduce_fs_changed(state, paths),
         AppEvent::DiffLoaded { result } => reduce_diff_loaded(state, result),
+        AppEvent::GitHubAuthChecked { result } => reduce_github_auth_checked(state, result),
     }
 }
 
@@ -61,13 +62,16 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
     match command {
         AppCommand::Navigation(nav) => {
             apply_navigation(state, nav);
-            agent_spawn_effects_if_needed(state)
+            let mut effects = agent_spawn_effects_if_needed(state);
+            effects.extend(github_first_access_effects(state));
+            effects
         }
         AppCommand::Quit => {
             state.dirty = true;
             vec![SideEffect::Quit]
         }
         AppCommand::RequestGitRefresh => reduce_git_refresh_requested(state),
+        AppCommand::GitHubRefresh => reduce_github_refresh_requested(state),
         AppCommand::ShellWrite(data) => vec![SideEffect::WriteShell(data)],
         AppCommand::ShellScroll(delta) => reduce_shell_scroll(state, delta),
         AppCommand::AgentWrite(data) => vec![SideEffect::WriteAgent(data)],
@@ -183,6 +187,53 @@ pub fn git_refresh_effects(state: &mut AppState) -> Vec<SideEffect> {
 
     state.git.loading = true;
     vec![SideEffect::SpawnGitRefresh]
+}
+
+pub fn github_refresh_effects(state: &mut AppState) -> Vec<SideEffect> {
+    state.dirty = true;
+    state.github.loading = true;
+    state.github.auth_checked = false;
+    vec![SideEffect::SpawnGitHubAuthCheck]
+}
+
+pub fn github_first_access_effects(state: &mut AppState) -> Vec<SideEffect> {
+    if !github_surface_active(state) {
+        return Vec::new();
+    }
+
+    if state.github.auth_checked || state.github.loading {
+        return Vec::new();
+    }
+
+    state.github.loading = true;
+    state.dirty = true;
+    vec![SideEffect::SpawnGitHubAuthCheck]
+}
+
+fn github_surface_active(state: &AppState) -> bool {
+    state.navigation.left_tab == LeftNavTab::Gh
+        || matches!(state.navigation.main_tab, MainTab::Issues | MainTab::Prs)
+}
+
+fn reduce_github_refresh_requested(state: &mut AppState) -> Vec<SideEffect> {
+    github_refresh_effects(state)
+}
+
+fn reduce_github_auth_checked(
+    state: &mut AppState,
+    result: crate::github::GitHubAuthCheckResult,
+) -> Vec<SideEffect> {
+    state.github.loading = false;
+    state.github.auth_checked = true;
+    state.github.auth_ok = result.auth_ok;
+    state.github.error_kind = result.error_kind;
+    state.github.error = if result.auth_ok {
+        None
+    } else {
+        Some(result.message)
+    };
+    state.dirty = true;
+    Vec::new()
 }
 
 fn reduce_git_refresh_requested(state: &mut AppState) -> Vec<SideEffect> {
@@ -536,11 +587,8 @@ fn reduce_diff_move_file(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
 
 pub fn diff_move_file_effects(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
     let paths = changed_file_paths(&state.git.file_entries, state.config.git.show_untracked);
-    let Some(path) = adjacent_changed_file(
-        &paths,
-        state.diff.selected_path.as_deref(),
-        delta,
-    ) else {
+    let Some(path) = adjacent_changed_file(&paths, state.diff.selected_path.as_deref(), delta)
+    else {
         return Vec::new();
     };
 
@@ -1532,11 +1580,9 @@ mod tests {
         assert_eq!(state.diff.selected_path.as_deref(), Some("b.rs"));
         assert_eq!(state.git.selected_path.as_deref(), Some("b.rs"));
         assert!(state.diff.loading);
-        assert!(
-            effects
-                .iter()
-                .any(|effect| matches!(effect, SideEffect::LoadFileDiff { path, .. } if path == "b.rs"))
-        );
+        assert!(effects.iter().any(
+            |effect| matches!(effect, SideEffect::LoadFileDiff { path, .. } if path == "b.rs")
+        ));
     }
 
     #[test]
@@ -1584,6 +1630,58 @@ mod tests {
         assert_eq!(state.diff.selected_path.as_deref(), Some("a.rs"));
         assert_eq!(state.diff.scroll_offset, 42);
         assert_eq!(state.diff.horizontal_scroll_offset, 7);
+    }
+
+    #[test]
+    fn navigating_to_issues_triggers_github_auth_check() {
+        let mut state = test_state();
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::Navigation(NavCommand::SelectMainTab(
+                MainTab::Issues,
+            ))),
+        );
+
+        assert!(state.github.loading);
+        assert!(effects.contains(&SideEffect::SpawnGitHubAuthCheck));
+    }
+
+    #[test]
+    fn github_auth_checked_updates_state() {
+        use crate::github::{GitHubAuthCheckResult, GitHubAuthErrorKind};
+
+        let mut state = test_state();
+        state.github.loading = true;
+
+        reduce(
+            &mut state,
+            AppEvent::GitHubAuthChecked {
+                result: GitHubAuthCheckResult {
+                    auth_ok: false,
+                    error_kind: Some(GitHubAuthErrorKind::NotAuthenticated),
+                    message: "Not logged in".to_string(),
+                },
+            },
+        );
+
+        assert!(state.github.auth_checked);
+        assert!(!state.github.auth_ok);
+        assert_eq!(state.github.error.as_deref(), Some("Not logged in"));
+        assert!(!state.github.loading);
+    }
+
+    #[test]
+    fn github_refresh_rechecks_auth() {
+        let mut state = test_state();
+        state.github.auth_checked = true;
+        state.github.auth_ok = true;
+
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::GitHubRefresh));
+
+        assert!(!state.github.auth_checked);
+        assert!(state.github.loading);
+        assert!(effects.contains(&SideEffect::SpawnGitHubAuthCheck));
     }
 
     #[test]

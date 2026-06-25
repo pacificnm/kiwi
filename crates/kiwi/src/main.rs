@@ -10,6 +10,7 @@ mod diff;
 mod editor;
 mod file_tree;
 mod git;
+mod github;
 mod layout;
 mod navigation;
 mod preview;

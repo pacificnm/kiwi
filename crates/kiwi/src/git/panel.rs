@@ -84,16 +84,17 @@ pub fn adjacent_changed_file(
         return None;
     }
 
-    let current_index = match current.and_then(|path| paths.iter().position(|candidate| candidate == path)) {
-        Some(index) => index,
-        None => {
-            return if delta >= 0 {
-                paths.first().cloned()
-            } else {
-                paths.last().cloned()
-            };
-        }
-    };
+    let current_index =
+        match current.and_then(|path| paths.iter().position(|candidate| candidate == path)) {
+            Some(index) => index,
+            None => {
+                return if delta >= 0 {
+                    paths.first().cloned()
+                } else {
+                    paths.last().cloned()
+                };
+            }
+        };
 
     let next_index =
         (current_index as i32 + delta).clamp(0, paths.len().saturating_sub(1) as i32) as usize;

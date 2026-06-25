@@ -14,6 +14,7 @@ use super::agent::render_agent_pane;
 use super::diff::render_diff_pane;
 use super::file_tree::render_file_tree_pane;
 use super::git::render_git_pane;
+use super::github::{render_github_hub_pane, render_github_main_pane};
 use super::logs::render_logs_pane;
 use super::notifications::render_notifications;
 use super::palette::render_palette_pane;
@@ -70,6 +71,14 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
             &state.theme,
             state,
         );
+    } else if state.navigation.left_tab == LeftNavTab::Gh {
+        render_github_hub_pane(
+            frame,
+            state.layout.rects.left_content,
+            state.navigation.focus.is_focused(Region::LeftContent),
+            &state.theme,
+            state,
+        );
     } else {
         render_pane(
             frame,
@@ -115,6 +124,15 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
             state.navigation.focus.is_focused(Region::MainContent),
             &state.theme,
             state,
+        );
+    } else if matches!(state.navigation.main_tab, MainTab::Issues | MainTab::Prs) {
+        render_github_main_pane(
+            frame,
+            state.layout.rects.main_content,
+            state.navigation.focus.is_focused(Region::MainContent),
+            &state.theme,
+            state,
+            state.navigation.main_tab,
         );
     } else {
         render_pane(
@@ -410,6 +428,8 @@ mod tests {
         state
             .navigation
             .apply(NavCommand::SelectMainTab(MainTab::Issues));
+        state.github.auth_checked = true;
+        state.github.auth_ok = true;
 
         let backend = TestBackend::new(120, 40);
         let mut terminal = Terminal::new(backend).expect("terminal");

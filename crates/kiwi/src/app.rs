@@ -22,6 +22,7 @@ use crate::editor::{
 };
 use crate::file_tree::spawn_directory_load;
 use crate::git::spawn_git_refresh;
+use crate::github::spawn_github_auth_check;
 use crate::layout::{agent_pty_size, shell_pty_size, FocusTarget};
 use crate::navigation::{map_key, LeftNavTab, MainTab, NavCommand};
 use crate::preview::spawn_preview_load;
@@ -424,7 +425,13 @@ impl App {
                     }
                 }
                 SideEffect::SpawnGitHubRefresh => {
-                    // GitHub list refresh will enqueue events in later milestones.
+                    // Issue/PR list refresh will enqueue events in later milestones.
+                }
+                SideEffect::SpawnGitHubAuthCheck => {
+                    spawn_github_auth_check(
+                        self.state.config.github.command.clone(),
+                        self.events.sender(),
+                    );
                 }
                 SideEffect::SpawnAgent => {
                     self.spawn_agent();
@@ -771,6 +778,10 @@ impl App {
             return false;
         }
 
+        if self.github_input_active() && self.handle_github_key(key) {
+            return false;
+        }
+
         if self.search_input_active() && self.handle_search_key(key) {
             return false;
         }
@@ -851,6 +862,34 @@ impl App {
     fn git_input_active(&self) -> bool {
         self.state.navigation.focus == FocusTarget::Left
             && self.state.navigation.left_tab == LeftNavTab::Git
+    }
+
+    fn github_input_active(&self) -> bool {
+        if self.state.palette.open {
+            return false;
+        }
+
+        (self.state.navigation.focus == FocusTarget::Left
+            && self.state.navigation.left_tab == LeftNavTab::Gh)
+            || (self.state.navigation.focus == FocusTarget::Main
+                && matches!(
+                    self.state.navigation.main_tab,
+                    MainTab::Issues | MainTab::Prs
+                ))
+    }
+
+    fn handle_github_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        if !key.modifiers.is_empty() && key.code != KeyCode::Char('R') {
+            return false;
+        }
+
+        match key.code {
+            KeyCode::Char('R') => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubRefresh));
+                true
+            }
+            _ => false,
+        }
     }
 
     fn handle_git_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
