@@ -32,6 +32,12 @@ pub fn hit_test_text(
         return hit_test_preview(state, column, row);
     }
 
+    if state.navigation.main_tab == MainTab::Issues
+        && point_in_rect(column, row, rects.main_content)
+    {
+        return hit_test_issue_detail(state, column, row);
+    }
+
     if state.navigation.main_tab == MainTab::Agent && point_in_rect(column, row, rects.main_content)
     {
         return hit_test_scrollback(
@@ -92,6 +98,48 @@ fn hit_test_preview(
     let max_col = state.preview.lines[line].chars().count();
     Some((
         SelectionPane::Preview,
+        TextPosition {
+            line,
+            col: col.min(max_col),
+        },
+    ))
+}
+
+fn hit_test_issue_detail(
+    state: &AppState,
+    column: u16,
+    row: u16,
+) -> Option<(SelectionPane, TextPosition)> {
+    let detail = state.github.issue_detail.as_ref()?;
+    if detail.display_lines.is_empty() {
+        return None;
+    }
+
+    let inner = block_inner(state.layout.rects.main_content);
+    let content_area = Rect {
+        x: inner.x,
+        y: inner.y,
+        width: inner.width,
+        height: inner.height.saturating_sub(1),
+    };
+
+    if !point_in_rect(column, row, content_area) {
+        return None;
+    }
+
+    let viewport_row = usize::from(row.saturating_sub(content_area.y));
+    let line = state
+        .github
+        .issue_detail_scroll_offset
+        .saturating_add(viewport_row);
+    if line >= detail.display_lines.len() {
+        return None;
+    }
+
+    let col = usize::from(column.saturating_sub(content_area.x));
+    let max_col = detail.display_lines[line].chars().count();
+    Some((
+        SelectionPane::IssueDetail,
         TextPosition {
             line,
             col: col.min(max_col),
@@ -227,5 +275,42 @@ mod tests {
         assert_eq!(pane, SelectionPane::Preview);
         assert_eq!(pos.line, 7);
         assert_eq!(pos.col, 3);
+    }
+
+    #[test]
+    fn hit_test_issue_detail_maps_row_and_column() {
+        use crate::github::{IssueDetail, IssueState};
+
+        let mut state = test_state();
+        state
+            .navigation
+            .apply(NavCommand::SelectMainTab(MainTab::Issues));
+        state.github.issue_detail = Some(IssueDetail {
+            number: 1,
+            title: "Test".to_string(),
+            state: IssueState::Open,
+            author: "user".to_string(),
+            labels: vec![],
+            assignees: vec![],
+            display_lines: (0..20)
+                .map(|i| {
+                    if i == 0 {
+                        "Issue title".to_string()
+                    } else {
+                        "Body line".to_string()
+                    }
+                })
+                .collect(),
+        });
+        state.github.issue_detail_scroll_offset = 3;
+
+        let inner = block_inner(state.layout.rects.main_content);
+        let col = inner.x + 4;
+        let row = inner.y + 2;
+
+        let (pane, pos) = hit_test_text(&state, col, row).expect("hit");
+        assert_eq!(pane, SelectionPane::IssueDetail);
+        assert_eq!(pos.line, 5);
+        assert_eq!(pos.col, 4);
     }
 }

@@ -5,8 +5,8 @@ use crate::clipboard::resolve_copy_text_for_focus;
 use crate::editor::resolve_editor_target;
 use crate::navigation::{MainTab, NavCommand};
 use crate::state::{
-    diff_move_file_effects, diff_set_source_effects, git_refresh_effects, github_refresh_effects,
-    AppState, SideEffect,
+    apply_navigation, diff_move_file_effects, diff_set_source_effects, git_refresh_effects,
+    github_refresh_effects, AppState, SideEffect,
 };
 
 pub use fuzzy::{best_fuzzy_score, filter_ranked};
@@ -138,8 +138,16 @@ pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideE
             state.dirty = true;
             vec![SideEffect::RestartAgent]
         }
-        PaletteAction::Navigation(nav) => apply_navigation(state, nav),
-        PaletteAction::NavigationChain(chain) => apply_navigation_chain(state, chain),
+        PaletteAction::Navigation(nav) => {
+            apply_navigation(state, nav);
+            crate::state::agent_spawn_effects_if_needed(state)
+        }
+        PaletteAction::NavigationChain(chain) => {
+            for nav in chain {
+                apply_navigation(state, *nav);
+            }
+            crate::state::agent_spawn_effects_if_needed(state)
+        }
         PaletteAction::LaunchEditor => {
             let Some(target) = resolve_editor_target(state) else {
                 return Vec::new();
@@ -172,26 +180,6 @@ pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideE
     }
 
     effects
-}
-
-fn apply_navigation(state: &mut AppState, nav: NavCommand) -> Vec<SideEffect> {
-    let before = state.navigation.clone();
-    state.navigation.apply(nav);
-    if state.navigation != before {
-        state.dirty = true;
-    }
-    crate::state::agent_spawn_effects_if_needed(state)
-}
-
-fn apply_navigation_chain(state: &mut AppState, chain: &[NavCommand]) -> Vec<SideEffect> {
-    let before = state.navigation.clone();
-    for nav in chain {
-        state.navigation.apply(*nav);
-    }
-    if state.navigation != before {
-        state.dirty = true;
-    }
-    crate::state::agent_spawn_effects_if_needed(state)
 }
 
 fn clipboard_palette_effects_from_text(

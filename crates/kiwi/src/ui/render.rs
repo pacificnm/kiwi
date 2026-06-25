@@ -15,7 +15,7 @@ use super::diff::render_diff_pane;
 use super::file_tree::render_file_tree_pane;
 use super::git::render_git_pane;
 use super::github::{
-    render_github_issues_list_pane, render_github_main_pane, render_issue_detail_pane,
+    render_github_left_pane, render_github_main_pane, render_issue_detail_pane,
 };
 use super::logs::render_logs_pane;
 use super::notifications::render_notifications;
@@ -74,7 +74,7 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
             state,
         );
     } else if state.navigation.left_tab == LeftNavTab::Gh {
-        render_github_issues_list_pane(
+        render_github_left_pane(
             frame,
             state.layout.rects.left_content,
             state.navigation.focus.is_focused(Region::LeftContent),

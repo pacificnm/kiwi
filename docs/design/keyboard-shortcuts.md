@@ -140,11 +140,12 @@ When the agent process exits, the pane footer shows the exit code and the restar
 
 ## GitHub (GH left pane + Issues/PRs main tab)
 
-Pair **GH** left (`Alt+4`) with **Issues** main (`2`), or use palette **Go to GitHub Issues** to select both and focus left.
+Pair **GH** left (`Alt+4`) with **Issues** main (`2`) or **PRs** main (`3`). Use `i` / `p` on the GH left hub to switch between issue and PR lists.
 
 | Key | Action |
 |-----|--------|
-| `j` / `k` | Issue list navigation (GH left pane, left focus) or scroll detail (Issues main, main focus) |
+| `i` / `p` | Switch GH left hub between Issues and PRs lists |
+| `j` / `k` | Issue list navigation (GH left, Issues hub) or scroll detail (Issues main, main focus) |
 | `PgUp` / `PgDn` | Page scroll issue detail (Issues main, main focus) |
 | `Enter` | Open selected issue in Issues main tab |
 | `c` | Comment (opens palette prompt) |
