@@ -689,6 +689,13 @@ impl App {
                 let _ = self.dispatch(AppEvent::Command(AppCommand::Navigation(
                     crate::navigation::NavCommand::SetFocus(FocusTarget::Left),
                 )));
+                if self
+                    .double_click
+                    .register(DoubleClickTarget::GitFile(index))
+                {
+                    let _ = self.dispatch(AppEvent::Command(AppCommand::GitSelect(index)));
+                    return self.dispatch(AppEvent::Command(AppCommand::GitOpenSelected));
+                }
                 return self.dispatch(AppEvent::Command(AppCommand::GitSelect(index)));
             }
         }
@@ -762,6 +769,10 @@ impl App {
 
         if self.preview_input_active() {
             return self.handle_preview_key(key);
+        }
+
+        if self.diff_input_active() {
+            return self.handle_diff_key(key);
         }
 
         if self.agent_input_active() {
@@ -955,6 +966,11 @@ impl App {
             && self.state.navigation.main_tab == MainTab::Preview
     }
 
+    fn diff_input_active(&self) -> bool {
+        self.state.navigation.focus == FocusTarget::Main
+            && self.state.navigation.main_tab == MainTab::Diff
+    }
+
     fn handle_file_tree_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
         if !key.modifiers.is_empty() {
             return false;
@@ -1034,6 +1050,26 @@ impl App {
             KeyCode::PageUp => self.dispatch(AppEvent::Command(AppCommand::PreviewPageScroll(-1))),
             KeyCode::PageDown => self.dispatch(AppEvent::Command(AppCommand::PreviewPageScroll(1))),
             KeyCode::Char('e') => self.dispatch_open_editor(),
+            _ => false,
+        }
+    }
+
+    fn handle_diff_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        if !key.modifiers.is_empty() {
+            return false;
+        }
+
+        match key.code {
+            KeyCode::Char('j') => self.dispatch(AppEvent::Command(AppCommand::DiffScroll(1))),
+            KeyCode::Char('k') => self.dispatch(AppEvent::Command(AppCommand::DiffScroll(-1))),
+            KeyCode::PageUp => self.dispatch(AppEvent::Command(AppCommand::DiffPageScroll(-1))),
+            KeyCode::PageDown => self.dispatch(AppEvent::Command(AppCommand::DiffPageScroll(1))),
+            KeyCode::Char('h') => {
+                self.dispatch(AppEvent::Command(AppCommand::DiffHorizontalScroll(-4)))
+            }
+            KeyCode::Char('l') => {
+                self.dispatch(AppEvent::Command(AppCommand::DiffHorizontalScroll(4)))
+            }
             _ => false,
         }
     }
@@ -1611,6 +1647,56 @@ mod tests {
         assert_eq!(app.state().navigation.main_tab, MainTab::Preview);
         assert_eq!(app.state().preview.path, Some(PathBuf::from("src/main.rs")));
         assert_eq!(app.state().search.selected, 0);
+    }
+
+    #[test]
+    fn double_click_git_file_opens_diff_tab() {
+        use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+
+        use crate::git::{GitFileEntry, GitFileStatus};
+        use crate::navigation::{LeftNavTab, MainTab, NavCommand};
+        use crate::state::{AppCommand, AppEvent, GitState};
+        use crate::ui::git_interaction_at;
+
+        let mut app = App::new(test_context());
+        app.state_mut().workspace_meta.is_git_repo = true;
+        app.state_mut().git = GitState {
+            branch: Some("main".to_string()),
+            file_entries: vec![GitFileEntry {
+                path: "src/main.rs".to_string(),
+                status: GitFileStatus::Modified,
+            }],
+            ..GitState::default()
+        };
+        app.event_sender()
+            .send(AppEvent::Command(AppCommand::Navigation(
+                NavCommand::SelectLeftTab(LeftNavTab::Git),
+            )))
+            .expect("send");
+        app.process_pending_events();
+
+        let area = app.state().layout.rects.left_content;
+        let row = (area.y..area.y.saturating_add(area.height))
+            .find(|row| git_interaction_at(app.state(), area, area.x + 2, *row).is_some())
+            .expect("git file row");
+        let mouse = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: area.x + 2,
+            row,
+            modifiers: KeyModifiers::empty(),
+        };
+
+        app.dispatch_mouse(mouse);
+        app.dispatch_mouse(mouse);
+        assert_eq!(app.state().navigation.main_tab, MainTab::Diff);
+        assert_eq!(
+            app.state().diff.selected_path.as_deref(),
+            Some("src/main.rs")
+        );
+        assert_eq!(
+            app.state().git.selected_path.as_deref(),
+            Some("src/main.rs")
+        );
     }
 }
 

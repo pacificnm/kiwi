@@ -1,4 +1,5 @@
 mod agent;
+mod diff;
 mod file_tree;
 mod git;
 mod logs;

@@ -29,6 +29,7 @@ pub struct DiffState {
     pub source: DiffSource,
     pub lines: Vec<DiffLine>,
     pub scroll_offset: usize,
+    pub horizontal_scroll_offset: usize,
     pub loading: bool,
     pub is_binary: bool,
     pub error: Option<String>,
@@ -41,6 +42,7 @@ impl Default for DiffState {
             source: DiffSource::Unstaged,
             lines: Vec::new(),
             scroll_offset: 0,
+            horizontal_scroll_offset: 0,
             loading: false,
             is_binary: false,
             error: None,
@@ -56,6 +58,7 @@ impl DiffState {
         self.is_binary = false;
         self.lines.clear();
         self.scroll_offset = 0;
+        self.horizontal_scroll_offset = 0;
     }
 
     pub fn apply_loaded(&mut self, result: FileDiffLoadResult) {
@@ -67,9 +70,48 @@ impl DiffState {
         self.is_binary = result.is_binary;
         self.error = result.error;
         self.lines = result.lines;
-        if self.scroll_offset >= self.lines.len() && !self.lines.is_empty() {
-            self.scroll_offset = self.lines.len() - 1;
+        let max_offset = self.lines.len().saturating_sub(1);
+        if self.scroll_offset > max_offset {
+            self.scroll_offset = max_offset;
         }
+    }
+
+    pub fn scroll(&mut self, delta: i32, viewport_rows: usize) {
+        if viewport_rows == 0 {
+            return;
+        }
+
+        let max_offset = self.lines.len().saturating_sub(viewport_rows);
+        let current = self.scroll_offset as i32;
+        let next = (current + delta).clamp(0, max_offset as i32);
+        self.scroll_offset = usize::try_from(next).unwrap_or(0);
+    }
+
+    pub fn page_scroll(&mut self, delta: i32, viewport_rows: usize) {
+        if viewport_rows == 0 {
+            return;
+        }
+
+        let page = i32::try_from(viewport_rows.saturating_sub(1).max(1)).unwrap_or(1);
+        self.scroll(delta * page, viewport_rows);
+    }
+
+    pub fn scroll_horizontal(&mut self, delta: i32, visible_text_width: usize) {
+        let max_width = self
+            .lines
+            .iter()
+            .map(|line| line.content.chars().count())
+            .max()
+            .unwrap_or(0);
+        if visible_text_width >= max_width {
+            self.horizontal_scroll_offset = 0;
+            return;
+        }
+
+        let max_offset = max_width.saturating_sub(visible_text_width);
+        let current = self.horizontal_scroll_offset as i32;
+        let next = (current + delta).clamp(0, max_offset as i32);
+        self.horizontal_scroll_offset = usize::try_from(next).unwrap_or(0);
     }
 }
 

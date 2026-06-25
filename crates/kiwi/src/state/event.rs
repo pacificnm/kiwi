@@ -101,6 +101,9 @@ pub enum AppCommand {
     },
     PreviewScroll(i32),
     PreviewPageScroll(i32),
+    DiffScroll(i32),
+    DiffPageScroll(i32),
+    DiffHorizontalScroll(i32),
     #[cfg_attr(not(test), allow(dead_code))]
     SearchSetQuery(String),
     SearchAppendChar(char),
