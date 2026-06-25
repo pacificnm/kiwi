@@ -271,6 +271,14 @@ Format for new entries:
 - **Files:** `git/repository.rs`, `git/patch.rs`, `git/io.rs`, `file_tree/state.rs`, `state/reducer.rs`, `app.rs`
 - **Verify:** `load_file_statuses_*`, `patch_*`, `apply_git_status_patch_*`, `fs_changed_requests_git_refresh_when_watch_enabled`; manual: edit a tracked file and confirm status bar/tree badge updates after watcher debounce.
 
+### Git left panel UI (GitHub #44, SPEC-008)
+
+- **Symptom:** Left Git tab showed a placeholder line (`Git view`) with no branch info or changed-file list.
+- **Cause:** No `ui/git.rs` renderer or navigation commands for the git panel data already in `GitState`.
+- **Fix:** Added grouped git panel (`Modified`/`Added`/`Deleted`/`Untracked`), branch/ahead/behind header, j/k selection with scroll, mouse click select, `R` refresh, and Enter → main Diff tab with `diff.selected_path`.
+- **Files:** `ui/git.rs`, `git/panel.rs`, `git/selection.rs`, `state/reducer.rs`, `state/event.rs`, `app.rs`, `ui/render.rs`
+- **Verify:** `render_git_pane_lists_grouped_files`, `git_open_selected_switches_to_main_diff_tab`, `move_selection_skips_section_headers`; manual: Git tab lists changes, j/k moves selection, R refreshes, Enter opens Diff tab.
+
 ---
 
 ## Reporting New Issues

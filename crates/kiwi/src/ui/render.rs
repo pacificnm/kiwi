@@ -12,6 +12,7 @@ use crate::theme::ThemePalette;
 
 use super::agent::render_agent_pane;
 use super::file_tree::render_file_tree_pane;
+use super::git::render_git_pane;
 use super::logs::render_logs_pane;
 use super::notifications::render_notifications;
 use super::palette::render_palette_pane;
@@ -54,6 +55,14 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
         );
     } else if state.navigation.left_tab == LeftNavTab::Search {
         render_search_pane(
+            frame,
+            state.layout.rects.left_content,
+            state.navigation.focus.is_focused(Region::LeftContent),
+            &state.theme,
+            state,
+        );
+    } else if state.navigation.left_tab == LeftNavTab::Git {
+        render_git_pane(
             frame,
             state.layout.rects.left_content,
             state.navigation.focus.is_focused(Region::LeftContent),
@@ -380,6 +389,12 @@ mod tests {
     #[test]
     fn draw_frame_reflects_orthogonal_tab_selection() {
         let mut state = test_state();
+        state.workspace_meta.is_git_repo = true;
+        state.git.branch = Some("main".to_string());
+        state.git.file_entries = vec![crate::git::GitFileEntry {
+            path: "src/main.rs".to_string(),
+            status: GitFileStatus::Modified,
+        }];
         state
             .navigation
             .apply(NavCommand::SelectLeftTab(LeftNavTab::Git));
@@ -394,7 +409,7 @@ mod tests {
             .expect("draw");
 
         let content = buffer_content(terminal.backend().buffer());
-        assert!(content.contains("Git view"));
+        assert!(content.contains("Modified"));
         assert!(content.contains("Issues view"));
     }
 

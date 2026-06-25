@@ -10,6 +10,7 @@ pub struct GitState {
     pub behind: u32,
     pub selected_path: Option<String>,
     pub file_entries: Vec<GitFileEntry>,
+    pub scroll_offset: usize,
     pub loading: bool,
     pub error: Option<String>,
 }

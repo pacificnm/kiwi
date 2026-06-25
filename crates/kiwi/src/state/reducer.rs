@@ -4,7 +4,9 @@ use crate::agent::infer_status_from_scrollback;
 use crate::clipboard::{resolve_copy_text, PasteTarget};
 use crate::commands::{execute_command, history_input_for_id, refresh_matches};
 use crate::file_tree::ExpandAction;
-use crate::git::{patch_git_file_entries, GitFileEntry};
+use crate::git::{
+    ensure_git_selection, git_move_selection, git_select_row, patch_git_file_entries, GitFileEntry,
+};
 use crate::layout::{agent_pty_size, compute_layout, shell_pty_size, FocusTarget};
 use crate::navigation::{LeftNavTab, MainTab, NavCommand};
 
@@ -83,6 +85,10 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         AppCommand::FileTreeSelect(path) => reduce_file_tree_select(state, path),
         AppCommand::FileTreeRefresh => reduce_file_tree_refresh(state),
         AppCommand::FileTreeMoveSelection(delta) => reduce_file_tree_move_selection(state, delta),
+        AppCommand::GitMoveSelection(delta) => reduce_git_move_selection(state, delta),
+        AppCommand::GitSelect(index) => reduce_git_select(state, index),
+        AppCommand::GitOpenSelected => reduce_git_open_selected(state),
+        AppCommand::GitRefresh => reduce_git_refresh_requested(state),
         AppCommand::PreviewFile { path, line } => reduce_preview_file(state, path, line),
         AppCommand::PreviewScroll(delta) => reduce_preview_scroll(state, delta),
         AppCommand::PreviewPageScroll(delta) => reduce_preview_page_scroll(state, delta),
@@ -118,6 +124,9 @@ fn apply_navigation(state: &mut AppState, command: NavCommand) {
     }
     if state.navigation.left_tab == LeftNavTab::Files {
         state.file_tree.ensure_selection();
+    }
+    if state.navigation.left_tab == LeftNavTab::Git {
+        ensure_git_selection(&mut state.git, state.config.git.show_untracked);
     }
 }
 
@@ -190,6 +199,7 @@ fn reduce_git_status_updated(
         state.git.branch = branch;
         let file_patch = patch_git_file_entries(&mut state.git.file_entries, &file_entries);
         sync_git_status_patch_to_file_tree(state, &file_patch);
+        ensure_git_selection(&mut state.git, state.config.git.show_untracked);
     }
 
     if let Some(path) = git_selected {
@@ -439,6 +449,40 @@ fn reduce_file_tree_move_selection(state: &mut AppState, delta: i32) -> Vec<Side
         .file_tree
         .move_selection(delta, file_tree_viewport_rows(state));
     state.dirty = true;
+    Vec::new()
+}
+
+fn git_viewport_rows(state: &AppState) -> usize {
+    crate::ui::git_viewport_rows(state.layout.rects.left_content)
+}
+
+fn reduce_git_move_selection(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    if delta == 0 {
+        return Vec::new();
+    }
+
+    let viewport_rows = git_viewport_rows(state);
+    let show_untracked = state.config.git.show_untracked;
+    git_move_selection(&mut state.git, delta, viewport_rows, show_untracked);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_git_select(state: &mut AppState, index: usize) -> Vec<SideEffect> {
+    let viewport_rows = git_viewport_rows(state);
+    let show_untracked = state.config.git.show_untracked;
+    git_select_row(&mut state.git, index, viewport_rows, show_untracked);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_git_open_selected(state: &mut AppState) -> Vec<SideEffect> {
+    let Some(path) = state.git.selected_path.clone() else {
+        return Vec::new();
+    };
+
+    state.diff.selected_path = Some(path);
+    apply_navigation(state, NavCommand::SelectMainTab(MainTab::Diff));
     Vec::new()
 }
 
@@ -1134,6 +1178,25 @@ mod tests {
         );
 
         assert!(!effects.contains(&SideEffect::SpawnGitRefresh));
+    }
+
+    #[test]
+    fn git_refresh_command_emits_side_effect() {
+        let mut state = test_state();
+        state.workspace_meta.is_git_repo = true;
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::GitRefresh));
+        assert!(effects.contains(&SideEffect::SpawnGitRefresh));
+    }
+
+    #[test]
+    fn git_open_selected_switches_to_main_diff_tab() {
+        let mut state = test_state();
+        state.git.selected_path = Some("src/main.rs".to_string());
+
+        reduce(&mut state, AppEvent::Command(AppCommand::GitOpenSelected));
+
+        assert_eq!(state.navigation.main_tab, MainTab::Diff);
+        assert_eq!(state.diff.selected_path.as_deref(), Some("src/main.rs"));
     }
 
     #[test]
