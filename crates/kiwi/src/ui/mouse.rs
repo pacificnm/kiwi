@@ -9,24 +9,38 @@ use crate::state::AppState;
 
 use super::tabs::tab_index_at_x;
 
-pub fn map_mouse_click(state: &AppState, column: u16, row: u16) -> Option<NavCommand> {
+pub fn map_mouse_click(state: &AppState, column: u16, row: u16) -> Vec<NavCommand> {
     if !mouse_interactions_enabled(&state.config.mouse) {
-        return None;
+        return Vec::new();
     }
 
-    map_mouse_click_in_layout(&state.layout.rects, column, row)
+    map_mouse_click_in_layout(&state.layout.rects, state.navigation.main_tab, column, row)
 }
 
-pub fn map_mouse_click_in_layout(rects: &LayoutRects, column: u16, row: u16) -> Option<NavCommand> {
+pub fn map_mouse_click_in_layout(
+    rects: &LayoutRects,
+    main_tab: MainTab,
+    column: u16,
+    row: u16,
+) -> Vec<NavCommand> {
     if let Some(command) = map_tab_click_in_layout(rects, column, row) {
-        return Some(command);
+        let focus = match &command {
+            NavCommand::SelectLeftTab(_) => FocusTarget::Left,
+            NavCommand::SelectMainTab(_) => FocusTarget::Main,
+            _ => return vec![command],
+        };
+        return vec![command, NavCommand::SetFocus(focus)];
+    }
+
+    if main_tab == MainTab::Agent && point_in_rect(column, row, rects.main_content) {
+        return vec![NavCommand::SetFocus(FocusTarget::Main)];
     }
 
     if point_in_rect(column, row, rects.shell) {
-        return Some(NavCommand::SetFocus(FocusTarget::Shell));
+        return vec![NavCommand::SetFocus(FocusTarget::Shell)];
     }
 
-    None
+    Vec::new()
 }
 
 pub fn map_tab_click_in_layout(rects: &LayoutRects, column: u16, row: u16) -> Option<NavCommand> {
@@ -86,16 +100,26 @@ mod tests {
     fn click_on_left_tab_label_selects_tab() {
         let state = test_state();
         let rects = state.layout.rects;
-        let command = map_mouse_click(&state, rects.left_tabs.x + 8, rects.left_tabs.y);
-        assert_eq!(command, Some(NavCommand::SelectLeftTab(LeftNavTab::Git)));
+        assert_eq!(
+            map_mouse_click(&state, rects.left_tabs.x + 8, rects.left_tabs.y),
+            vec![
+                NavCommand::SelectLeftTab(LeftNavTab::Git),
+                NavCommand::SetFocus(FocusTarget::Left),
+            ]
+        );
     }
 
     #[test]
     fn click_on_main_tab_label_selects_tab() {
         let state = test_state();
         let rects = state.layout.rects;
-        let command = map_mouse_click(&state, rects.main_tabs.x + 8, rects.main_tabs.y);
-        assert_eq!(command, Some(NavCommand::SelectMainTab(MainTab::Issues)));
+        assert_eq!(
+            map_mouse_click(&state, rects.main_tabs.x + 8, rects.main_tabs.y),
+            vec![
+                NavCommand::SelectMainTab(MainTab::Issues),
+                NavCommand::SetFocus(FocusTarget::Main),
+            ]
+        );
     }
 
     #[test]
@@ -104,7 +128,7 @@ mod tests {
         let rects = state.layout.rects;
         assert_eq!(
             map_mouse_click(&state, rects.left_content.x + 1, rects.left_content.y + 1),
-            None
+            Vec::<NavCommand>::new()
         );
     }
 
@@ -114,7 +138,29 @@ mod tests {
         let rects = state.layout.rects;
         assert_eq!(
             map_mouse_click(&state, rects.shell.x + 2, rects.shell.y + 2),
-            Some(NavCommand::SetFocus(FocusTarget::Shell))
+            vec![NavCommand::SetFocus(FocusTarget::Shell)]
+        );
+    }
+
+    #[test]
+    fn click_on_agent_pane_focuses_main() {
+        let mut state = test_state();
+        state.navigation.main_tab = MainTab::Agent;
+        let rects = state.layout.rects;
+        assert_eq!(
+            map_mouse_click(&state, rects.main_content.x + 2, rects.main_content.y + 2),
+            vec![NavCommand::SetFocus(FocusTarget::Main)]
+        );
+    }
+
+    #[test]
+    fn click_on_main_content_ignored_off_agent_tab() {
+        let mut state = test_state();
+        state.navigation.main_tab = MainTab::Issues;
+        let rects = state.layout.rects;
+        assert_eq!(
+            map_mouse_click(&state, rects.main_content.x + 2, rects.main_content.y + 2),
+            Vec::<NavCommand>::new()
         );
     }
 
@@ -125,7 +171,7 @@ mod tests {
         let rects = state.layout.rects;
         assert_eq!(
             map_mouse_click(&state, rects.left_tabs.x, rects.left_tabs.y),
-            None
+            Vec::<NavCommand>::new()
         );
     }
 
@@ -136,7 +182,7 @@ mod tests {
         let rects = state.layout.rects;
         assert_eq!(
             map_mouse_click(&state, rects.main_tabs.x, rects.main_tabs.y),
-            None
+            Vec::<NavCommand>::new()
         );
     }
 }

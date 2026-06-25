@@ -1,5 +1,5 @@
 use std::fmt;
-use std::io::{self, stdout};
+use std::io::{self, stdout, Write};
 
 use crossterm::cursor::{Hide, Show};
 use crossterm::event::{
@@ -94,6 +94,7 @@ impl TerminalGuard {
             execute!(out, DisableBracketedPaste)?;
             execute!(out, LeaveAlternateScreen, Show)?;
             disable_raw_mode()?;
+            out.flush()?;
             Ok::<(), io::Error>(())
         })() {
             return Err(TerminalError::new(format!(

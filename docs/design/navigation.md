@@ -51,7 +51,15 @@ Example combinations:
 
 - Full PTY for Cursor Agent (or configured command)
 - Agent status reflected in status bar
-- User types directly to agent when focused
+- With **Main** focus on the Agent tab, keyboard input is forwarded to the agent PTY
+- Output renders in the main pane scrollback (including the prompt line before Enter)
+
+### Shell (bottom pane)
+
+- Full PTY for the user shell (default `$SHELL` or `bash`)
+- With **Shell** focus, keyboard input is forwarded to the shell PTY
+- Output renders in the shell pane scrollback (including the prompt line before Enter)
+- Click the shell pane or cycle focus with `Tab` to interact
 
 ### Issues
 
@@ -95,9 +103,12 @@ Left → Main → Command Palette → Shell → Left
 | Focus | Keys go to |
 |-------|------------|
 | Left | Tree/list navigation |
-| Main | Tab content (PTY if Agent) |
+| Main + Agent tab | Agent PTY |
+| Main + other tabs | Tab placeholder views (future content) |
 | Palette | Palette input |
 | Shell | Shell PTY |
+
+`Tab` / `Shift+Tab` always cycle focus, even when a PTY is active.
 
 ## Quick Switching
 
@@ -110,8 +121,9 @@ Left → Main → Command Palette → Shell → Left
 
 ## Mouse Navigation
 
-- Click tab labels to switch
-- Click inside pane to focus that pane
+- Click tab labels to switch tabs **and move focus** (left tabs → Left focus, main tabs → Main focus)
+- Click inside the agent pane (Agent tab) to focus Main
+- Click inside the shell pane to focus Shell
 - Click list row to select
 
 See [mouse-interaction.md](./mouse-interaction.md).

@@ -1,5 +1,7 @@
+mod agent;
 mod mouse;
 mod render;
+mod scrollback;
 mod shell;
 mod status_bar;
 mod tabs;

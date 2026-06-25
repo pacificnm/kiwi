@@ -8,10 +8,12 @@ Provide **lightweight mouse support** that complements keyboard workflows withou
 
 | Interaction | Target | Result |
 |-------------|--------|--------|
-| Single click | Tab label | Activate tab |
+| Single click | Left tab label | Activate left tab and focus Left pane |
+| Single click | Main tab label | Activate main tab and focus Main pane |
+| Single click | Agent pane (Agent tab) | Focus Main pane |
+| Single click | Shell pane | Focus Shell pane |
 | Single click | List/tree row | Select item |
 | Double click | File row | Open external editor |
-| Single click | Pane background | Focus pane |
 | Scroll wheel | Scrollable under cursor | Scroll content |
 | Middle click | Focused input area | Paste (terminal convention) |
 

@@ -1,6 +1,8 @@
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
+#[cfg(test)]
 use std::thread;
+#[cfg(test)]
 use std::time::Duration;
 
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
@@ -11,7 +13,6 @@ use super::command::{agent_launch_spec, AgentLaunchSpec};
 use super::error::AgentError;
 
 pub struct AgentSession {
-    #[allow(dead_code)] // read/write loop arrives in issue #24
     master: Box<dyn MasterPty + Send>,
     writer: Option<Box<dyn Write + Send>>,
     child: Box<dyn Child + Send + Sync>,
@@ -40,6 +41,7 @@ impl AgentSession {
 
         let mut command = CommandBuilder::new(&spec.command);
         command.cwd(repo_root);
+        apply_pty_env(&mut command);
         for arg in &spec.args {
             command.arg(arg);
         }
@@ -74,6 +76,25 @@ impl AgentSession {
         self.child.process_id()
     }
 
+    pub fn try_clone_reader(&self) -> Result<Box<dyn Read + Send>, AgentError> {
+        self.master
+            .try_clone_reader()
+            .map_err(|err| AgentError::spawn(err.to_string()))
+    }
+
+    pub fn write(&mut self, data: &[u8]) -> Result<(), AgentError> {
+        let writer = self
+            .writer
+            .as_mut()
+            .ok_or_else(|| AgentError::write("agent is closed"))?;
+        writer
+            .write_all(data)
+            .map_err(|err| AgentError::write(err.to_string()))?;
+        writer
+            .flush()
+            .map_err(|err| AgentError::write(err.to_string()))
+    }
+
     #[must_use]
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn is_running(&mut self) -> bool {
@@ -87,9 +108,15 @@ impl AgentSession {
     pub fn shutdown(&mut self) {
         self.writer.take();
         let _ = self.child.kill();
+    }
+
+    #[cfg(test)]
+    fn shutdown_and_reap(&mut self) {
+        self.shutdown();
         self.reap_child();
     }
 
+    #[cfg(test)]
     fn reap_child(&mut self) {
         for _ in 0..100 {
             match self.child.try_wait() {
@@ -109,6 +136,11 @@ impl Drop for AgentSession {
             self.shutdown();
         }
     }
+}
+
+fn apply_pty_env(command: &mut CommandBuilder) {
+    let term = std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".to_string());
+    command.env("TERM", term);
 }
 
 #[cfg(test)]
@@ -136,7 +168,7 @@ mod tests {
         let mut session = AgentSession::spawn(&repo, &settings, 80, 24).expect("spawn agent");
         assert!(session.pid().is_some());
         assert!(session.is_running());
-        session.shutdown();
+        session.shutdown_and_reap();
         assert!(!session.is_running());
     }
 }

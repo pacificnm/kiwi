@@ -1,6 +1,6 @@
 # Keyboard Shortcuts
 
-Default keybindings for Kiwi. All shortcuts work when not captured by focused PTY (shell/agent). `?` opens help overlay (future) listing these bindings.
+Default keybindings for Kiwi. Most shortcuts apply when focus is not in a PTY pane (shell or agent). `Tab` / `Shift+Tab` always cycle focus. `?` opens help overlay (future) listing these bindings.
 
 ## Global
 
@@ -9,9 +9,12 @@ Default keybindings for Kiwi. All shortcuts work when not captured by focused PT
 | `Ctrl+P` | Open command palette |
 | `Tab` | Cycle focus forward (Left → Main → Palette → Shell) |
 | `Shift+Tab` | Cycle focus backward |
-| `q` | Quit (confirm if dirty future) |
-| `Ctrl+C` | Quit if palette closed; else interrupt PTY |
+| `q` | Quit (when shell/agent PTY is not consuming input) |
+| `Ctrl+C` | Quit (when shell/agent PTY is not consuming input); otherwise interrupt PTY |
+| `Ctrl+Q` | Quit (always, including from shell/agent) |
 | `?` | Help (future) |
+
+When the shell or agent PTY has keyboard focus, `Ctrl+C` once sends an interrupt to the running process. Press `Ctrl+C` twice within 500ms or use `Ctrl+Q` to quit Kiwi.
 
 ## Left Navigation Tabs
 
@@ -83,8 +86,10 @@ Default keybindings for Kiwi. All shortcuts work when not captured by focused PT
 
 | Key | Action |
 |-----|--------|
-| All keys | Forwarded to PTY |
-| `PgUp` / `PgDn` | Scroll scrollback (when PTY not consuming) |
+| Most keys | Forwarded to PTY |
+| `PgUp` / `PgDn` | Scroll scrollback |
+| `Tab` / `Shift+Tab` | Cycle focus (not forwarded to PTY) |
+| `Ctrl+Q` | Quit Kiwi |
 
 ## GitHub (Issues/PRs main tab)
 
