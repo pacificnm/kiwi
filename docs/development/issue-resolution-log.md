@@ -303,6 +303,14 @@ Format for new entries:
 - **Files:** `watcher/debounce.rs`, `state/channel.rs`, `watcher/io.rs`, `config/types.rs`, `app.rs`
 - **Verify:** `coalesces_fifty_rapid_paths`, `coalesces_fifty_fs_changed_batches`, `reschedule_extends_deadline`; manual: formatter-on-save triggers one git refresh after debounce.
 
+### Invalidate file tree cache on FsChanged paths (GitHub #117, SPEC-005, ADR-008, ADR-011)
+
+- **Symptom:** Debounced watcher events updated preview and git status but expanded file-tree directories showed stale children until manual `r` refresh.
+- **Cause:** `reduce_fs_changed` did not invalidate `FileTreeState` directory caches for changed paths (tracked originally as backlog #48).
+- **Fix:** Added `file_tree/invalidation.rs` to map watcher paths to parent/directory caches, call `invalidate_children`, and enqueue `LoadDirectoryChildren` for expanded directories while preserving selection per ADR-007.
+- **Files:** `file_tree/invalidation.rs`, `file_tree/state.rs`, `state/reducer.rs`, `state/preservation.rs`
+- **Verify:** `directories_to_invalidate_*`, `apply_fs_invalidation_*`, `fs_changed_invalidates_expanded_file_tree_directory`, `fs_changed_invalidates_on_file_delete`, `fs_changed_preserves_file_tree_scroll_selection_and_focus`; manual: create or delete a file in an expanded folder and confirm the tree updates after watcher debounce without pressing `r`.
+
 ### Path-targeted cache invalidation (GitHub #48, ADR-011)
 
 - **Symptom:** `FsChanged` refreshed git status and preview but left stale file-tree directory listings until manual `r` refresh.

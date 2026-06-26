@@ -4690,6 +4690,53 @@ mod tests {
     }
 
     #[test]
+    fn fs_changed_invalidates_on_file_delete() {
+        let root = PathBuf::from("/repo");
+        let mut state = test_state();
+        state.repo_root = root.clone();
+        state.file_tree = FileTreeState::at_root(root.clone());
+        let _ = state.file_tree.expand(&root);
+        state.file_tree.apply_children_loaded(
+            &root,
+            vec![DirectoryEntry {
+                path: root.join("src"),
+                name: "src".to_string(),
+                is_dir: true,
+            }],
+            None,
+        );
+        state
+            .file_tree
+            .nodes
+            .get_mut(&root.join("src"))
+            .expect("src")
+            .expanded = true;
+        state.file_tree.apply_children_loaded(
+            &root.join("src"),
+            vec![DirectoryEntry {
+                path: root.join("src/main.rs"),
+                name: "main.rs".to_string(),
+                is_dir: false,
+            }],
+            None,
+        );
+        state.file_tree.select(root.join("src/main.rs"));
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::FsChanged {
+                paths: vec![root.join("src/main.rs")],
+            },
+        );
+
+        assert!(effects.contains(&SideEffect::LoadDirectoryChildren(root.join("src"))));
+        assert!(!state
+            .file_tree
+            .nodes
+            .contains_key(&root.join("src/main.rs")));
+    }
+
+    #[test]
     fn fs_changed_reloads_matching_preview_file() {
         let mut state = test_state();
         let path = PathBuf::from("/tmp/repo/src/main.rs");

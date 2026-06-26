@@ -168,4 +168,55 @@ mod tests {
         assert!(state.nodes[&root].children_loaded);
         assert!(!state.nodes[&root.join("src")].children_loaded);
     }
+
+    #[test]
+    fn apply_fs_invalidation_evicts_deleted_file_nodes() {
+        let root = PathBuf::from("/repo");
+        let mut state = FileTreeState::at_root(root.clone());
+        let _ = state.expand(&root);
+        state.apply_children_loaded(
+            &root,
+            vec![DirectoryEntry {
+                path: root.join("src"),
+                name: "src".to_string(),
+                is_dir: true,
+            }],
+            None,
+        );
+        state
+            .nodes
+            .get_mut(&root.join("src"))
+            .expect("src")
+            .expanded = true;
+        state.apply_children_loaded(
+            &root.join("src"),
+            vec![DirectoryEntry {
+                path: root.join("src/main.rs"),
+                name: "main.rs".to_string(),
+                is_dir: false,
+            }],
+            None,
+        );
+        assert!(state.nodes.contains_key(&root.join("src/main.rs")));
+
+        let reload_dirs = state.apply_fs_invalidation(&root, &[root.join("src/main.rs")]);
+
+        assert_eq!(reload_dirs, vec![root.join("src")]);
+        assert!(!state.nodes.contains_key(&root.join("src/main.rs")));
+        assert!(!state.nodes[&root.join("src")].children_loaded);
+    }
+
+    #[test]
+    fn directories_to_invalidate_covers_rename_paths() {
+        let root = PathBuf::from("/repo");
+        let dirs = directories_to_invalidate(
+            &root,
+            &[
+                root.join("src/old.rs"),
+                root.join("src/new.rs"),
+            ],
+            |_| false,
+        );
+        assert_eq!(dirs, vec![root.join("src")]);
+    }
 }
