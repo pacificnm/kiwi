@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/kiwi", "crates/kiwi_plugin_api"]
+members = ["crates/kiwi", "crates/kiwi_plugin_api", "crates/kiwi_plugin_loader"]
 
 [workspace.package]
 version = "0.1.0"
@@ -29,3 +29,4 @@ signal-hook = "0.3"
 notify = "7.0.0"
 arboard = "3.4"
 git2 = "0.19"
+libloading = "0.8"

@@ -1430,7 +1430,7 @@ fn reduce_palette_history_up(state: &mut AppState) -> Vec<SideEffect> {
     }
 
     if let Some(command_id) = state.palette.history_up() {
-        state.palette.input = history_input_for_id(&command_id);
+        state.palette.input = history_input_for_id(state, &command_id);
     }
     refresh_matches(state);
     state.dirty = true;
@@ -1445,7 +1445,7 @@ fn reduce_palette_history_down(state: &mut AppState) -> Vec<SideEffect> {
     match state.palette.history_down() {
         None => {}
         Some(None) => state.palette.input.clear(),
-        Some(Some(command_id)) => state.palette.input = history_input_for_id(&command_id),
+        Some(Some(command_id)) => state.palette.input = history_input_for_id(state, &command_id),
     }
     refresh_matches(state);
     state.dirty = true;
@@ -2147,8 +2147,8 @@ mod tests {
     use crate::preview::{PreviewLoadResult, PreviewState};
     use crate::search::{SearchMode, SearchResult, SearchState};
     use crate::state::domains::{
-        AgentState, BranchState, CommandPaletteState, DiffState, GitHubState, GitState, ShellState,
-        StatusBarState, WorkspaceMeta,
+        AgentState, BranchState, CommandPaletteState, DiffState, GitHubState, GitState,
+        PluginsState, ShellState, StatusBarState, WorkspaceMeta,
     };
 
     fn test_state() -> AppState {
@@ -2173,6 +2173,7 @@ mod tests {
             agent: AgentState::default(),
             shell: ShellState::default(),
             palette: CommandPaletteState::default(),
+            plugins: PluginsState::default(),
             logs: crate::state::domains::LogsState::default(),
             notifications: crate::state::domains::NotificationState::default(),
             status_bar: StatusBarState::default(),

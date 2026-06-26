@@ -18,7 +18,7 @@ pub use domains::GitHubState;
 pub use domains::GitState;
 pub use domains::LogLevel;
 pub use domains::PalettePrompt;
-pub use domains::{GitHubPrCreatePrompt, GitHubPrCreateStep};
+pub use domains::{GitHubPrCreatePrompt, GitHubPrCreateStep, PluginPaletteCommand, PluginsState};
 #[cfg(test)]
 pub use domains::{LogEntry, LogsState};
 pub use event::{AppCommand, AppEvent, SideEffect};

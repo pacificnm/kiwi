@@ -4,7 +4,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
-use crate::commands::{command_available, COMMANDS, MAX_VISIBLE_MATCHES};
+use crate::commands::{
+    command_available_at, command_shortcut_at, command_title_at, MAX_VISIBLE_MATCHES,
+};
 use crate::state::AppState;
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
@@ -106,8 +108,7 @@ fn render_match_line(
     max_width: usize,
 ) -> Option<Line<'static>> {
     let registry_index = *state.palette.matches.get(match_index)?;
-    let command = COMMANDS.get(registry_index)?;
-    let available = command_available(state, command);
+    let available = command_available_at(state, registry_index);
     let selected = state.palette.selected == match_index;
 
     let mut style = theme.get(SemanticRole::Fg);
@@ -118,11 +119,11 @@ fn render_match_line(
         style = style.add_modifier(Modifier::BOLD | Modifier::REVERSED);
     }
 
-    let shortcut = command
-        .shortcut
+    let shortcut = command_shortcut_at(state, registry_index)
         .map(|value| format!(" ({value})"))
         .unwrap_or_default();
-    let text = format!("{}{}", command.title, shortcut);
+    let title = command_title_at(state, registry_index)?;
+    let text = format!("{title}{shortcut}");
     Some(Line::from(Span::styled(
         truncate_line(&text, max_width),
         style,

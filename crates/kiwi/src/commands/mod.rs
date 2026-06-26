@@ -1,6 +1,9 @@
 mod fuzzy;
 mod registry;
 
+use kiwi_plugin_api::PluginResult;
+use kiwi_plugin_loader::{invoke_plugin_command, PluginInvokeOutcome};
+
 use crate::clipboard::resolve_copy_text_for_focus;
 use crate::editor::resolve_editor_target;
 use crate::github::{missing_browser_target_message, resolve_browser_target, LabelPickerState};
@@ -57,15 +60,65 @@ pub struct CommandDef {
 }
 
 #[must_use]
-pub fn command_by_id(id: &str) -> Option<&'static CommandDef> {
-    COMMANDS.iter().find(|command| command.id == id)
+pub fn command_index_by_id(state: &AppState, id: &str) -> Option<usize> {
+    COMMANDS
+        .iter()
+        .position(|command| command.id == id)
+        .or_else(|| {
+            state
+                .plugins
+                .commands
+                .iter()
+                .position(|command| command.id == id)
+                .map(|index| COMMANDS.len() + index)
+        })
 }
 
 #[must_use]
-pub fn history_input_for_id(id: &str) -> String {
-    command_by_id(id)
-        .map(|command| command.title.to_string())
+#[allow(dead_code)]
+pub fn command_by_id<'a>(state: &'a AppState, id: &str) -> Option<&'a CommandDef> {
+    command_index_by_id(state, id).and_then(|index| COMMANDS.get(index))
+}
+
+#[must_use]
+pub fn history_input_for_id(state: &AppState, id: &str) -> String {
+    command_index_by_id(state, id)
+        .and_then(|index| command_title_at(state, index).map(str::to_string))
         .unwrap_or_else(|| id.to_string())
+}
+
+#[must_use]
+pub fn command_count(state: &AppState) -> usize {
+    COMMANDS.len() + state.plugins.commands.len()
+}
+
+#[must_use]
+pub fn command_title_at(state: &AppState, index: usize) -> Option<&str> {
+    if index < COMMANDS.len() {
+        Some(COMMANDS[index].title)
+    } else {
+        state
+            .plugins
+            .commands
+            .get(index - COMMANDS.len())
+            .map(|command| command.title.as_str())
+    }
+}
+
+#[must_use]
+pub fn command_shortcut_at(_state: &AppState, index: usize) -> Option<&'static str> {
+    COMMANDS.get(index).and_then(|command| command.shortcut)
+}
+
+#[must_use]
+pub fn command_available_at(state: &AppState, index: usize) -> bool {
+    if let Some(command) = COMMANDS.get(index) {
+        command_available(state, command)
+    } else if let Some(command) = state.plugins.commands.get(index - COMMANDS.len()) {
+        command.enabled
+    } else {
+        false
+    }
 }
 
 #[must_use]
@@ -81,11 +134,12 @@ pub fn command_available(state: &AppState, command: &CommandDef) -> bool {
 
 pub fn refresh_matches(state: &mut AppState) {
     let input = state.palette.input.trim();
+    let total = command_count(state);
 
     if input.is_empty() {
-        let mut matches: Vec<usize> = (0..COMMANDS.len()).collect();
+        let mut matches: Vec<usize> = (0..total).collect();
         for command_id in &state.palette.history {
-            if let Some(index) = COMMANDS.iter().position(|command| command.id == command_id) {
+            if let Some(index) = command_index_by_id(state, command_id) {
                 matches.retain(|candidate| *candidate != index);
                 matches.insert(0, index);
             }
@@ -93,9 +147,15 @@ pub fn refresh_matches(state: &mut AppState) {
         prioritize_github_issue_commands(state, &mut matches);
         state.palette.matches = matches.into_iter().take(MAX_VISIBLE_MATCHES).collect();
     } else {
-        let ranked = filter_ranked(COMMANDS.len(), input, |index| {
-            let command = &COMMANDS[index];
-            best_fuzzy_score(command.id, command.title, input)
+        let ranked = filter_ranked(total, input, |index| {
+            let (id, title) = match COMMANDS.get(index) {
+                Some(command) => (command.id, command.title),
+                None => {
+                    let command = &state.plugins.commands[index - COMMANDS.len()];
+                    (command.id.as_str(), command.title.as_str())
+                }
+            };
+            best_fuzzy_score(id, title, input)
         });
         state.palette.matches = ranked
             .into_iter()
@@ -144,6 +204,14 @@ fn prioritize_github_issue_commands(state: &AppState, matches: &mut Vec<usize>) 
 }
 
 pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideEffect> {
+    if registry_index < COMMANDS.len() {
+        execute_builtin_command(state, registry_index)
+    } else {
+        execute_plugin_command(state, registry_index - COMMANDS.len())
+    }
+}
+
+fn execute_builtin_command(state: &mut AppState, registry_index: usize) -> Vec<SideEffect> {
     let Some(command) = COMMANDS.get(registry_index) else {
         return Vec::new();
     };
@@ -236,6 +304,57 @@ pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideE
     }
 
     effects
+}
+
+fn execute_plugin_command(state: &mut AppState, plugin_index: usize) -> Vec<SideEffect> {
+    let Some(command) = state.plugins.commands.get(plugin_index) else {
+        return Vec::new();
+    };
+
+    if !command.enabled {
+        state
+            .notifications
+            .show_toast("Plugin command is disabled for this session");
+        state.dirty = true;
+        return Vec::new();
+    }
+
+    let plugin_name = command.plugin_name.clone();
+    let command_id = command.id.clone();
+    let callback = command.callback;
+
+    state.palette.record_history(&command_id);
+    state.palette.close(&mut state.navigation.focus);
+
+    match invoke_plugin_command(callback) {
+        PluginInvokeOutcome::Completed(PluginResult::Ok) => {}
+        PluginInvokeOutcome::Completed(PluginResult::Err) => {
+            state
+                .notifications
+                .show_toast(format!("Plugin command `{command_id}` failed"));
+        }
+        PluginInvokeOutcome::Panicked => {
+            disable_plugin_commands(state, &plugin_name);
+            state.notifications.show_toast(format!(
+                "Plugin `{plugin_name}` panicked; its commands are disabled for this session"
+            ));
+        }
+    }
+    state.dirty = true;
+
+    let mut effects = Vec::new();
+    if state.config.workspace.persist {
+        effects.push(SideEffect::SaveWorkspace);
+    }
+    effects
+}
+
+fn disable_plugin_commands(state: &mut AppState, plugin_name: &str) {
+    for command in &mut state.plugins.commands {
+        if command.plugin_name == plugin_name {
+            command.enabled = false;
+        }
+    }
 }
 
 fn clipboard_palette_effects_from_text(
@@ -700,7 +819,11 @@ mod tests {
 
     #[test]
     fn history_input_uses_command_title() {
-        assert_eq!(history_input_for_id("git.refresh"), "Git: Refresh Status");
+        let state = test_state();
+        assert_eq!(
+            history_input_for_id(&state, "git.refresh"),
+            "Git: Refresh Status"
+        );
     }
 
     #[test]

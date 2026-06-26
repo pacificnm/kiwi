@@ -16,6 +16,9 @@ pub(crate) fn load_config_with_home(
     home: Option<PathBuf>,
 ) -> Result<ResolvedConfig, ConfigError> {
     let mut resolved = ResolvedConfig::default();
+    if let Some(ref home) = home {
+        resolved.plugins.directory = crate::config::default_plugins_directory(Some(home));
+    }
 
     if let Some(path) = resolve_user_config_path(cli, home.as_deref())? {
         if path.exists() {

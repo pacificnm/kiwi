@@ -468,6 +468,31 @@ use crate::workspace::MAX_PALETTE_HISTORY_ENTRIES;
 
 const MAX_PALETTE_HISTORY: usize = MAX_PALETTE_HISTORY_ENTRIES;
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct PluginsState {
+    pub commands: Vec<PluginPaletteCommand>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PluginPaletteCommand {
+    pub id: String,
+    pub title: String,
+    pub plugin_name: String,
+    pub callback: extern "C" fn() -> kiwi_plugin_api::PluginResult,
+    pub enabled: bool,
+}
+
+impl PartialEq for PluginPaletteCommand {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.title == other.title
+            && self.plugin_name == other.plugin_name
+            && self.enabled == other.enabled
+    }
+}
+
+impl Eq for PluginPaletteCommand {}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandPaletteState {
     pub open: bool,
