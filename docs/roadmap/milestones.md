@@ -1,6 +1,6 @@
 # Milestones
 
-Seven milestones from project initiation through advanced features. MVP = Milestones 1–5.
+Eight milestones from project initiation through advanced features and desktop GUI. MVP = Milestones 1–5.
 
 ## Overview
 

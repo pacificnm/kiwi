@@ -228,39 +228,39 @@ Prioritized work items mapped to GitHub issues. Use labels: `milestone-1` … `m
 
 | Issue | Title | Spec/ADR |
 |-------|-------|----------|
-| — | Scaffold `kiwi_core` crate | SPEC-024 |
-| — | Migrate config and theme to core | SPEC-024 C1–C2 |
-| — | Migrate events, state, reducers | SPEC-024 C3, ADR-007 |
-| — | Migrate workspace persistence types | SPEC-024 C4, ADR-016 |
-| — | Migrate git, github, file, search, shell, agent services | SPEC-024 C5–C10 |
+| #175 | Scaffold `kiwi_core` crate | SPEC-024 |
+| #176 | Migrate config and theme to core | SPEC-024 C1–C2 |
+| #177 | Migrate events, state, reducers | SPEC-024 C3, ADR-007 |
+| #178 | Migrate workspace persistence types | SPEC-024 C4, ADR-016 |
+| #179 | Migrate git, github, file, search, shell, agent services | SPEC-024 C5–C10 |
 
 ### E20: GUI scaffold & lifecycle
 
 | Issue | Title | Spec/ADR |
 |-------|-------|----------|
-| — | Add `kiwi_gui` crate with eframe empty window | SPEC-021, ADR-021 |
-| — | GUI CLI and config bootstrap | SPEC-021, SPEC-018 |
-| — | GUI theme bridge | SPEC-023, ADR-004 |
-| — | Event drain loop + status bar | SPEC-021, ADR-020 |
+| #180 | Add `kiwi_gui` crate with eframe empty window | SPEC-021, ADR-021 |
+| #181 | GUI CLI and config bootstrap | SPEC-021, SPEC-018 |
+| #182 | GUI theme bridge | SPEC-023, ADR-004 |
+| #183 | Event drain loop + status bar | SPEC-021, ADR-020 |
 
 ### E21: GUI dock shell
 
 | Issue | Title | Spec/ADR |
 |-------|-------|----------|
-| — | `KiwiTab` enum and egui_dock integration | SPEC-022, ADR-022 |
-| — | Default layout and View menu | [gui-layout.md](../design/gui-layout.md) |
-| — | Dock persistence in workspace JSON | SPEC-017, SPEC-022 |
-| — | Menu bar and command palette modal | SPEC-022, ADR-014 |
+| #184 | `KiwiTab` enum and egui_dock integration | SPEC-022, ADR-022 |
+| #185 | Default layout and View menu | [gui-layout.md](../design/gui-layout.md) |
+| #186 | Dock persistence in workspace JSON | SPEC-017, SPEC-022 |
+| #187 | Menu bar and command palette modal | SPEC-022, ADR-014 |
 
 ### E22: GUI panel wiring
 
 | Issue | Title | Spec/ADR |
 |-------|-------|----------|
-| — | Explorer panel | SPEC-005, SPEC-022 |
-| — | Git status + diff panels | SPEC-008, SPEC-012 |
-| — | Terminal + agent PTY panels | SPEC-011, SPEC-010, ADR-006 |
-| — | GitHub issues/PRs panels | SPEC-009 |
-| — | Search and preview panels | SPEC-007, SPEC-006 |
+| #188 | Explorer panel | SPEC-005, SPEC-022 |
+| #189 | Git status + diff panels | SPEC-008, SPEC-012 |
+| #190 | Terminal + agent PTY panels | SPEC-011, SPEC-010, ADR-006 |
+| #191 | GitHub issues/PRs panels | SPEC-009 |
+| #192 | Search and preview panels | SPEC-007, SPEC-006 |
 
 ---
 
@@ -278,8 +278,8 @@ Prioritized work items mapped to GitHub issues. Use labels: `milestone-1` … `m
 | Triage GitHub issues | M5 | #54–#58 |
 | Create PR | M5 | #59–#63 |
 | Resume session | M6 | #64–#67 |
-| Use desktop GUI with dockable panels | M8 | E19–E22 |
-| Rearrange GUI layout persistently | M8 | E21 |
+| Use desktop GUI with dockable panels | M8 | #175–#192 |
+| Rearrange GUI layout persistently | M8 | #184–#186 |
 
 ## Technical Debt Tracker
 
