@@ -1775,7 +1775,7 @@ mod tests {
         let main_tabs = app.state().layout.rects.main_tabs;
         let mouse = MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
-            column: main_tabs.x + 8,
+            column: main_tabs.x + 10,
             row: main_tabs.y,
             modifiers: KeyModifiers::empty(),
         };
@@ -1973,7 +1973,7 @@ mod tests {
         let main_tabs = app.state().layout.rects.main_tabs;
         let mouse = MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
-            column: main_tabs.x + 8,
+            column: main_tabs.x + 10,
             row: main_tabs.y,
             modifiers: KeyModifiers::empty(),
         };

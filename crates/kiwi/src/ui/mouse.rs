@@ -103,7 +103,7 @@ mod tests {
         let state = test_state();
         let rects = state.layout.rects;
         assert_eq!(
-            map_mouse_click(&state, rects.left_tabs.x + 8, rects.left_tabs.y),
+            map_mouse_click(&state, rects.left_tabs.x + 10, rects.left_tabs.y),
             vec![
                 NavCommand::SelectLeftTab(LeftNavTab::Git),
                 NavCommand::SetFocus(FocusTarget::Left),
@@ -116,7 +116,7 @@ mod tests {
         let state = test_state();
         let rects = state.layout.rects;
         assert_eq!(
-            map_mouse_click(&state, rects.main_tabs.x + 8, rects.main_tabs.y),
+            map_mouse_click(&state, rects.main_tabs.x + 10, rects.main_tabs.y),
             vec![
                 NavCommand::SelectMainTab(MainTab::Issues),
                 NavCommand::SetFocus(FocusTarget::Main),

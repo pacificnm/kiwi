@@ -7,7 +7,8 @@ Kiwi uses a **fixed three-band layout**: header tab rows, content area, and bott
 ## Region Diagram
 
 ```text
- Row 0-1:  [ Left Tab Bar  |  Main Tab Bar                    ]
+ Row 0:    [ (top margin)                                       ]
+ Row 1:    [ Left Tab Bar  |  Main Tab Bar                    ]
  Row 2-N:  [ Left Content  |  Main Content                    ]
  Row N+1:  [ Command Pal.  |  Shell PTY                       ]
  Last row: [ Status Bar (full width)                          ]

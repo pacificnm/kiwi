@@ -44,8 +44,8 @@ fn labeled_segment(prefix: &str, value: &str) -> String {
     format!("{prefix}: {value}")
 }
 
-fn repo_segment(remote_repo: Option<&str>) -> String {
-    labeled_segment("Repo", remote_repo.unwrap_or("—"))
+fn repo_segment(remote_repo: Option<&str>) -> Option<String> {
+    remote_repo.map(|slug| labeled_segment("Repo", slug))
 }
 
 fn root_segment(root_name: &str) -> String {
@@ -117,7 +117,7 @@ pub fn format_status_line(snapshot: &StatusBarSnapshot, width: u16) -> String {
 }
 
 struct FittedSegments {
-    repo: String,
+    repo: Option<String>,
     root: String,
     branch: String,
     agent: String,
@@ -137,7 +137,7 @@ fn fit_segments(snapshot: &StatusBarSnapshot, width: u16) -> FittedSegments {
 
     if width == 0 {
         return FittedSegments {
-            repo: String::new(),
+            repo: None,
             root: String::new(),
             branch: String::new(),
             agent: String::new(),
@@ -176,9 +176,15 @@ fn fit_segments(snapshot: &StatusBarSnapshot, width: u16) -> FittedSegments {
             continue;
         }
 
-        for label in [&mut repo, &mut root] {
+        for label in [&mut root] {
             if label.chars().count() > 4 {
                 *label = truncate_to_chars(label, label.chars().count() - 1);
+                changed = true;
+            }
+        }
+        if let Some(ref mut repo_label) = repo {
+            if repo_label.chars().count() > 4 {
+                *repo_label = truncate_to_chars(repo_label, repo_label.chars().count() - 1);
                 changed = true;
             }
         }
@@ -187,7 +193,7 @@ fn fit_segments(snapshot: &StatusBarSnapshot, width: u16) -> FittedSegments {
         }
 
         return FittedSegments {
-            repo: truncate_to_chars(&repo, width.min(repo.chars().count())),
+            repo: repo.map(|value| truncate_to_chars(&value, width.min(value.chars().count()))),
             root: String::new(),
             branch: String::new(),
             agent: String::new(),
@@ -198,16 +204,18 @@ fn fit_segments(snapshot: &StatusBarSnapshot, width: u16) -> FittedSegments {
 }
 
 fn join_segments(segments: &FittedSegments) -> String {
-    let mut parts = vec![
-        BRAND,
-        segments.repo.as_str(),
-        segments.root.as_str(),
-        segments.branch.as_str(),
-        segments.agent.as_str(),
-        segments.git.as_str(),
-    ];
+    let mut parts = vec![BRAND.to_string()];
+    if let Some(repo) = &segments.repo {
+        parts.push(repo.clone());
+    }
+    parts.extend([
+        segments.root.clone(),
+        segments.branch.clone(),
+        segments.agent.clone(),
+        segments.git.clone(),
+    ]);
     if let Some(issue) = &segments.issue {
-        parts.push(issue);
+        parts.push(issue.clone());
     }
     parts.join(SEPARATOR)
 }
@@ -266,15 +274,18 @@ pub fn status_bar_line(
         }
     };
 
-    let mut spans = Vec::new();
-    let styled_segments: [(String, _); 6] = [
-        (BRAND.to_string(), normal),
-        (segments.repo, normal),
+    let mut styled_segments = vec![(BRAND.to_string(), normal)];
+    if let Some(repo) = segments.repo {
+        styled_segments.push((repo, normal));
+    }
+    styled_segments.extend([
         (segments.root, normal),
         (segments.branch, normal),
         (segments.agent, agent_style),
         (segments.git, highlight_git),
-    ];
+    ]);
+
+    let mut spans = Vec::new();
 
     for (index, (label, style)) in styled_segments.iter().enumerate() {
         if index > 0 {
@@ -388,6 +399,28 @@ mod tests {
 
         let snapshot = compute_status_bar(&state);
         assert_eq!(snapshot.issue_label, None);
+    }
+
+    #[test]
+    fn format_status_line_omits_repo_when_no_remote() {
+        let snapshot = StatusBarSnapshot {
+            remote_repo: None,
+            root_name: "kiwi".to_string(),
+            branch: "main".to_string(),
+            agent_label: "Agent Idle".to_string(),
+            git_label: "Clean".to_string(),
+            issue_label: None,
+            agent_status: AgentStatus::Idle,
+            agent_running: false,
+            git_modified: false,
+        };
+
+        let line = format_status_line(&snapshot, 120);
+        assert!(!line.contains("Repo:"));
+        assert_eq!(
+            line,
+            "Kiwi | Root: kiwi | Branch: main | Agent Idle | Clean"
+        );
     }
 
     #[test]
