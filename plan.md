@@ -102,7 +102,7 @@ Entire workflow remains inside Kiwi.
 
 ```text
 ┌────────────────────────────┬─────────────────────────────────────────────┐
-│ Files Git Diff GH Search   │ Agent Issues PRs Diff Preview Logs         │
+│ Files Git GH Search        │ Agent Issues PRs Diff Preview Logs         │
 ├────────────────────────────┼─────────────────────────────────────────────┤
 │                            │                                             │
 │ Left Navigation            │ Main Workspace                             │
@@ -131,11 +131,7 @@ Repository file browser.
 
 ### Git
 
-Git status view.
-
-### Diff
-
-Diff navigation.
+Git status view (changed files; `Enter` opens main Diff tab).
 
 ### GH
 

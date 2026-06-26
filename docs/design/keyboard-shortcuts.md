@@ -48,9 +48,8 @@ Palette commands: **Clipboard: Copy**, **Clipboard: Cut**, **Clipboard: Paste**.
 |-----|--------|
 | `Alt+1` | Files |
 | `Alt+2` | Git |
-| `Alt+3` | Diff |
-| `Alt+4` | GH |
-| `Alt+5` | Search |
+| `Alt+3` | GH |
+| `Alt+4` | Search |
 
 ## Main Workspace Tabs
 
@@ -150,7 +149,7 @@ When the agent process exits, the pane footer shows the exit code and the restar
 
 ## GitHub (GH left pane + Issues/PRs main tab)
 
-Pair **GH** left (`Alt+4`) with **Issues** main (`2`) or **PRs** main (`3`). Use `i` / `p` on the GH left hub to switch between issue and PR lists.
+Pair **GH** left (`Alt+3`) with **Issues** main (`2`) or **PRs** main (`4`). Use `i` / `p` on the GH left hub to switch between issue and PR lists.
 
 | Key | Action |
 |-----|--------|

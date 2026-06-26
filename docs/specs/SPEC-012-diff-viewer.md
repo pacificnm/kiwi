@@ -20,7 +20,7 @@ Display unified diffs for working tree and staged changes with navigation from G
 
 ## Functional Requirements
 
-1. Left Diff nav: list of changed files from `GitState`.
+1. Changed-file list from **Git** left tab (`GitState`); `Enter` opens main Diff tab.
 2. Main Diff tab: unified diff for selected file.
 3. Colors: added green, removed red, context muted (theme git roles).
 4. Navigate files: `n`/`p` next/previous changed file.

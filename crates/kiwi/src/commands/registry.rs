@@ -241,19 +241,9 @@ pub const COMMANDS: &[CommandDef] = &[
         ]),
     },
     CommandDef {
-        id: "goto.diff",
-        title: "Go to Diff Panel",
-        shortcut: Some("Alt+3"),
-        context: CommandContext::Always,
-        action: PaletteAction::NavigationChain(&[
-            NavCommand::SelectLeftTab(LeftNavTab::Diff),
-            NavCommand::SetFocus(FocusTarget::Left),
-        ]),
-    },
-    CommandDef {
         id: "goto.gh",
         title: "Go to GitHub Panel",
-        shortcut: Some("Alt+4"),
+        shortcut: Some("Alt+3"),
         context: CommandContext::Always,
         action: PaletteAction::NavigationChain(&[
             NavCommand::SelectLeftTab(LeftNavTab::Gh),
@@ -263,7 +253,7 @@ pub const COMMANDS: &[CommandDef] = &[
     CommandDef {
         id: "goto.search",
         title: "Go to Search",
-        shortcut: Some("Alt+5"),
+        shortcut: Some("Alt+4"),
         context: CommandContext::Always,
         action: PaletteAction::NavigationChain(&[
             NavCommand::SelectLeftTab(LeftNavTab::Search),
@@ -332,13 +322,6 @@ pub const COMMANDS: &[CommandDef] = &[
         shortcut: None,
         context: CommandContext::Always,
         action: PaletteAction::Navigation(NavCommand::SelectLeftTab(LeftNavTab::Git)),
-    },
-    CommandDef {
-        id: "left.diff",
-        title: "Left Tab: Diff",
-        shortcut: None,
-        context: CommandContext::Always,
-        action: PaletteAction::Navigation(NavCommand::SelectLeftTab(LeftNavTab::Diff)),
     },
     CommandDef {
         id: "left.gh",

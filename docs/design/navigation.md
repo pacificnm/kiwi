@@ -25,14 +25,8 @@ Example combinations:
 ### Git
 
 - Grouped sections: Modified, Added, Deleted, Untracked (if enabled)
-- Select file → optional auto-switch to main Diff tab (configurable future)
+- Select file → main Diff tab on `Enter` / double-click
 - `R` refresh
-
-### Diff
-
-- Flat list of changed files only
-- Faster navigation when only caring about diffs
-- Select → main Diff tab shows content
 
 ### GH
 
@@ -126,7 +120,7 @@ Left → Main → Command Palette → Shell → Left
 
 | Shortcut | Action |
 |----------|--------|
-| `Alt+1`–`Alt+5` | Left tab |
+| `Alt+1`–`Alt+4` | Left tab |
 | `1`–`6` | Main tab (when main or left focused) |
 | `Ctrl+P` | Command palette |
 | `Ctrl+`` | Focus shell (optional) |
