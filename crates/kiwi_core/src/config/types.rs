@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Default)]
 #[serde(default)]
 pub struct RawConfig {
     pub app: Option<AppSection>,
@@ -21,6 +21,7 @@ pub struct RawConfig {
     pub diff: Option<DiffSection>,
     pub watcher: Option<WatcherSection>,
     pub plugins: Option<PluginsSection>,
+    pub gui: Option<GuiSection>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
@@ -135,6 +136,18 @@ pub struct DiffSection {
     pub word_wrap: Option<bool>,
 }
 
+#[derive(Debug, Clone, PartialEq, Deserialize, Default)]
+#[serde(default)]
+pub struct GuiSection {
+    pub font: Option<GuiFontSection>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Default)]
+#[serde(default)]
+pub struct GuiFontSection {
+    pub size: Option<f32>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedConfig {
     pub app: AppSettings,
@@ -152,6 +165,7 @@ pub struct ResolvedConfig {
     pub diff: DiffSettings,
     pub watcher: WatcherSettings,
     pub plugins: PluginsSettings,
+    pub gui: GuiSettings,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -245,6 +259,25 @@ pub struct PluginsSettings {
     pub directory: PathBuf,
 }
 
+#[derive(Debug, Clone)]
+pub struct GuiSettings {
+    pub font_size: f32,
+}
+
+impl Default for GuiSettings {
+    fn default() -> Self {
+        Self { font_size: 14.0 }
+    }
+}
+
+impl Eq for GuiSettings {}
+
+impl PartialEq for GuiSettings {
+    fn eq(&self, other: &Self) -> bool {
+        self.font_size.to_bits() == other.font_size.to_bits()
+    }
+}
+
 impl Default for ResolvedConfig {
     fn default() -> Self {
         Self {
@@ -297,6 +330,7 @@ impl Default for ResolvedConfig {
                 enabled: true,
                 directory: default_plugins_directory(None),
             },
+            gui: GuiSettings::default(),
         }
     }
 }
@@ -438,6 +472,14 @@ impl RawConfig {
             }
             if let Some(directory) = &plugins.directory {
                 resolved.plugins.directory = expand_tilde(directory, home);
+            }
+        }
+
+        if let Some(gui) = &self.gui {
+            if let Some(font) = &gui.font {
+                if let Some(size) = font.size {
+                    resolved.gui.font_size = size;
+                }
             }
         }
     }

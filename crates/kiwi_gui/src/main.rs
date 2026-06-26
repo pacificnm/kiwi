@@ -1,6 +1,7 @@
 mod app;
 mod bootstrap;
 mod cli;
+mod theme;
 
 use bootstrap::{init, window_title, GuiBootstrapContext};
 use cli::Cli;

@@ -23,6 +23,8 @@ cargo run -p kiwi_gui -- .
 # Example with theme override (same merge order as the TUI; SPEC-018)
 cargo run -p kiwi_gui -- --theme dracula /path/to/repo
 
+# Adjust base font scale via config ([gui.font] size = 16.0)
+
 # Run all workspace tests
 cargo test --workspace
 

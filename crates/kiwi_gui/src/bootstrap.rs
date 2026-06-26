@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 
 use kiwi_core::config::{load_config_with_home, ConfigError, ConfigLoadOptions, ResolvedConfig};
 use kiwi_core::repo::{resolve_repo_root, warn_if_not_git_repo, RepoError};
-use kiwi_core::theme::{load_theme, ThemeError, ThemePalette};
+use kiwi_core::theme::{
+    load_theme_with_capabilities, TerminalCapabilities, ThemeError, ThemePalette,
+};
 
 use crate::cli::Cli;
 
@@ -53,7 +55,8 @@ pub(crate) fn init_with_home(
     let options = ConfigLoadOptions::from(cli);
     let config =
         load_config_with_home(&options, &repo.path, home).map_err(BootstrapError::Config)?;
-    let theme = load_theme(&config.theme).map_err(BootstrapError::Theme)?;
+    let theme = load_theme_with_capabilities(&config.theme, TerminalCapabilities::TrueColor)
+        .map_err(BootstrapError::Theme)?;
 
     Ok(GuiBootstrapContext {
         repo_root: repo.path,
@@ -195,5 +198,16 @@ mod tests {
         let cli = Cli::parse_from(["kiwi-gui", repo.path.to_str().expect("utf8 path")]);
         let ctx = init_with_home(&cli, Some(home.home.clone())).expect("bootstrap");
         assert_eq!(ctx.theme.name, "kiwi-dark");
+        assert!((ctx.config.gui.font_size - 14.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn init_loads_gui_font_from_project_config() {
+        let home = TestHome::new("gui-font");
+        let repo = TempRepo::new("gui-font");
+        fs::write(repo.path.join(".kiwi.toml"), "[gui.font]\nsize = 18.0\n").expect("write config");
+        let cli = Cli::parse_from(["kiwi-gui", repo.path.to_str().expect("utf8 path")]);
+        let ctx = init_with_home(&cli, Some(home.home.clone())).expect("bootstrap");
+        assert!((ctx.config.gui.font_size - 18.0).abs() < f32::EPSILON);
     }
 }
