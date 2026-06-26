@@ -18,8 +18,9 @@ Example combinations:
 ### Files
 
 - Primary repository browser
-- Tree: `▸` collapsed, `▾` expanded
-- Git status icon/color per file
+- Tree: `[▸]` collapsed folder, `[▾]` expanded folder, three-space prefix for files
+- Git status icon/color per file (overrides file-type color when present)
+- File-type color per theme (`file_dir`, `file_source`, `file_script`, `file_markup`, `file_config`, `file_data`, `file_media`, `file_other`)
 - Keys: `j`/`k` move, `l` expand, `h` collapse, `Enter` preview, `e` editor
 
 ### Git

@@ -4,12 +4,25 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
-use crate::file_tree::FileTreeState;
+use crate::file_tree::{file_type_category, FileTreeState};
 use crate::state::AppState;
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
 
 use super::scrollbar::{render_vertical_scrollbar, split_for_scrollbar};
+
+pub const TREE_INDENT_CHARS: usize = 2;
+pub const TREE_ICON_WIDTH: usize = 3;
+
+const FOLDER_EXPANDED: &str = "[▾]";
+const FOLDER_COLLAPSED: &str = "[▸]";
+const FOLDER_LOADING: &str = "[…]";
+const FOLDER_ERROR: &str = "[!]";
+const FILE_ICON: &str = "   ";
+
+pub fn tree_icon_x(depth: usize) -> usize {
+    depth.saturating_mul(TREE_INDENT_CHARS)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileTreeMouseAction {
@@ -121,9 +134,9 @@ pub fn file_tree_interaction_at(
     let tree_row = state.file_tree.row_at_viewport_index(viewport_index)?;
     let node = state.file_tree.nodes.get(&tree_row.path)?;
     let local_x = usize::from(column.saturating_sub(inner.x));
-    let chevron_x = tree_row.depth.saturating_mul(2);
+    let icon_x = tree_icon_x(tree_row.depth);
 
-    if node.is_dir && local_x == chevron_x {
+    if node.is_dir && local_x >= icon_x && local_x < icon_x.saturating_add(TREE_ICON_WIDTH) {
         if node.expanded {
             return Some(FileTreeMouseAction::Collapse(tree_row.path.clone()));
         }
@@ -143,53 +156,84 @@ fn render_row_line(
     let tree_row = state.file_tree.row_at_viewport_index(viewport_index)?;
     let node = state.file_tree.nodes.get(&tree_row.path)?;
     let selected = state.file_tree.selected.as_ref() == Some(&tree_row.path);
-
-    let mut style = theme.get(SemanticRole::Fg);
-    if selected {
-        style = if focused {
-            theme.get(SemanticRole::Accent)
-        } else {
-            theme.get(SemanticRole::Fg)
-        };
-        style = style.add_modifier(Modifier::BOLD);
-    }
+    let chrome_style = row_chrome_style(theme, selected, focused);
+    let name_style = row_name_style(theme, node, selected, focused);
 
     let indent = "  ".repeat(tree_row.depth);
     let glyph = row_glyph(&state.file_tree, node);
+    let prefix = format!("{indent}{glyph}");
 
-    if node.is_dir || node.git_status.is_none() {
-        let label = truncate_line(&format!("{indent}{glyph}{}", node.name), max_width);
-        return Some(Line::from(Span::styled(label, style)));
+    if let Some(status) = node.git_status.filter(|_| !node.is_dir) {
+        let status_style = if selected {
+            name_style
+        } else {
+            theme.get(status.semantic_role())
+        };
+        let badge = format!(" {}", status.badge());
+        let name_budget = max_width.saturating_sub(prefix.chars().count() + badge.chars().count());
+        let name = truncate_line(&node.name, name_budget);
+
+        return Some(Line::from(vec![
+            Span::styled(prefix, chrome_style),
+            Span::styled(name, status_style),
+            Span::styled(badge, status_style),
+        ]));
     }
 
-    let status = node.git_status.expect("checked above");
-    let status_style = theme.get(status.semantic_role());
-    let prefix = format!("{indent}{glyph}");
-    let badge = format!(" {}", status.badge());
-    let name_budget = max_width.saturating_sub(prefix.chars().count() + badge.chars().count());
+    let name_budget = max_width.saturating_sub(prefix.chars().count());
     let name = truncate_line(&node.name, name_budget);
 
     Some(Line::from(vec![
-        Span::styled(prefix, style),
-        Span::styled(name, status_style),
-        Span::styled(badge, status_style),
+        Span::styled(prefix, chrome_style),
+        Span::styled(name, name_style),
     ]))
+}
+
+fn row_chrome_style(theme: &ThemePalette, selected: bool, focused: bool) -> ratatui::style::Style {
+    if selected {
+        return row_selection_style(theme, focused);
+    }
+    theme.get(SemanticRole::Fg)
+}
+
+fn row_name_style(
+    theme: &ThemePalette,
+    node: &crate::file_tree::FileNode,
+    selected: bool,
+    focused: bool,
+) -> ratatui::style::Style {
+    if selected {
+        return row_selection_style(theme, focused);
+    }
+    if let Some(status) = node.git_status.filter(|_| !node.is_dir) {
+        return theme.get(status.semantic_role());
+    }
+    theme.get(file_type_category(node).semantic_role())
+}
+
+fn row_selection_style(theme: &ThemePalette, focused: bool) -> ratatui::style::Style {
+    let style = if focused {
+        theme.get(SemanticRole::Accent)
+    } else {
+        theme.get(SemanticRole::Selection)
+    };
+    style.add_modifier(Modifier::BOLD)
 }
 
 fn row_glyph(tree: &FileTreeState, node: &crate::file_tree::FileNode) -> &'static str {
     if node.load_error.is_some() {
-        return "! ";
+        return FOLDER_ERROR;
     }
     if node.is_dir {
         if tree.loading.contains(&node.path) {
-            return "… ";
+            return FOLDER_LOADING;
         }
         if node.expanded {
-            return "▾ ";
+            return FOLDER_EXPANDED;
         }
-        return "▸ ";
+        return FOLDER_COLLAPSED;
     }
-    "  "
+    FILE_ICON
 }
 
 fn truncate_line(text: &str, max_width: usize) -> String {
@@ -216,6 +260,8 @@ mod tests {
     use crate::state::AppState;
     use crate::theme::capabilities::TerminalCapabilities;
     use crate::theme::loader::load_theme_with_capabilities;
+    use crate::theme::SemanticRole;
+    use ratatui::style::Color;
 
     use super::*;
 
@@ -244,6 +290,11 @@ mod tests {
                 DirectoryEntry {
                     path: root.join("README.md"),
                     name: "README.md".to_string(),
+                    is_dir: false,
+                },
+                DirectoryEntry {
+                    path: root.join("main.rs"),
+                    name: "main.rs".to_string(),
                     is_dir: false,
                 },
             ],
@@ -276,14 +327,17 @@ mod tests {
     }
 
     #[test]
-    fn interaction_on_chevron_expands_directory() {
+    fn interaction_on_icon_expands_directory() {
         let state = test_state_with_tree();
         let area = Rect::new(0, 0, 30, 8);
-        let action = file_tree_interaction_at(&state, area, area.x + 1, area.y + 1);
-        assert_eq!(
-            action,
-            Some(FileTreeMouseAction::Expand(state.file_tree.root.clone()))
-        );
+        let block = Block::default().borders(Borders::ALL);
+        let inner = block.inner(area);
+        let root = state.file_tree.root.clone();
+        for offset in 0..TREE_ICON_WIDTH {
+            let column = inner.x + u16::try_from(offset).expect("column");
+            let action = file_tree_interaction_at(&state, area, column, inner.y);
+            assert_eq!(action, Some(FileTreeMouseAction::Expand(root.clone())));
+        }
     }
 
     #[test]
@@ -292,8 +346,100 @@ mod tests {
         let root = state.file_tree.root.clone();
         state.file_tree.expand(&root).expect("expand");
         let area = Rect::new(0, 0, 30, 8);
-        let child_row = area.y + 2;
-        let action = file_tree_interaction_at(&state, area, area.x + 4, child_row);
+        let block = Block::default().borders(Borders::ALL);
+        let inner = block.inner(area);
+        let name_column =
+            inner.x + u16::try_from(tree_icon_x(1) + TREE_ICON_WIDTH).expect("name column");
+        let action = file_tree_interaction_at(&state, area, name_column, inner.y + 1);
         assert_eq!(action, Some(FileTreeMouseAction::Select(root.join("src"))));
+    }
+
+    #[test]
+    fn source_file_uses_theme_file_type_color() {
+        let mut state = test_state_with_tree();
+        let root = state.file_tree.root.clone();
+        state.file_tree.expand(&root).expect("expand");
+
+        let area = Rect::new(0, 0, 40, 8);
+        let block = Block::default().title("Files").borders(Borders::ALL);
+        let inner = block.inner(area);
+        let line = render_row_line(&state, &state.theme, 3, inner.width as usize, true)
+            .expect("main.rs row");
+
+        assert_eq!(line.spans.len(), 2);
+        assert_eq!(line.spans[1].content, "main.rs");
+        assert_eq!(
+            line.spans[1].style.fg,
+            state.theme.get(SemanticRole::FileSource).fg
+        );
+        assert_eq!(
+            state.theme.get(SemanticRole::FileSource).fg,
+            Some(Color::Rgb(158, 206, 106))
+        );
+    }
+
+    #[test]
+    fn git_status_color_overrides_file_type_color() {
+        let mut state = test_state_with_tree();
+        let root = state.file_tree.root.clone();
+        state.file_tree.expand(&root).expect("expand");
+        state
+            .file_tree
+            .nodes
+            .get_mut(&root.join("main.rs"))
+            .expect("main.rs")
+            .git_status = Some(GitFileStatus::Modified);
+
+        let area = Rect::new(0, 0, 40, 8);
+        let block = Block::default().title("Files").borders(Borders::ALL);
+        let inner = block.inner(area);
+        let line = render_row_line(&state, &state.theme, 3, inner.width as usize, true)
+            .expect("main.rs row");
+
+        assert_eq!(line.spans.len(), 3);
+        assert_eq!(
+            line.spans[1].style.fg,
+            state.theme.get(SemanticRole::GitModified).fg
+        );
+    }
+
+    #[test]
+    fn selected_file_row_uses_accent_highlight() {
+        let mut state = test_state_with_tree();
+        let root = state.file_tree.root.clone();
+        state.file_tree.expand(&root).expect("expand");
+        state.file_tree.select(root.join("main.rs"));
+
+        let area = Rect::new(0, 0, 40, 8);
+        let block = Block::default().title("Files").borders(Borders::ALL);
+        let inner = block.inner(area);
+        let line = render_row_line(&state, &state.theme, 3, inner.width as usize, true)
+            .expect("main.rs row");
+
+        assert_eq!(line.spans.len(), 2);
+        assert_eq!(line.spans[1].content, "main.rs");
+        assert_eq!(
+            line.spans[1].style.fg,
+            state.theme.get(SemanticRole::Accent).fg
+        );
+        assert!(line.spans[1].style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn row_glyph_uses_bracketed_folder_icons() {
+        let mut state = test_state_with_tree();
+        let root = state.file_tree.root.clone();
+        let area = Rect::new(0, 0, 40, 8);
+        let block = Block::default().title("Files").borders(Borders::ALL);
+        let inner = block.inner(area);
+
+        let collapsed =
+            render_row_line(&state, &state.theme, 0, inner.width as usize, true).expect("root row");
+        assert!(collapsed.spans[0].content.contains("[▸]"));
+
+        state.file_tree.expand(&root).expect("expand");
+        let expanded = render_row_line(&state, &state.theme, 0, inner.width as usize, true)
+            .expect("expanded root row");
+        assert!(expanded.spans[0].content.contains("[▾]"));
     }
 }

@@ -36,7 +36,8 @@ use crate::selection::{hit_test_text, SelectionPane};
 use crate::shell::{encode_key, ShellOutputReader, ShellSession};
 use crate::shutdown;
 use crate::state::{
-    agent_spawn_effects_if_needed, reduce, AppCommand, AppEvent, AppState, EventChannel, SideEffect,
+    agent_spawn_effects_if_needed, file_tree_startup_effects, reduce, AppCommand, AppEvent,
+    AppState, EventChannel, SideEffect,
 };
 use crate::ui::{
     branch_interaction_at, draw_frame, file_tree_interaction_at, git_interaction_at,
@@ -147,6 +148,8 @@ impl App {
         };
         let spawn_effects = agent_spawn_effects_if_needed(&mut app.state);
         app.execute_effects(spawn_effects);
+        let file_tree_effects = file_tree_startup_effects(&mut app.state);
+        app.execute_effects(file_tree_effects);
         if let Some(err) = watcher_error {
             app.state.logs.push_info(format!(
                 "File watcher disabled: {err}. Use Git: Refresh Status or R in the Git tab."
@@ -2040,6 +2043,17 @@ mod tests {
 
         assert!(!app.dispatch_mouse(mouse));
         assert_eq!(app.state().navigation.left_tab, before);
+    }
+
+    #[test]
+    fn startup_expands_file_tree_root() {
+        let app = App::new(test_context());
+        let root = app.state().file_tree.root.clone();
+        assert!(app.state().file_tree.nodes[&root].expanded);
+        assert!(
+            app.state().file_tree.loading.contains(&root)
+                || app.state().file_tree.nodes[&root].children_loaded
+        );
     }
 
     #[test]
