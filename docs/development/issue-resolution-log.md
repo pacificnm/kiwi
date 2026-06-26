@@ -319,6 +319,14 @@ Format for new entries:
 - **Files:** `state/preservation.rs`, `state/mod.rs`, `git/selection.rs`
 - **Verify:** `git_status_refresh_preserves_git_panel_scroll_and_selection`, `fs_changed_preserves_file_tree_scroll_selection_and_focus`, `file_tree_reload_after_fs_changed_preserves_scroll_and_selection`, `ensure_git_selection_preserves_scroll_when_path_remains`; manual: scroll git panel and file tree, save external edit, confirm position unchanged.
 
+### Palette history persistence (GitHub #67, SPEC-017)
+
+- **Symptom:** Backlog item #67 tracked palette history as a separate E16 deliverable after workspace snapshot schema (#64), startup load (#65), and save-on-quit/periodic (#66).
+- **Cause:** Core wiring already landed via `command_palette_history` in `WorkspaceSnapshot`, `execute_command` history recording, and `SaveWorkspace` on palette execute; #67 needed explicit regression coverage and SPEC-017 acceptance criteria.
+- **Fix:** Verified end-to-end flow: history recorded on execute, saved in workspace JSON, restored on startup when `workspace.persist` is enabled; added unit tests for history ordering, persist=false skip, per-repo isolation, and restore round-trip.
+- **Files:** `commands/mod.rs`, `workspace/persistence.rs`, `state/reducer.rs`, `docs/specs/SPEC-017-workspace-persistence.md`
+- **Verify:** `empty_input_surfaces_recent_history_first`, `execute_command_records_history`, `execute_skips_save_when_persistence_disabled`, `palette_execute_persists_history_when_enabled`, `palette_execute_skips_save_when_persistence_disabled`, `two_repos_have_isolated_palette_history`, `palette_history_round_trips_through_workspace_restore`; manual: `Ctrl+P` → run commands → quit → relaunch → Up/Down cycles prior command titles.
+
 ---
 
 ## Reporting New Issues

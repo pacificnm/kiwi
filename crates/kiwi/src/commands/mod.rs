@@ -84,7 +84,7 @@ pub fn refresh_matches(state: &mut AppState) {
 
     if input.is_empty() {
         let mut matches: Vec<usize> = (0..COMMANDS.len()).collect();
-        for command_id in state.palette.history.iter().rev() {
+        for command_id in &state.palette.history {
             if let Some(index) = COMMANDS.iter().position(|command| command.id == command_id) {
                 matches.retain(|candidate| *candidate != index);
                 matches.insert(0, index);
@@ -701,5 +701,47 @@ mod tests {
     #[test]
     fn history_input_uses_command_title() {
         assert_eq!(history_input_for_id("git.refresh"), "Git: Refresh Status");
+    }
+
+    #[test]
+    fn empty_input_surfaces_recent_history_first() {
+        let mut state = test_state();
+        state.palette.history = vec!["goto.agent".to_string(), "git.refresh".to_string()];
+        state.palette.input.clear();
+        refresh_matches(&mut state);
+
+        assert!(state.palette.matches.len() >= 2);
+        assert_eq!(COMMANDS[state.palette.matches[0]].id, "git.refresh");
+        assert_eq!(COMMANDS[state.palette.matches[1]].id, "goto.agent");
+    }
+
+    #[test]
+    fn execute_command_records_history() {
+        let mut state = test_state();
+        let index = COMMANDS
+            .iter()
+            .position(|command| command.id == "goto.agent")
+            .expect("goto agent");
+        execute_command(&mut state, index);
+        assert_eq!(
+            state.palette.history.last().map(String::as_str),
+            Some("goto.agent")
+        );
+    }
+
+    #[test]
+    fn execute_skips_save_when_persistence_disabled() {
+        let mut state = test_state();
+        state.config.workspace.persist = false;
+        let index = COMMANDS
+            .iter()
+            .position(|command| command.id == "git.refresh")
+            .expect("git refresh");
+        let effects = execute_command(&mut state, index);
+        assert!(!effects.contains(&SideEffect::SaveWorkspace));
+        assert_eq!(
+            state.palette.history.last().map(String::as_str),
+            Some("git.refresh")
+        );
     }
 }

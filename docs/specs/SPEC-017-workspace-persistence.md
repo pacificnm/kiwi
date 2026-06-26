@@ -77,3 +77,4 @@ save_interval_secs = 30
 - [ ] Corrupt file does not crash
 - [ ] persist=false skips save
 - [ ] Two repos have isolated state files
+- [x] Palette command history restored per repo when `workspace.persist` is enabled

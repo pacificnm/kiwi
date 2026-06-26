@@ -3823,6 +3823,20 @@ mod tests {
             AppEvent::Command(AppCommand::PaletteExecuteSelected),
         );
         assert!(effects.contains(&SideEffect::SaveWorkspace));
+        assert!(state.palette.history.last().is_some());
+    }
+
+    #[test]
+    fn palette_execute_skips_save_when_persistence_disabled() {
+        let mut state = test_state();
+        state.config.workspace.persist = false;
+        reduce(&mut state, AppEvent::Command(AppCommand::PaletteOpen));
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::PaletteExecuteSelected),
+        );
+        assert!(!effects.contains(&SideEffect::SaveWorkspace));
+        assert!(state.palette.history.last().is_some());
     }
 
     #[test]
