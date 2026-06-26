@@ -232,7 +232,7 @@ pub fn execute_command(state: &mut AppState, registry_index: usize) -> Vec<SideE
     };
 
     if state.config.workspace.persist {
-        effects.push(SideEffect::SavePaletteHistory);
+        effects.push(SideEffect::SaveWorkspace);
     }
 
     effects
@@ -483,7 +483,7 @@ mod tests {
             .expect("git refresh");
         let effects = execute_command(&mut state, index);
         assert!(effects.contains(&SideEffect::SpawnGitRefresh));
-        assert!(effects.contains(&SideEffect::SavePaletteHistory));
+        assert!(effects.contains(&SideEffect::SaveWorkspace));
         assert!(state.git.loading);
         assert!(!state.palette.open);
     }

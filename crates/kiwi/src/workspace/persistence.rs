@@ -1,10 +1,11 @@
-#![allow(dead_code)] // Public persistence API (SPEC-017); wired in #65–#66.
+#![allow(dead_code)] // load_snapshot helpers remain for tests and merge saves.
 
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use super::snapshot::{trim_history, WorkspaceSnapshot, WORKSPACE_SCHEMA_VERSION};
+use crate::state::AppState;
 
 pub fn load_snapshot(repo_root: &Path) -> Option<WorkspaceSnapshot> {
     load_workspace_snapshot(repo_root, false)
@@ -46,6 +47,24 @@ fn load_workspace_snapshot(repo_root: &Path, log_errors: bool) -> Option<Workspa
             }
             None
         }
+    }
+}
+
+pub fn save_workspace_from_state(state: &AppState) -> std::io::Result<()> {
+    let snapshot = WorkspaceSnapshot::from_app_state(state);
+    save_snapshot(&state.repo_root, &snapshot)
+}
+
+/// Persist current app state when `workspace.persist` is enabled (SPEC-017).
+pub fn try_save_workspace_from_state(state: &AppState) {
+    if !state.config.workspace.persist {
+        return;
+    }
+    if let Err(err) = save_workspace_from_state(state) {
+        eprintln!(
+            "workspace: failed to save {}: {err}",
+            workspace_file_path(&state.repo_root).display()
+        );
     }
 }
 
@@ -210,6 +229,42 @@ mod tests {
         save_palette_history(repo, &history).expect("save");
         let loaded = load_palette_history(repo).expect("load");
         assert_eq!(loaded, history);
+    }
+
+    #[test]
+    fn save_workspace_from_state_round_trip() {
+        use crate::config::ResolvedConfig;
+        use crate::layout::compute_layout;
+        use crate::navigation::{LeftNavTab, MainTab};
+        use crate::state::AppState;
+        use crate::theme::capabilities::TerminalCapabilities;
+        use crate::theme::loader::load_theme_with_capabilities;
+
+        let _dir = TempStateDir::new("from-state");
+        let repo = Path::new("/tmp/kiwi-workspace-from-state");
+        let mut state = AppState::from_startup(
+            repo.to_path_buf(),
+            false,
+            ResolvedConfig::default(),
+            load_theme_with_capabilities(
+                &ResolvedConfig::default().theme,
+                TerminalCapabilities::TrueColor,
+            )
+            .expect("theme"),
+            compute_layout(120, 40, 30).expect("layout"),
+        );
+        state.navigation.left_tab = LeftNavTab::Git;
+        state.navigation.main_tab = MainTab::Preview;
+        state.config.app.left_width = 27;
+        state.palette.history = vec!["quit".to_string()];
+
+        save_workspace_from_state(&state).expect("save");
+        let loaded = load_snapshot(repo).expect("load");
+
+        assert_eq!(loaded.left_nav_tab, "Git");
+        assert_eq!(loaded.main_tab, "Preview");
+        assert_eq!(loaded.left_width, 27);
+        assert_eq!(loaded.command_palette_history, vec!["quit".to_string()]);
     }
 
     #[test]

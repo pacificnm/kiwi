@@ -232,9 +232,7 @@ pub enum SideEffect {
         cols: u16,
         rows: u16,
     },
-    #[cfg_attr(not(test), allow(dead_code))]
     SaveWorkspace,
-    SavePaletteHistory,
     LoadDirectoryChildren(PathBuf),
     LoadPreviewFile(PathBuf),
     LoadFileDiff {
