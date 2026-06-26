@@ -10,8 +10,9 @@ use crate::github::{missing_browser_target_message, resolve_browser_target, Labe
 use crate::layout::FocusTarget;
 use crate::navigation::{LeftNavTab, MainTab, NavCommand};
 use crate::state::{
-    apply_navigation, diff_move_file_effects, diff_set_source_effects, git_refresh_effects,
-    github_refresh_effects, AppState, GitHubPrCreatePrompt, PalettePrompt, SideEffect,
+    agent_cycle_effects, agent_new_effects, apply_navigation, diff_move_file_effects,
+    diff_set_source_effects, git_refresh_effects, github_refresh_effects, AppState,
+    GitHubPrCreatePrompt, PalettePrompt, SideEffect,
 };
 
 pub use fuzzy::{best_fuzzy_score, filter_ranked};
@@ -34,6 +35,8 @@ pub enum PaletteAction {
     RequestGitRefresh,
     RequestGitHubRefresh,
     AgentRestart,
+    AgentNew,
+    AgentCycleNext,
     Navigation(NavCommand),
     NavigationChain(&'static [NavCommand]),
     LaunchEditor,
@@ -255,8 +258,10 @@ fn execute_builtin_command(state: &mut AppState, registry_index: usize) -> Vec<S
                 return Vec::new();
             }
             state.dirty = true;
-            vec![SideEffect::RestartAgent]
+            vec![SideEffect::RestartAgent(state.agent_manager.active_id())]
         }
+        PaletteAction::AgentNew => agent_new_effects(state),
+        PaletteAction::AgentCycleNext => agent_cycle_effects(state, 1),
         PaletteAction::Navigation(nav) => {
             apply_navigation(state, nav);
             crate::state::agent_spawn_effects_if_needed(state)

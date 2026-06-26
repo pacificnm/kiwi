@@ -3,14 +3,16 @@ use std::thread::{self, JoinHandle};
 
 use crate::state::{AppEvent, EventSender};
 
+use super::manager::AgentId;
+
 pub struct AgentOutputReader {
     handle: Option<JoinHandle<()>>,
 }
 
 impl AgentOutputReader {
-    pub fn spawn(reader: Box<dyn Read + Send>, sender: EventSender) -> Self {
+    pub fn spawn(reader: Box<dyn Read + Send>, agent_id: AgentId, sender: EventSender) -> Self {
         Self {
-            handle: Some(spawn_output_reader(reader, sender)),
+            handle: Some(spawn_output_reader(reader, agent_id, sender)),
         }
     }
 
@@ -21,7 +23,11 @@ impl AgentOutputReader {
     }
 }
 
-fn spawn_output_reader(mut reader: Box<dyn Read + Send>, sender: EventSender) -> JoinHandle<()> {
+fn spawn_output_reader(
+    mut reader: Box<dyn Read + Send>,
+    agent_id: AgentId,
+    sender: EventSender,
+) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut buffer = [0u8; 4096];
         loop {
@@ -29,7 +35,10 @@ fn spawn_output_reader(mut reader: Box<dyn Read + Send>, sender: EventSender) ->
                 Ok(0) => break,
                 Ok(count)
                     if sender
-                        .send(AppEvent::AgentOutput(buffer[..count].to_vec()))
+                        .send(AppEvent::AgentOutput {
+                            agent_id,
+                            data: buffer[..count].to_vec(),
+                        })
                         .is_err() =>
                 {
                     break;
@@ -52,7 +61,7 @@ mod tests {
 
         let (reader, writer) = UnixStream::pair().expect("socket pair");
         let channel = crate::state::EventChannel::new();
-        let handle = spawn_output_reader(Box::new(reader), channel.sender());
+        let handle = spawn_output_reader(Box::new(reader), AgentId::FIRST, channel.sender());
 
         drop(writer);
         handle.join().expect("reader thread should exit after EOF");

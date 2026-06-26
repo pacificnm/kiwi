@@ -110,6 +110,20 @@ pub const COMMANDS: &[CommandDef] = &[
         action: PaletteAction::AgentRestart,
     },
     CommandDef {
+        id: "agent.new",
+        title: "Agent: New Session",
+        shortcut: Some("Ctrl+Shift+N"),
+        context: CommandContext::AgentTab,
+        action: PaletteAction::AgentNew,
+    },
+    CommandDef {
+        id: "agent.next",
+        title: "Agent: Next Session",
+        shortcut: Some("Ctrl+Tab"),
+        context: CommandContext::AgentTab,
+        action: PaletteAction::AgentCycleNext,
+    },
+    CommandDef {
         id: "editor.open",
         title: "Open in External Editor",
         shortcut: Some("e"),

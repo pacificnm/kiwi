@@ -53,8 +53,8 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
         }
         AppEvent::ShellOutput(data) => reduce_shell_output(state, data),
         AppEvent::ShellExited(_code) => reduce_shell_exited(state),
-        AppEvent::AgentOutput(data) => reduce_agent_output(state, data),
-        AppEvent::AgentExited(code) => reduce_agent_exited(state, code),
+        AppEvent::AgentOutput { agent_id, data } => reduce_agent_output(state, agent_id, data),
+        AppEvent::AgentExited { agent_id, code } => reduce_agent_exited(state, agent_id, code),
         AppEvent::FileTreeChildrenLoaded {
             parent,
             children,
@@ -164,6 +164,9 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         AppCommand::AgentScroll(delta) => reduce_agent_scroll(state, delta),
         AppCommand::AgentScrollLines(lines) => reduce_agent_scroll_lines(state, lines),
         AppCommand::AgentRestart => reduce_agent_restart(state),
+        AppCommand::AgentNew => reduce_agent_new(state),
+        AppCommand::AgentCycleNext => reduce_agent_cycle(state, 1),
+        AppCommand::AgentCyclePrev => reduce_agent_cycle(state, -1),
         AppCommand::PaletteOpen => reduce_palette_open(state),
         AppCommand::PaletteClose => reduce_palette_close(state),
         AppCommand::PaletteAppendChar(ch) => reduce_palette_append_char(state, ch),
@@ -253,12 +256,36 @@ fn sync_github_left_pane_from_main_tab(state: &mut AppState) {
 }
 
 pub fn agent_spawn_effects_if_needed(state: &mut AppState) -> Vec<SideEffect> {
-    if state.navigation.main_tab != MainTab::Agent || state.active_agent().spawned {
+    if state.navigation.main_tab != MainTab::Agent {
+        return Vec::new();
+    }
+
+    agent_spawn_effects_for(state, state.agent_manager.active_id())
+}
+
+pub fn agent_new_effects(state: &mut AppState) -> Vec<SideEffect> {
+    reduce_agent_new(state)
+}
+
+pub fn agent_cycle_effects(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    reduce_agent_cycle(state, delta)
+}
+
+fn agent_spawn_effects_for(state: &mut AppState, id: crate::agent::AgentId) -> Vec<SideEffect> {
+    if state.navigation.main_tab != MainTab::Agent {
+        return Vec::new();
+    }
+
+    let needs_spawn = state
+        .agent_manager
+        .pty(id)
+        .is_some_and(|pty| !pty.spawned);
+    if !needs_spawn {
         return Vec::new();
     }
 
     state.dirty = true;
-    vec![SideEffect::SpawnAgent]
+    vec![SideEffect::SpawnAgent(id)]
 }
 
 fn reduce_terminal_resize(state: &mut AppState, width: u16, height: u16) -> Vec<SideEffect> {
@@ -1303,21 +1330,75 @@ fn reduce_shell_exited(state: &mut AppState) -> Vec<SideEffect> {
     Vec::new()
 }
 
-fn reduce_agent_output(state: &mut AppState, data: Vec<u8>) -> Vec<SideEffect> {
-    let cols = state.active_agent().cols;
-    state.active_agent_mut().scrollback.set_cols(cols);
-    state.active_agent_mut().scrollback.append_bytes(&data);
-    if let Some(status) = infer_status_from_scrollback(&state.active_agent().scrollback) {
-        state.active_agent_mut().status = status;
+fn reduce_agent_output(
+    state: &mut AppState,
+    agent_id: crate::agent::AgentId,
+    data: Vec<u8>,
+) -> Vec<SideEffect> {
+    let Some(pty) = state.agent_manager.pty_mut(agent_id) else {
+        return Vec::new();
+    };
+
+    let cols = pty.cols;
+    pty.scrollback.set_cols(cols);
+    pty.scrollback.append_bytes(&data);
+    if let Some(status) = infer_status_from_scrollback(&pty.scrollback) {
+        pty.status = status;
     }
     state.dirty = true;
     Vec::new()
 }
 
-fn reduce_agent_exited(state: &mut AppState, code: i32) -> Vec<SideEffect> {
-    state.active_agent_mut().apply_exit(code);
+fn reduce_agent_exited(
+    state: &mut AppState,
+    agent_id: crate::agent::AgentId,
+    code: i32,
+) -> Vec<SideEffect> {
+    let Some(pty) = state.agent_manager.pty_mut(agent_id) else {
+        return Vec::new();
+    };
+
+    pty.apply_exit(code);
     state.dirty = true;
     Vec::new()
+}
+
+fn reduce_agent_new(state: &mut AppState) -> Vec<SideEffect> {
+    if state.navigation.main_tab != MainTab::Agent {
+        return Vec::new();
+    }
+
+    let linked_issue = state.github.selected_issue;
+    match state
+        .agent_manager
+        .create_agent(None, linked_issue)
+    {
+        Ok(id) => {
+            state.dirty = true;
+            vec![SideEffect::SpawnAgent(id)]
+        }
+        Err(crate::agent::AgentManagerError::AtCapacity) => {
+            state
+                .notifications
+                .show_toast("Agent limit reached (max 3 sessions)");
+            Vec::new()
+        }
+        Err(_) => Vec::new(),
+    }
+}
+
+fn reduce_agent_cycle(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    if state.navigation.main_tab != MainTab::Agent {
+        return Vec::new();
+    }
+
+    if state.agent_manager.session_count() <= 1 {
+        return Vec::new();
+    }
+
+    let id = state.agent_manager.cycle_active(delta);
+    state.dirty = true;
+    agent_spawn_effects_for(state, id)
 }
 
 fn reduce_agent_restart(state: &mut AppState) -> Vec<SideEffect> {
@@ -1326,7 +1407,7 @@ fn reduce_agent_restart(state: &mut AppState) -> Vec<SideEffect> {
     }
 
     state.dirty = true;
-    vec![SideEffect::RestartAgent]
+    vec![SideEffect::RestartAgent(state.agent_manager.active_id())]
 }
 
 fn reduce_shell_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
@@ -2147,7 +2228,7 @@ mod tests {
     use crate::file_tree::{DirectoryEntry, FileTreeState};
     use crate::preview::{PreviewLoadResult, PreviewState};
     use crate::search::{SearchMode, SearchResult, SearchState};
-    use crate::agent::AgentManager;
+    use crate::agent::{AgentId, AgentManager};
     use crate::state::domains::{
         AgentState, BranchState, CommandPaletteState, DiffState, GitHubState, GitState,
         PluginsState, ShellState, StatusBarState, WorkspaceMeta,
@@ -3545,12 +3626,73 @@ mod tests {
     }
 
     #[test]
+    fn agent_new_creates_session_and_spawn_effect() {
+        let mut state = test_state();
+        state.navigation.main_tab = MainTab::Agent;
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::AgentNew));
+        assert_eq!(state.agent_manager.session_count(), 2);
+        assert_eq!(effects.len(), 1);
+        assert!(matches!(effects[0], SideEffect::SpawnAgent(_)));
+    }
+
+    #[test]
+    fn agent_output_routes_to_matching_session() {
+        let mut state = test_state();
+        state.navigation.main_tab = MainTab::Agent;
+        reduce(&mut state, AppEvent::Command(AppCommand::AgentNew));
+        let second = state.agent_manager.active_id();
+        state
+            .agent_manager
+            .set_active(AgentId::FIRST)
+            .expect("switch");
+
+        reduce(
+            &mut state,
+            AppEvent::AgentOutput {
+                agent_id: second,
+                data: b"background agent\n".to_vec(),
+            },
+        );
+
+        assert_eq!(
+            state
+                .agent_manager
+                .pty(second)
+                .expect("second")
+                .scrollback
+                .line_count(),
+            1
+        );
+        assert_eq!(state.active_agent().scrollback.line_count(), 0);
+    }
+
+    #[test]
+    fn agent_cycle_switches_active_session() {
+        let mut state = test_state();
+        state.navigation.main_tab = MainTab::Agent;
+        reduce(&mut state, AppEvent::Command(AppCommand::AgentNew));
+        state
+            .agent_manager
+            .pty_mut(AgentId::FIRST)
+            .expect("first")
+            .spawned = true;
+        let second = state.agent_manager.active_id();
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::AgentCycleNext));
+        assert_eq!(state.agent_manager.active_id(), AgentId::FIRST);
+        assert!(effects.is_empty());
+
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::AgentCyclePrev));
+        assert_eq!(state.agent_manager.active_id(), second);
+        assert!(effects.contains(&SideEffect::SpawnAgent(second)));
+    }
+
+    #[test]
     fn agent_spawn_requested_on_agent_tab() {
         let mut state = test_state();
         state.navigation.main_tab = MainTab::Agent;
         state.active_agent_mut().spawned = false;
         let effects = agent_spawn_effects_if_needed(&mut state);
-        assert!(effects.contains(&SideEffect::SpawnAgent));
+        assert!(effects.contains(&SideEffect::SpawnAgent(AgentId::FIRST)));
     }
 
     #[test]
@@ -3571,7 +3713,7 @@ mod tests {
                 MainTab::Agent,
             ))),
         );
-        assert!(effects.contains(&SideEffect::SpawnAgent));
+        assert!(effects.contains(&SideEffect::SpawnAgent(AgentId::FIRST)));
     }
 
     #[test]
@@ -3606,7 +3748,13 @@ mod tests {
     #[test]
     fn agent_output_appends_to_scrollback_and_sets_dirty() {
         let mut state = test_state();
-        reduce(&mut state, AppEvent::AgentOutput(b"agent line\n".to_vec()));
+        reduce(
+            &mut state,
+            AppEvent::AgentOutput {
+                agent_id: AgentId::FIRST,
+                data: b"agent line\n".to_vec(),
+            },
+        );
         assert_eq!(state.active_agent().scrollback.line_count(), 1);
         assert!(state.dirty);
     }
@@ -3616,7 +3764,13 @@ mod tests {
         let mut state = test_state();
         state.active_agent_mut().running = true;
         state.active_agent_mut().status = AgentStatus::Executing;
-        reduce(&mut state, AppEvent::AgentExited(1));
+        reduce(
+            &mut state,
+            AppEvent::AgentExited {
+                agent_id: AgentId::FIRST,
+                code: 1,
+            },
+        );
         assert!(!state.active_agent().running);
         assert_eq!(state.active_agent().status, AgentStatus::Error);
         assert!(state.dirty);
@@ -3628,7 +3782,10 @@ mod tests {
         state.active_agent_mut().running = true;
         reduce(
             &mut state,
-            AppEvent::AgentOutput(b"Thinking about the next step\n".to_vec()),
+            AppEvent::AgentOutput {
+                agent_id: AgentId::FIRST,
+                data: b"Thinking about the next step\n".to_vec(),
+            },
         );
         assert_eq!(state.active_agent().status, AgentStatus::Thinking);
     }
@@ -3637,7 +3794,13 @@ mod tests {
     fn agent_exited_zero_sets_success_status() {
         let mut state = test_state();
         state.active_agent_mut().running = true;
-        reduce(&mut state, AppEvent::AgentExited(0));
+        reduce(
+            &mut state,
+            AppEvent::AgentExited {
+                agent_id: AgentId::FIRST,
+                code: 0,
+            },
+        );
         assert_eq!(state.active_agent().status, AgentStatus::Success);
         assert_eq!(state.active_agent().exit_code, Some(0));
         assert!(state.active_agent().restart_hint.is_some());
@@ -3648,7 +3811,7 @@ mod tests {
         let mut state = test_state();
         state.navigation.main_tab = MainTab::Agent;
         let effects = reduce(&mut state, AppEvent::Command(AppCommand::AgentRestart));
-        assert!(effects.contains(&SideEffect::RestartAgent));
+        assert!(effects.contains(&SideEffect::RestartAgent(AgentId::FIRST)));
         assert!(state.dirty);
     }
 
@@ -3663,7 +3826,13 @@ mod tests {
     #[test]
     fn agent_exited_sets_restart_hint_with_code() {
         let mut state = test_state();
-        reduce(&mut state, AppEvent::AgentExited(2));
+        reduce(
+            &mut state,
+            AppEvent::AgentExited {
+                agent_id: AgentId::FIRST,
+                code: 2,
+            },
+        );
         assert_eq!(state.active_agent().exit_code, Some(2));
         assert!(state
             .active_agent()
