@@ -5,9 +5,15 @@ use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
 
 const TAB_SEPARATOR: &str = " | ";
+pub const TAB_LEADING_PAD: &str = "  ";
 
 pub fn tab_index_at_x(local_x: u16, labels: &[&str]) -> Option<usize> {
+    let pad = TAB_LEADING_PAD.len();
     let x = local_x as usize;
+    if x < pad {
+        return None;
+    }
+    let x = x - pad;
     let mut cursor = 0;
 
     for (index, label) in labels.iter().enumerate() {
@@ -28,6 +34,10 @@ pub fn tab_index_at_x(local_x: u16, labels: &[&str]) -> Option<usize> {
 
 pub fn tab_bar_line(tabs: &[&'static str], selected: usize, theme: &ThemePalette) -> Line<'static> {
     let mut spans = Vec::new();
+    spans.push(Span::styled(
+        TAB_LEADING_PAD,
+        theme.get(SemanticRole::Muted),
+    ));
 
     for (index, label) in tabs.iter().enumerate() {
         if index > 0 {
@@ -75,11 +85,13 @@ mod tests {
 
     #[test]
     fn tab_index_at_x_selects_label_not_separator() {
-        assert_eq!(tab_index_at_x(0, &LEFT_TAB_LABELS), Some(0));
-        assert_eq!(tab_index_at_x(4, &LEFT_TAB_LABELS), Some(0));
-        assert_eq!(tab_index_at_x(5, &LEFT_TAB_LABELS), None);
-        assert_eq!(tab_index_at_x(8, &LEFT_TAB_LABELS), Some(1));
-        assert_eq!(tab_index_at_x(10, &MAIN_TAB_LABELS), Some(1));
+        assert_eq!(tab_index_at_x(0, &LEFT_TAB_LABELS), None);
+        assert_eq!(tab_index_at_x(1, &LEFT_TAB_LABELS), None);
+        assert_eq!(tab_index_at_x(2, &LEFT_TAB_LABELS), Some(0));
+        assert_eq!(tab_index_at_x(6, &LEFT_TAB_LABELS), Some(0));
+        assert_eq!(tab_index_at_x(7, &LEFT_TAB_LABELS), None);
+        assert_eq!(tab_index_at_x(10, &LEFT_TAB_LABELS), Some(1));
+        assert_eq!(tab_index_at_x(12, &MAIN_TAB_LABELS), Some(1));
     }
 
     #[test]
@@ -98,7 +110,7 @@ mod tests {
     fn active_tab_uses_accent_bold_underline() {
         let theme = test_theme();
         let line = tab_bar_line(&MAIN_TAB_LABELS, 0, &theme);
-        let agent = &line.spans[0];
+        let agent = &line.spans[1];
 
         assert_eq!(agent.content, "Agent");
         assert!(agent.style.add_modifier.contains(Modifier::BOLD));
@@ -110,7 +122,7 @@ mod tests {
     fn inactive_tab_uses_muted_style() {
         let theme = test_theme();
         let line = tab_bar_line(&MAIN_TAB_LABELS, 0, &theme);
-        let issues = &line.spans[2];
+        let issues = &line.spans[3];
 
         assert_eq!(issues.content, "Issues");
         assert!(!issues.style.add_modifier.contains(Modifier::BOLD));

@@ -6,6 +6,8 @@ pub const MIN_TERMINAL_WIDTH: u16 = 80;
 pub const MIN_TERMINAL_HEIGHT: u16 = 24;
 pub const STATUS_BAR_HEIGHT: u16 = 1;
 pub const TAB_BAR_HEIGHT: u16 = 1;
+/// Blank rows above the tab bars so labels are not flush with the terminal edge.
+pub const TOP_MARGIN: u16 = 1;
 const BOTTOM_PANEL_MIN_HEIGHT: u16 = 5;
 const BOTTOM_PANEL_HEIGHT_PERCENT: u16 = 25;
 const MIN_CONTENT_HEIGHT: u16 = 1;
@@ -72,11 +74,12 @@ pub fn compute_layout(
     let main_width = width.saturating_sub(left_width);
 
     let workspace_height = height.saturating_sub(STATUS_BAR_HEIGHT);
-    let area_below_tabs = workspace_height.saturating_sub(TAB_BAR_HEIGHT);
+    let header_height = TOP_MARGIN.saturating_add(TAB_BAR_HEIGHT);
+    let area_below_tabs = workspace_height.saturating_sub(header_height);
     let bottom_height = bottom_panel_height(area_below_tabs);
     let content_height = area_below_tabs.saturating_sub(bottom_height);
 
-    let content_top = TAB_BAR_HEIGHT;
+    let content_top = header_height;
     let bottom_top = content_top.saturating_add(content_height);
 
     let rects = LayoutRects {
@@ -88,13 +91,13 @@ pub fn compute_layout(
         },
         left_tabs: Rect {
             x: 0,
-            y: 0,
+            y: TOP_MARGIN,
             width: left_width,
             height: TAB_BAR_HEIGHT,
         },
         main_tabs: Rect {
             x: left_width,
-            y: 0,
+            y: TOP_MARGIN,
             width: main_width,
             height: TAB_BAR_HEIGHT,
         },
@@ -218,10 +221,10 @@ mod tests {
         regions_fit_terminal(&layout.rects, 120, 40);
 
         assert_rect(layout.rects.status_bar, 0, 39, 120, 1);
-        assert_rect(layout.rects.left_tabs, 0, 0, 36, 1);
-        assert_rect(layout.rects.main_tabs, 36, 0, 84, 1);
-        assert_rect(layout.rects.left_content, 0, 1, 36, 29);
-        assert_rect(layout.rects.main_content, 36, 1, 84, 29);
+        assert_rect(layout.rects.left_tabs, 0, 1, 36, 1);
+        assert_rect(layout.rects.main_tabs, 36, 1, 84, 1);
+        assert_rect(layout.rects.left_content, 0, 2, 36, 28);
+        assert_rect(layout.rects.main_content, 36, 2, 84, 28);
         assert_rect(layout.rects.palette, 0, 30, 36, 9);
         assert_rect(layout.rects.shell, 36, 30, 84, 9);
     }
@@ -234,7 +237,8 @@ mod tests {
 
         assert_eq!(layout.rects.shell.height, 5);
         assert_eq!(layout.rects.palette.height, 5);
-        assert_eq!(layout.rects.left_content.height, 17);
+        assert_eq!(layout.rects.left_content.height, 16);
+        assert_eq!(layout.rects.status_bar.y, 23);
     }
 
     #[test]

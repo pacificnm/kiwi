@@ -23,7 +23,7 @@ Compute pane dimensions and provide a widget tree for each frame based on termin
 1. Divide terminal into: status bar (1 row), left panel, main panel, bottom panel.
 2. Left panel width from `app.left_width` (percent 10–50, default 30).
 3. Bottom panel height: max(5 rows, 25% of content area below tab bars).
-4. Tab bars: 1 row each for left nav and main tabs.
+4. Tab bars: 1 row each for left nav and main tabs, preceded by `TOP_MARGIN` (1 row) of padding.
 5. On resize: recompute `Rect`s; emit `AppEvent::LayoutChanged`; resize PTYs.
 6. Focused pane draws accent border using theme `accent` color.
 7. Clip content to pane bounds; no bleed between regions.
