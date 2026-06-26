@@ -1,15 +1,7 @@
-mod classify;
-mod ignore;
-mod invalidation;
-mod io;
-mod loader;
-mod node;
-mod state;
+//! TUI-facing file tree API; domain logic lives in [`kiwi_core::file_tree`].
 
-pub use classify::file_type_category;
-pub use ignore::is_default_ignored;
-pub use io::spawn_directory_load;
-#[cfg(test)]
-pub use kiwi_core::file_tree::DirectoryEntry;
-pub use node::FileNode;
-pub use state::FileTreeState;
+#[allow(unused_imports)]
+pub use kiwi_core::file_tree::{
+    file_type_category, is_default_ignored, spawn_directory_load, DirectoryEntry, FileNode,
+    FileTreeState, FileTypeCategory,
+};

@@ -169,11 +169,11 @@ mod tests {
             &mut picker,
             RepoLabelsLoadResult {
                 labels: vec![
-                    crate::github::labels::RepoLabel {
+                    crate::github::RepoLabel {
                         name: "bug".to_string(),
                         description: String::new(),
                     },
-                    crate::github::labels::RepoLabel {
+                    crate::github::RepoLabel {
                         name: "docs".to_string(),
                         description: "Documentation".to_string(),
                     },

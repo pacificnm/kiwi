@@ -1,3 +1,9 @@
+mod generate;
+mod io;
+
+pub use generate::load_file_diff;
+pub use io::spawn_file_diff_load;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DiffSource {
     #[default]

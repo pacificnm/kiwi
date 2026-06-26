@@ -1,7 +1,11 @@
 use std::time::SystemTime;
 
+mod io;
+mod loader;
 mod state;
 
+pub use io::spawn_preview_load;
+pub use loader::load_preview_file;
 pub use state::PreviewState;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
