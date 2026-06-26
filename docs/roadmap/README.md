@@ -6,7 +6,7 @@ Planning documents for Kiwi delivery: milestones, backlog, and release strategy.
 
 | Document | Description |
 |----------|-------------|
-| [milestones.md](./milestones.md) | Seven milestones with epics, stories, dependencies |
+| [milestones.md](./milestones.md) | Eight milestones with epics, stories, dependencies |
 | [backlog.md](./backlog.md) | Implementation backlog and GitHub issue breakdown |
 | [release-plan.md](./release-plan.md) | Versioning, MVP release, and future enhancements |
 
