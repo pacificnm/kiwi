@@ -27,7 +27,10 @@ pub fn parse_remote_repo_slug(url: &str) -> Option<String> {
         url.split(':').next_back()?
     };
 
-    let segments: Vec<&str> = path.split('/').filter(|segment| !segment.is_empty()).collect();
+    let segments: Vec<&str> = path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect();
     if segments.len() >= 2 {
         let owner = segments[segments.len() - 2];
         let repo = segments[segments.len() - 1];

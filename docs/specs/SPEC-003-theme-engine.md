@@ -22,7 +22,7 @@ Load, resolve, and apply visual themes with semantic color roles across all Kiwi
 
 1. Load theme by name from embedded assets or `custom` path.
 2. Built-in themes: kiwi-dark, kiwi-light, dracula, catppuccin-mocha, catppuccin-latte, gruvbox, nord, tokyo-night.
-3. Resolve roles: UI chrome, git, issues, PRs, agent (per plan.md color guidelines).
+3. Resolve roles: UI chrome, git, issues, PRs, agent, file tree (per plan.md color guidelines).
 4. Missing role in custom theme: inherit from kiwi-dark base.
 5. Expose `ThemePalette` to widgets via `AppState.theme`.
 6. Invalid custom theme file: startup error with path and missing role.
@@ -45,6 +45,7 @@ enum SemanticRole {
     IssueOpen, IssueInProgress, IssueClosed,
     PrOpen, PrDraft, PrMerged, PrClosed,
     AgentThinking, AgentExecuting, AgentSuccess, AgentError, AgentWarning,
+    FileDir, FileSource, FileScript, FileMarkup, FileConfig, FileData, FileMedia, FileOther,
 }
 
 struct ThemeDefinition {

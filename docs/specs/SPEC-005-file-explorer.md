@@ -20,17 +20,18 @@ Display a lazy-loaded directory tree with expand/collapse, selection, ignore rul
 
 ## Functional Requirements
 
-1. Show repository root as tree root; sorted dirs first, then files, case-insensitive.
+1. Show repository root as tree root; sorted dirs first, then files, case-insensitive. Root directory is expanded on open with first-level children lazy-loaded.
 2. Expand/collapse directories; lazy-load children on first expand.
 3. Skip default ignored names: `.git`, `node_modules`, `target`, `dist`, `build`, `.next`, `.nuxt`, `.venv`.
 4. Selection: single row; `Enter` or `p` opens Preview tab; `e` opens editor (SPEC-015). Double-click file row opens Preview (mouse, ADR-015).
 5. `r` refresh tree preserving expansion set.
-6. Visual git status badge per file when git repo (color per theme).
-7. Watcher invalidates affected directory caches (ADR-011).
+6. Visual git status badge per file when git repo (color per theme). Git status color takes precedence over file-type color.
+7. File and directory names use theme `file_*` semantic roles by type (source, script, markup, config, data, media, other; directories use `file_dir`).
+8. Watcher invalidates affected directory caches (ADR-011).
 
 ## Non-Functional Requirements
 
-- Initial render < 100ms (root only)
+- Initial render < 100ms (root row with loading indicator)
 - Expand directory < 200ms for < 1000 entries
 - Preserve scroll/selection on git status update
 
@@ -82,10 +83,11 @@ show_untracked = true
 
 ## Acceptance Criteria
 
-- [x] Large repo opens instantly showing root only
+- [x] Repo root expanded on open with first-level children lazy-loaded
 - [x] Expand loads children
 - [x] Ignored dirs not shown
 - [x] Selection survives git status refresh
 - [x] Double-click opens preview (mouse)
 - [x] Git colors match theme roles
+- [x] File-type colors match theme `file_*` roles; git status overrides file-type color
 - [x] Watcher invalidates affected directory caches (ADR-011)

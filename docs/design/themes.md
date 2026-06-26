@@ -69,6 +69,21 @@ Colors are **semantic**, not per-widget. Widgets request roles; theme resolves t
 | Error | Red | `agent_error` |
 | Warning | Yellow | `agent_warning` |
 
+### File Tree
+
+| Category | Role | Typical extensions / names |
+|----------|------|------------------------------|
+| Directory | `file_dir` | folders |
+| Source code | `file_source` | `.rs`, `.go`, `.c`, `.cpp`, `.java`, … |
+| Scripts | `file_script` | `.py`, `.sh`, `.js`, `.ts`, … |
+| Markup / docs | `file_markup` | `.md`, `.rst`, `README`, `LICENSE`, … |
+| Config | `file_config` | `.toml`, `.yaml`, `.json`, `Dockerfile`, … |
+| Data | `file_data` | `.sql`, `.csv`, `.xml`, `.lock`, … |
+| Media | `file_media` | `.png`, `.svg`, `.pdf`, fonts, … |
+| Other | `file_other` | unmatched files |
+
+Git status colors override file-type colors when both apply.
+
 ## Typography
 
 - Use terminal default font; no font switching in v1

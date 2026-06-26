@@ -25,10 +25,18 @@ pub enum SemanticRole {
     AgentSuccess,
     AgentError,
     AgentWarning,
+    FileDir,
+    FileSource,
+    FileScript,
+    FileMarkup,
+    FileConfig,
+    FileData,
+    FileMedia,
+    FileOther,
 }
 
 impl SemanticRole {
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 30] = [
         Self::Bg,
         Self::Fg,
         Self::Border,
@@ -51,6 +59,14 @@ impl SemanticRole {
         Self::AgentSuccess,
         Self::AgentError,
         Self::AgentWarning,
+        Self::FileDir,
+        Self::FileSource,
+        Self::FileScript,
+        Self::FileMarkup,
+        Self::FileConfig,
+        Self::FileData,
+        Self::FileMedia,
+        Self::FileOther,
     ];
 
     #[must_use]
@@ -78,6 +94,14 @@ impl SemanticRole {
             Self::AgentSuccess => "agent_success",
             Self::AgentError => "agent_error",
             Self::AgentWarning => "agent_warning",
+            Self::FileDir => "file_dir",
+            Self::FileSource => "file_source",
+            Self::FileScript => "file_script",
+            Self::FileMarkup => "file_markup",
+            Self::FileConfig => "file_config",
+            Self::FileData => "file_data",
+            Self::FileMedia => "file_media",
+            Self::FileOther => "file_other",
         }
     }
 }

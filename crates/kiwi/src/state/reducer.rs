@@ -39,7 +39,13 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
             file_entries,
             error,
         } => reduce_git_status_updated(
-            state, branch, remote_repo, ahead, behind, file_entries, error,
+            state,
+            branch,
+            remote_repo,
+            ahead,
+            behind,
+            file_entries,
+            error,
         ),
         AppEvent::Quit => {
             state.dirty = true;
@@ -272,6 +278,11 @@ fn reduce_terminal_resize(state: &mut AppState, width: u16, height: u16) -> Vec<
 
     state.shell.apply_resize(cols, rows);
     vec![SideEffect::ResizeShell { cols, rows }]
+}
+
+pub fn file_tree_startup_effects(state: &mut AppState) -> Vec<SideEffect> {
+    let root = state.file_tree.root.clone();
+    reduce_file_tree_expand(state, root)
 }
 
 pub fn git_refresh_effects(state: &mut AppState) -> Vec<SideEffect> {
@@ -3709,6 +3720,19 @@ mod tests {
         let state = test_state();
         assert_eq!(state.file_tree.nodes.len(), 1);
         assert!(state.file_tree.children.is_empty());
+    }
+
+    #[test]
+    fn file_tree_startup_effects_expand_root() {
+        let mut state = test_state();
+        let root = state.file_tree.root.clone();
+        assert!(!state.file_tree.nodes[&root].expanded);
+
+        let effects = file_tree_startup_effects(&mut state);
+
+        assert!(state.file_tree.nodes[&root].expanded);
+        assert!(state.file_tree.loading.contains(&root));
+        assert!(effects.contains(&SideEffect::LoadDirectoryChildren(root)));
     }
 
     #[test]
