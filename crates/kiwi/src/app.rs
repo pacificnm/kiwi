@@ -307,7 +307,8 @@ impl App {
     }
 
     fn pty_cursor_blink_active(&self) -> bool {
-        self.state.navigation.focus.is_focused(Region::Shell) && self.state.shell.running
+        (self.state.navigation.focus.is_focused(Region::Shell) && self.state.shell.running)
+            || self.agent_input_active()
     }
 
     fn shutdown(&mut self, terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) {
