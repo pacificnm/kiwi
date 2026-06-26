@@ -92,6 +92,12 @@ fn validate(config: &ResolvedConfig) -> Result<(), ConfigError> {
         ));
     }
 
+    if !(8.0..=32.0).contains(&config.gui.font_size) {
+        return Err(ConfigError::validation(
+            "gui.font.size must be between 8.0 and 32.0",
+        ));
+    }
+
     Ok(())
 }
 
@@ -232,6 +238,24 @@ mod tests {
             expand_tilde("~/themes/my.toml", Some(&home.home)),
             home.home.join("themes/my.toml")
         );
+    }
+
+    #[test]
+    fn loads_gui_font_size_from_project_config() {
+        let home = TestHome::new("gui-font");
+        let repo = std::env::temp_dir().join("kiwi-config-test-repo-gui-font");
+        let _ = fs::remove_dir_all(&repo);
+        fs::create_dir_all(&repo).expect("create repo");
+        fs::write(repo.join(".kiwi.toml"), "[gui.font]\nsize = 16.0\n").expect("write config");
+
+        let config = load_config_with_home(
+            &ConfigLoadOptions::default(),
+            &repo,
+            Some(home.home.clone()),
+        )
+        .expect("load config");
+
+        assert!((config.gui.font_size - 16.0).abs() < f32::EPSILON);
     }
 
     #[test]

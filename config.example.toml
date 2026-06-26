@@ -17,6 +17,9 @@ left_width = 30 # 10–50: left navigation pane width (percent)
 name = "kiwi-dark"
 # custom = "~/.config/kiwi/themes/custom.toml" # overrides bundled theme name
 
+[gui.font]
+size = 14.0 # base egui font scale (8.0–32.0)
+
 [editor]
 command = "nvim"
 # terminal = true   # optional: force suspend/resume (true) or detached (false)
