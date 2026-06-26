@@ -1,4 +1,4 @@
-#![allow(dead_code)] // Public persistence API (SPEC-017); wired in #65–#66.
+#![allow(dead_code)] // scroll_view constants are public API for callers.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

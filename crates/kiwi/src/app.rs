@@ -46,7 +46,7 @@ use crate::ui::{
     DoubleClickTracker, FileTreeMouseAction, WheelDirection,
 };
 use crate::watcher::RepoWatcher;
-use crate::workspace::{save_palette_history, try_load_workspace};
+use crate::workspace::{try_load_workspace, try_save_workspace_from_state};
 
 const SHELL_FORCE_QUIT_WINDOW: Duration = Duration::from_millis(500);
 const PTY_CURSOR_BLINK_INTERVAL: Duration = Duration::from_millis(530);
@@ -72,6 +72,7 @@ pub struct App {
     clipboard: ClipboardService,
     double_click: DoubleClickTracker,
     pty_cursor_blink_at: Instant,
+    workspace_last_saved: Instant,
     _repo_watcher: Option<RepoWatcher>,
 }
 
@@ -148,6 +149,7 @@ impl App {
             clipboard: ClipboardService::new(),
             double_click: DoubleClickTracker::default(),
             pty_cursor_blink_at: Instant::now(),
+            workspace_last_saved: Instant::now(),
             _repo_watcher: repo_watcher,
         };
         let spawn_effects = agent_spawn_effects_if_needed(&mut app.state);
@@ -278,6 +280,8 @@ impl App {
 
             self.poll_search_debounce();
 
+            self.poll_workspace_save();
+
             self.tick_pty_cursor_blink();
 
             if self.state.dirty {
@@ -340,7 +344,7 @@ impl App {
         }
 
         if self.state.config.workspace.persist {
-            let _ = save_palette_history(&self.state.repo_root, &self.state.palette.history);
+            try_save_workspace_from_state(&self.state);
         }
     }
 
@@ -375,6 +379,22 @@ impl App {
         if self.search_debounce.poll_ready() {
             self.dispatch(AppEvent::Command(AppCommand::SearchExecute));
         }
+    }
+
+    fn poll_workspace_save(&mut self) {
+        if !self.state.config.workspace.persist {
+            return;
+        }
+        let interval = Duration::from_secs(self.state.config.workspace.save_interval_secs);
+        if self.workspace_last_saved.elapsed() >= interval {
+            try_save_workspace_from_state(&self.state);
+            self.workspace_last_saved = Instant::now();
+        }
+    }
+
+    fn save_workspace(&mut self) {
+        try_save_workspace_from_state(&self.state);
+        self.workspace_last_saved = Instant::now();
     }
 
     fn flush_pending_editor_launch(
@@ -583,17 +603,11 @@ impl App {
                         let _ = shell.resize(cols, rows);
                     }
                 }
-                SideEffect::SaveWorkspace => {}
+                SideEffect::SaveWorkspace => {
+                    self.save_workspace();
+                }
                 SideEffect::LaunchEditor { path, line } => {
                     self.pending_editor_launch = Some(PendingEditorLaunch { path, line });
-                }
-                SideEffect::SavePaletteHistory => {
-                    if self.state.config.workspace.persist {
-                        let _ = save_palette_history(
-                            &self.state.repo_root,
-                            &self.state.palette.history,
-                        );
-                    }
                 }
                 SideEffect::LoadDirectoryChildren(path) => {
                     spawn_directory_load(path, self.events.sender());

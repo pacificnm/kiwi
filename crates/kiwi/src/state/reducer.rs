@@ -126,7 +126,11 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         }
         AppCommand::Quit => {
             state.dirty = true;
-            vec![SideEffect::Quit]
+            if state.config.workspace.persist {
+                vec![SideEffect::SaveWorkspace, SideEffect::Quit]
+            } else {
+                vec![SideEffect::Quit]
+            }
         }
         AppCommand::RequestGitRefresh => reduce_git_refresh_requested(state),
         AppCommand::GitHubRefresh => reduce_github_refresh_requested(state),
@@ -3498,9 +3502,19 @@ mod tests {
     }
 
     #[test]
-    fn quit_command_emits_side_effect() {
+    fn quit_command_emits_save_and_quit_when_persistence_enabled() {
         let mut state = test_state();
         let effects = reduce(&mut state, AppEvent::Command(AppCommand::Quit));
+        assert!(effects.contains(&SideEffect::SaveWorkspace));
+        assert!(effects.contains(&SideEffect::Quit));
+    }
+
+    #[test]
+    fn quit_command_skips_save_when_persistence_disabled() {
+        let mut state = test_state();
+        state.config.workspace.persist = false;
+        let effects = reduce(&mut state, AppEvent::Command(AppCommand::Quit));
+        assert!(!effects.contains(&SideEffect::SaveWorkspace));
         assert!(effects.contains(&SideEffect::Quit));
     }
 
@@ -3808,7 +3822,7 @@ mod tests {
             &mut state,
             AppEvent::Command(AppCommand::PaletteExecuteSelected),
         );
-        assert!(effects.contains(&SideEffect::SavePaletteHistory));
+        assert!(effects.contains(&SideEffect::SaveWorkspace));
     }
 
     #[test]
