@@ -14,6 +14,10 @@ cargo build --release
 # Run the application (once a repo path is supported)
 cargo run -p kiwi
 
+# Build the desktop GUI (SPEC-021 G0; requires a graphical session to run)
+cargo build -p kiwi_gui
+cargo run -p kiwi_gui -- .
+
 # Run all workspace tests
 cargo test --workspace
 

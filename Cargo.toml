@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/kiwi",
     "crates/kiwi_core",
+    "crates/kiwi_gui",
     "crates/kiwi_plugin_api",
     "crates/kiwi_plugin_loader",
     "plugins/kiwi_plugin_hello",
@@ -37,3 +38,6 @@ arboard = "3.4"
 git2 = "0.19"
 libloading = "0.8"
 kiwi_core = { path = "crates/kiwi_core" }
+egui = "0.31"
+eframe = { version = "0.31", default-features = false, features = ["default_fonts", "glow", "persistence", "wayland", "x11"] }
+egui_dock = "0.16"

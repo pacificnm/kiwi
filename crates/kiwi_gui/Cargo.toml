@@ -1,0 +1,21 @@
+[package]
+name = "kiwi_gui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Desktop GUI frontend for Kiwi (egui/eframe)"
+
+[[bin]]
+name = "kiwi-gui"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+clap.workspace = true
+eframe.workspace = true
+egui.workspace = true
+kiwi_core.workspace = true
