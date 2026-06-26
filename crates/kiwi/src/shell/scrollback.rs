@@ -49,10 +49,9 @@ impl ScrollbackBuffer {
 
     #[must_use]
     pub fn cursor_display_position(&self, include_pending: bool) -> Option<(usize, usize)> {
-        if !self.cursor_visible {
-            return None;
-        }
-
+        // DECSCUSR (?25) toggles the host hardware cursor. Child TUIs (including
+        // the agent CLI) usually send ?25l; Kiwi still draws a focused-pane overlay
+        // at the emulated cursor position tracked from PTY output and typed input.
         let line_index = self.history.len() + self.cursor_row;
         let lines = self.lines_for_display(include_pending);
         if line_index >= lines.len() {
@@ -705,10 +704,10 @@ mod tests {
     }
 
     #[test]
-    fn hide_cursor_mode_suppresses_display_position() {
+    fn hide_cursor_mode_still_reports_overlay_position() {
         let mut buffer = ScrollbackBuffer::new();
         buffer.append_bytes(b"\x1b[?25lprompt$ ");
-        assert_eq!(buffer.cursor_display_position(true), None);
+        assert_eq!(buffer.cursor_display_position(true), Some((0, 8)));
         buffer.append_bytes(b"\x1b[?25h");
         assert_eq!(buffer.cursor_display_position(true), Some((0, 8)));
     }

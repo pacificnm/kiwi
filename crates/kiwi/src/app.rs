@@ -1320,7 +1320,18 @@ impl App {
     }
 
     fn is_search_focus_key(&self, key: crossterm::event::KeyEvent) -> bool {
-        key.modifiers.is_empty() && matches!(key.code, KeyCode::Char('/'))
+        if !key.modifiers.is_empty() || !matches!(key.code, KeyCode::Char('/')) {
+            return false;
+        }
+
+        // PTY panes need `/` for paths (`cd /foo`, options, etc.).
+        if self.agent_input_active()
+            || (self.state.navigation.focus == FocusTarget::Shell && self.state.shell.running)
+        {
+            return false;
+        }
+
+        true
     }
 
     fn dispatch_open_editor(&mut self) -> bool {
@@ -1816,6 +1827,91 @@ mod tests {
     }
 
     #[test]
+    fn shell_focus_forwards_slash_instead_of_opening_search() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+        use crate::layout::FocusTarget;
+        use crate::navigation::{LeftNavTab, NavCommand};
+        use crate::state::AppCommand;
+
+        let mut app = App::new(test_context());
+        assert!(app.state().shell.running);
+        app.event_sender()
+            .send(AppEvent::Command(AppCommand::Navigation(
+                NavCommand::SetFocus(FocusTarget::Shell),
+            )))
+            .expect("send");
+        app.process_pending_events();
+        assert_ne!(app.state().navigation.left_tab, LeftNavTab::Search);
+
+        let key = KeyEvent {
+            code: KeyCode::Char('/'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        };
+        app.dispatch_key(key);
+        assert_ne!(app.state().navigation.left_tab, LeftNavTab::Search);
+        assert_eq!(app.state().navigation.focus, FocusTarget::Shell);
+    }
+
+    #[test]
+    fn agent_focus_forwards_slash_instead_of_opening_search() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+        use crate::layout::FocusTarget;
+        use crate::navigation::{LeftNavTab, MainTab, NavCommand};
+        use crate::state::AppCommand;
+
+        let mut app = App::new(test_context());
+        app.state_mut().navigation.main_tab = MainTab::Agent;
+        app.state_mut().agent.running = true;
+        app.event_sender()
+            .send(AppEvent::Command(AppCommand::Navigation(
+                NavCommand::SetFocus(FocusTarget::Main),
+            )))
+            .expect("send");
+        app.process_pending_events();
+
+        let key = KeyEvent {
+            code: KeyCode::Char('/'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        };
+        app.dispatch_key(key);
+        assert_ne!(app.state().navigation.left_tab, LeftNavTab::Search);
+    }
+
+    #[test]
+    fn slash_opens_search_from_non_pty_focus() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+        use crate::layout::FocusTarget;
+        use crate::navigation::{LeftNavTab, MainTab, NavCommand};
+        use crate::state::AppCommand;
+
+        let mut app = App::new(test_context());
+        app.state_mut().navigation.main_tab = MainTab::Preview;
+        app.event_sender()
+            .send(AppEvent::Command(AppCommand::Navigation(
+                NavCommand::SetFocus(FocusTarget::Main),
+            )))
+            .expect("send");
+        app.process_pending_events();
+
+        let key = KeyEvent {
+            code: KeyCode::Char('/'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        };
+        app.dispatch_key(key);
+        assert_eq!(app.state().navigation.left_tab, LeftNavTab::Search);
+        assert_eq!(app.state().navigation.focus, FocusTarget::Left);
+    }
+
+    #[test]
     fn shell_focus_ignores_main_tab_shortcuts() {
         use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
@@ -1870,7 +1966,13 @@ mod tests {
         use crate::navigation::{MainTab, NavCommand};
         use crate::state::AppCommand;
 
-        let mut app = App::new(test_context());
+        let mut context = test_context();
+        if std::path::Path::new("/bin/bash").exists()
+            || std::path::Path::new("/usr/bin/bash").exists()
+        {
+            context.config.agent.command = "bash".to_string();
+        }
+        let mut app = App::new(context);
         app.state_mut().navigation.main_tab = MainTab::Agent;
         app.event_sender()
             .send(AppEvent::Command(AppCommand::Navigation(

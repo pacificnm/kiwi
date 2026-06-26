@@ -568,6 +568,40 @@ mod tests {
     }
 
     #[test]
+    fn draw_frame_renders_agent_cursor_after_hide_cursor_sequence() {
+        let mut state = test_state();
+        state.navigation.focus = FocusTarget::Main;
+        state.navigation.main_tab = MainTab::Agent;
+        state.agent.running = true;
+        state.pty_cursor_blink_on = true;
+        state.agent.scrollback.append_bytes(b"\x1b[?25lagent> ");
+
+        let rects = state.layout.rects;
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| draw_frame(frame, &state))
+            .expect("draw");
+
+        let buffer = terminal.backend().buffer();
+        let main = rects.main_content;
+        let mut found_cursor = false;
+        for y in main.y + 1..main.y + main.height - 1 {
+            for x in main.x + 1..main.x + main.width - 1 {
+                let cell = &buffer[(x, y)];
+                if cell.modifier.contains(Modifier::REVERSED) {
+                    found_cursor = true;
+                    break;
+                }
+            }
+        }
+        assert!(
+            found_cursor,
+            "expected overlay cursor even when PTY sent ?25l"
+        );
+    }
+
+    #[test]
     fn draw_frame_hides_shell_cursor_when_not_following_tail() {
         let mut state = test_state();
         state.navigation.focus = FocusTarget::Shell;
