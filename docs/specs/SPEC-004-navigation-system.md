@@ -11,7 +11,7 @@ Manage left navigation tabs, main workspace tabs, focus routing, and keyboard/mo
 - Tab state machines
 - Focus model
 - Keybindings for tab switch
-- Orthogonal left vs main selection
+- Orthogonal left vs main selection, with contextual pairing when a main tab is selected
 
 ### Out of scope
 
@@ -51,6 +51,21 @@ Manage left navigation tabs, main workspace tabs, focus routing, and keyboard/mo
 | `Ctrl+P` | Focus command palette |
 
 Mouse: click tab label to activate (SPEC-014).
+
+### Main tab → left tab pairing
+
+Selecting a **main** tab (mouse, digit shortcut, or command palette) auto-activates a paired **left** tab when one exists. Selecting a **left** tab alone does not change the main tab.
+
+| Main tab | Paired left tab |
+|----------|-----------------|
+| Issues | GH |
+| PRs | GH |
+| Branches | GH |
+| Preview | Files |
+| Diff | Git |
+| Agent, Logs | (none — left tab unchanged) |
+
+When main **Issues** or **PRs** is selected, the GH left sub-pane (`Issues` / `PRs` list mode) syncs to match.
 
 ## Non-Functional Requirements
 
@@ -92,6 +107,8 @@ None in v1; keybindings file future.
 ## Acceptance Criteria
 
 - [ ] Can view Files tree while Agent tab active in main
+- [ ] Selecting Issues/PRs/Preview/Diff/Branches main tab activates paired left tab
+- [ ] Selecting Agent or Logs main tab does not force left tab change
 - [ ] Tab highlights reflect selection
 - [ ] Focus border matches focused pane
 - [ ] Mouse click switches tabs

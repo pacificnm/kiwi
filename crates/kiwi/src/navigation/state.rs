@@ -79,7 +79,12 @@ impl NavigationState {
     pub fn apply(&mut self, command: NavCommand) {
         match command {
             NavCommand::SelectLeftTab(tab) => self.left_tab = tab,
-            NavCommand::SelectMainTab(tab) => self.main_tab = tab,
+            NavCommand::SelectMainTab(tab) => {
+                self.main_tab = tab;
+                if let Some(left) = tab.paired_left_tab() {
+                    self.left_tab = left;
+                }
+            }
             NavCommand::SetFocus(focus) => self.focus = focus,
             NavCommand::NextFocus => {
                 self.focus = self.focus.next();
@@ -104,11 +109,22 @@ mod tests {
     }
 
     #[test]
-    fn left_and_main_tabs_are_orthogonal() {
+    fn left_tab_select_does_not_change_main_tab() {
         let mut nav = NavigationState::default();
         nav.apply(NavCommand::SelectLeftTab(LeftNavTab::Git));
         assert_eq!(nav.left_tab, LeftNavTab::Git);
         assert_eq!(nav.main_tab, MainTab::Agent);
+    }
+
+    #[test]
+    fn main_tab_select_pairs_left_tab() {
+        let mut nav = NavigationState::default();
+        nav.apply(NavCommand::SelectMainTab(MainTab::Diff));
+        assert_eq!(nav.main_tab, MainTab::Diff);
+        assert_eq!(nav.left_tab, LeftNavTab::Git);
+
+        nav.apply(NavCommand::SelectMainTab(MainTab::Agent));
+        assert_eq!(nav.left_tab, LeftNavTab::Git);
     }
 
     #[test]
