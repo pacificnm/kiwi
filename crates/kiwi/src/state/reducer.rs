@@ -266,13 +266,8 @@ pub fn apply_navigation(state: &mut AppState, command: NavCommand) {
         ensure_branch_selection(&mut state.branches);
     }
     if state.navigation.main_tab == MainTab::Settings && before.main_tab != MainTab::Settings {
-        let viewport_rows =
-            crate::ui::settings_viewport_rows(state.layout.rects.main_content);
-        ensure_settings_selection(
-            &mut state.settings,
-            &state.config.theme.name,
-            viewport_rows,
-        );
+        let viewport_rows = crate::ui::settings_viewport_rows(state.layout.rects.main_content);
+        ensure_settings_selection(&mut state.settings, &state.config.theme.name, viewport_rows);
     }
 }
 

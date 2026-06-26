@@ -1,30 +1,39 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::cli::Cli;
-
 use super::error::ConfigError;
 use super::types::{RawConfig, ResolvedConfig};
 
-pub fn load_config(cli: &Cli, repo_root: &Path) -> Result<ResolvedConfig, ConfigError> {
-    load_config_with_home(cli, repo_root, home_dir())
+/// CLI and runtime overrides applied after file merge (SPEC-018).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ConfigLoadOptions {
+    pub config_path: Option<PathBuf>,
+    pub theme: Option<String>,
+    pub left_width: Option<u8>,
 }
 
-pub(crate) fn load_config_with_home(
-    cli: &Cli,
+pub fn load_config(
+    options: &ConfigLoadOptions,
+    repo_root: &Path,
+) -> Result<ResolvedConfig, ConfigError> {
+    load_config_with_home(options, repo_root, home_dir())
+}
+
+pub fn load_config_with_home(
+    options: &ConfigLoadOptions,
     repo_root: &Path,
     home: Option<PathBuf>,
 ) -> Result<ResolvedConfig, ConfigError> {
     let mut resolved = ResolvedConfig::default();
     if let Some(ref home) = home {
-        resolved.plugins.directory = crate::config::default_plugins_directory(Some(home));
+        resolved.plugins.directory = super::default_plugins_directory(Some(home));
     }
 
-    if let Some(path) = resolve_user_config_path(cli, home.as_deref())? {
+    if let Some(path) = resolve_user_config_path(options, home.as_deref())? {
         if path.exists() {
             let raw = read_config_file(&path)?;
             raw.apply_to(&mut resolved, home.as_deref());
-        } else if cli.config.is_some() {
+        } else if options.config_path.is_some() {
             return Err(ConfigError::io(
                 path,
                 std::io::Error::from(std::io::ErrorKind::NotFound),
@@ -38,17 +47,17 @@ pub(crate) fn load_config_with_home(
         raw.apply_to(&mut resolved, home.as_deref());
     }
 
-    apply_cli_overrides(cli, &mut resolved);
+    apply_overrides(options, &mut resolved);
     validate(&resolved)?;
 
     Ok(resolved)
 }
 
 fn resolve_user_config_path(
-    cli: &Cli,
+    options: &ConfigLoadOptions,
     home: Option<&Path>,
 ) -> Result<Option<PathBuf>, ConfigError> {
-    if let Some(path) = &cli.config {
+    if let Some(path) = &options.config_path {
         return Ok(Some(path.clone()));
     }
     Ok(home.map(|dir| dir.join(".config/kiwi/config.toml")))
@@ -63,11 +72,11 @@ fn read_config_file(path: &Path) -> Result<RawConfig, ConfigError> {
     toml::from_str(&content).map_err(|e| ConfigError::parse(path.to_path_buf(), &content, e))
 }
 
-fn apply_cli_overrides(cli: &Cli, resolved: &mut ResolvedConfig) {
-    if let Some(theme) = &cli.theme {
+fn apply_overrides(options: &ConfigLoadOptions, resolved: &mut ResolvedConfig) {
+    if let Some(theme) = &options.theme {
         resolved.theme.name = theme.clone();
     }
-    if let Some(left_width) = cli.left_width {
+    if let Some(left_width) = options.left_width {
         resolved.app.left_width = left_width;
     }
 }
@@ -91,13 +100,9 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    use clap::Parser;
-
-    use crate::cli::Cli;
-    use crate::config::types::expand_tilde;
-
-    use super::load_config_with_home;
-    use super::read_config_file;
+    use super::super::types::expand_tilde;
+    use super::super::types::ResolvedConfig;
+    use super::{load_config_with_home, read_config_file, ConfigLoadOptions};
 
     struct TestHome {
         home: PathBuf,
@@ -120,16 +125,17 @@ mod tests {
 
     #[test]
     fn default_shell_command_uses_env_or_bash() {
-        let command = crate::config::ResolvedConfig::default().shell.command;
+        let command = ResolvedConfig::default().shell.command;
         assert!(!command.is_empty());
     }
 
     #[test]
     fn defaults_apply_when_no_files_exist() {
         let home = TestHome::new("defaults");
-        let cli = Cli::parse_from(["kiwi", "/tmp/repo"]);
-        let config = load_config_with_home(&cli, Path::new("/tmp/repo"), Some(home.home.clone()))
-            .expect("load config");
+        let options = ConfigLoadOptions::default();
+        let config =
+            load_config_with_home(&options, Path::new("/tmp/repo"), Some(home.home.clone()))
+                .expect("load config");
 
         assert_eq!(config.app.left_width, 30);
         assert_eq!(config.theme.name, "kiwi-dark");
@@ -146,9 +152,9 @@ mod tests {
         fs::write(repo.join(".kiwi.toml"), "[watcher]\ndebounce_ms = 150\n")
             .expect("write project config");
 
-        let cli = Cli::parse_from(["kiwi", repo.to_str().expect("utf8 path")]);
+        let options = ConfigLoadOptions::default();
         let config =
-            load_config_with_home(&cli, &repo, Some(home.home.clone())).expect("load config");
+            load_config_with_home(&options, &repo, Some(home.home.clone())).expect("load config");
 
         assert_eq!(config.watcher.debounce_ms, 150);
     }
@@ -173,16 +179,16 @@ mod tests {
         )
         .expect("write project config");
 
-        let cli = Cli::parse_from(["kiwi", repo.to_str().expect("utf8 path")]);
+        let options = ConfigLoadOptions::default();
         let config =
-            load_config_with_home(&cli, &repo, Some(home.home.clone())).expect("load config");
+            load_config_with_home(&options, &repo, Some(home.home.clone())).expect("load config");
 
         assert_eq!(config.editor.configured_command, Some("nvim".to_string()));
         assert_eq!(config.theme.name, "project-theme");
     }
 
     #[test]
-    fn cli_overrides_project_config() {
+    fn overrides_apply_after_project_config() {
         let home = TestHome::new("cli-over-project");
         let repo = std::env::temp_dir().join("kiwi-config-test-repo-cli");
         let _ = fs::remove_dir_all(&repo);
@@ -193,16 +199,13 @@ mod tests {
         )
         .expect("write project config");
 
-        let cli = Cli::parse_from([
-            "kiwi",
-            "--theme",
-            "dracula",
-            "--left-width",
-            "40",
-            repo.to_str().expect("utf8 path"),
-        ]);
+        let options = ConfigLoadOptions {
+            theme: Some("dracula".to_string()),
+            left_width: Some(40),
+            ..ConfigLoadOptions::default()
+        };
         let config =
-            load_config_with_home(&cli, &repo, Some(home.home.clone())).expect("load config");
+            load_config_with_home(&options, &repo, Some(home.home.clone())).expect("load config");
 
         assert_eq!(config.theme.name, "dracula");
         assert_eq!(config.app.left_width, 40);
@@ -220,9 +223,9 @@ mod tests {
         )
         .expect("write project config");
 
-        let cli = Cli::parse_from(["kiwi", repo.to_str().expect("utf8 path")]);
+        let options = ConfigLoadOptions::default();
         let config =
-            load_config_with_home(&cli, &repo, Some(home.home.clone())).expect("load config");
+            load_config_with_home(&options, &repo, Some(home.home.clone())).expect("load config");
 
         assert_eq!(config.theme.custom, Some(home.home.join("themes/my.toml")));
         assert_eq!(

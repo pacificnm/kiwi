@@ -27,5 +27,6 @@ signal-hook.workspace = true
 notify.workspace = true
 arboard.workspace = true
 git2.workspace = true
+kiwi_core.workspace = true
 kiwi_plugin_api = { path = "../kiwi_plugin_api" }
 kiwi_plugin_loader = { path = "../kiwi_plugin_loader" }

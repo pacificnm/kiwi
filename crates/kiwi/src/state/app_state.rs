@@ -9,7 +9,7 @@ use crate::preview::PreviewState;
 use crate::search::SearchState;
 use crate::selection::TextSelection;
 use crate::shell::shell_launch_spec;
-use crate::theme::capabilities::TerminalCapabilities;
+use crate::theme::capabilities::{detect_terminal_capabilities, TerminalCapabilities};
 use crate::theme::ThemePalette;
 
 use super::domains::{
@@ -70,7 +70,7 @@ impl AppState {
             navigation: NavigationState::default(),
             layout,
             theme,
-            terminal_capabilities: TerminalCapabilities::detect(),
+            terminal_capabilities: detect_terminal_capabilities(),
             repo_root: repo_root.clone(),
             dirty: true,
             file_tree,
