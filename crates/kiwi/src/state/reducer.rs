@@ -33,11 +33,14 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
         AppEvent::GitRefreshRequested => reduce_git_refresh_requested(state),
         AppEvent::GitStatusUpdated {
             branch,
+            remote_repo,
             ahead,
             behind,
             file_entries,
             error,
-        } => reduce_git_status_updated(state, branch, ahead, behind, file_entries, error),
+        } => reduce_git_status_updated(
+            state, branch, remote_repo, ahead, behind, file_entries, error,
+        ),
         AppEvent::Quit => {
             state.dirty = true;
             vec![SideEffect::Quit]
@@ -1053,6 +1056,7 @@ fn reduce_git_refresh_requested(state: &mut AppState) -> Vec<SideEffect> {
 fn reduce_git_status_updated(
     state: &mut AppState,
     branch: Option<String>,
+    remote_repo: Option<String>,
     ahead: u32,
     behind: u32,
     file_entries: Vec<GitFileEntry>,
@@ -1073,6 +1077,7 @@ fn reduce_git_status_updated(
     } else {
         state.git.error = None;
         state.git.branch = branch;
+        state.git.remote_repo = remote_repo;
         let file_patch = patch_git_file_entries(&mut state.git.file_entries, &file_entries);
         sync_git_status_patch_to_file_tree(state, &file_patch);
         ensure_git_selection(&mut state.git, state.config.git.show_untracked);
@@ -2163,6 +2168,7 @@ mod tests {
             &mut state,
             AppEvent::GitStatusUpdated {
                 branch: None,
+                remote_repo: None,
                 ahead: 0,
                 behind: 0,
                 file_entries: vec![
@@ -2191,6 +2197,7 @@ mod tests {
             &mut state,
             AppEvent::GitStatusUpdated {
                 branch: None,
+                remote_repo: None,
                 ahead: 0,
                 behind: 0,
                 file_entries: vec![GitFileEntry {
@@ -2225,6 +2232,7 @@ mod tests {
             &mut state,
             AppEvent::GitStatusUpdated {
                 branch: None,
+                remote_repo: None,
                 ahead: 0,
                 behind: 0,
                 file_entries: vec![GitFileEntry {
@@ -2266,6 +2274,7 @@ mod tests {
             &mut state,
             AppEvent::GitStatusUpdated {
                 branch: Some("feature/42".to_string()),
+                remote_repo: Some("org/repo".to_string()),
                 ahead: 2,
                 behind: 1,
                 file_entries: Vec::new(),
@@ -2289,6 +2298,7 @@ mod tests {
             &mut state,
             AppEvent::GitStatusUpdated {
                 branch: None,
+                remote_repo: None,
                 ahead: 0,
                 behind: 0,
                 file_entries: Vec::new(),
@@ -2441,6 +2451,7 @@ mod tests {
             &mut state,
             AppEvent::GitStatusUpdated {
                 branch: Some("main".to_string()),
+                remote_repo: None,
                 ahead: 0,
                 behind: 0,
                 file_entries: vec![

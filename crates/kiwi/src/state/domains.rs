@@ -11,6 +11,7 @@ use crate::shell::ScrollbackBuffer;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GitState {
     pub branch: Option<String>,
+    pub remote_repo: Option<String>,
     pub ahead: u32,
     pub behind: u32,
     pub selected_path: Option<String>,
@@ -659,7 +660,7 @@ impl NotificationState {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StatusBarState {
-    pub repo_name: String,
+    pub root_name: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
