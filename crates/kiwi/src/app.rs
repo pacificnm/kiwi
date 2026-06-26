@@ -21,7 +21,7 @@ use crate::editor::{
     EditorLaunchMode,
 };
 use crate::file_tree::spawn_directory_load;
-use crate::git::spawn_git_refresh;
+use crate::git::{spawn_branch_checkout, spawn_branch_list, spawn_git_refresh};
 use crate::github::{
     spawn_github_auth_check, spawn_github_issue_comment, spawn_github_issue_create_branch,
     spawn_github_issue_detail_load, spawn_github_issue_label_apply, spawn_github_issue_list_load,
@@ -38,11 +38,11 @@ use crate::shutdown;
 use crate::state::{
     agent_spawn_effects_if_needed, reduce, AppCommand, AppEvent, AppState, EventChannel, SideEffect,
 };
-use crate::ui::git_interaction_at;
 use crate::ui::{
-    draw_frame, file_tree_interaction_at, github_issue_interaction_at, github_pr_interaction_at,
-    map_mouse_click, mouse_interactions_enabled, palette_match_at, search_interaction_at,
-    DoubleClickTarget, DoubleClickTracker, FileTreeMouseAction,
+    branch_interaction_at, draw_frame, file_tree_interaction_at, git_interaction_at,
+    github_issue_interaction_at, github_pr_interaction_at, map_mouse_click,
+    mouse_interactions_enabled, palette_match_at, search_interaction_at, DoubleClickTarget,
+    DoubleClickTracker, FileTreeMouseAction,
 };
 use crate::watcher::RepoWatcher;
 use crate::workspace::{load_palette_history, save_palette_history};
@@ -425,6 +425,20 @@ impl App {
                         spawn_git_refresh(
                             self.state.repo_root.clone(),
                             self.state.config.git.show_untracked,
+                            self.events.sender(),
+                        );
+                    }
+                }
+                SideEffect::SpawnBranchList => {
+                    if self.state.workspace_meta.is_git_repo {
+                        spawn_branch_list(self.state.repo_root.clone(), self.events.sender());
+                    }
+                }
+                SideEffect::SpawnBranchCheckout { name } => {
+                    if self.state.workspace_meta.is_git_repo {
+                        spawn_branch_checkout(
+                            self.state.repo_root.clone(),
+                            name,
                             self.events.sender(),
                         );
                     }
@@ -845,6 +859,26 @@ impl App {
             }
         }
 
+        if self.state.navigation.main_tab == MainTab::Branches
+            && self.state.navigation.focus == FocusTarget::Main
+        {
+            if let Some(index) = branch_interaction_at(
+                &self.state,
+                self.state.layout.rects.main_content,
+                mouse.column,
+                mouse.row,
+            ) {
+                let _ = self.dispatch(AppEvent::Command(AppCommand::Navigation(
+                    crate::navigation::NavCommand::SetFocus(FocusTarget::Main),
+                )));
+                if self.double_click.register(DoubleClickTarget::Branch(index)) {
+                    let _ = self.dispatch(AppEvent::Command(AppCommand::BranchSelect(index)));
+                    return self.dispatch(AppEvent::Command(AppCommand::BranchCheckoutSelected));
+                }
+                return self.dispatch(AppEvent::Command(AppCommand::BranchSelect(index)));
+            }
+        }
+
         for command in map_mouse_click(&self.state, mouse.column, mouse.row) {
             if self.dispatch(AppEvent::Command(AppCommand::Navigation(command))) {
                 return true;
@@ -917,6 +951,10 @@ impl App {
         }
 
         if self.git_input_active() && self.handle_git_key(key) {
+            return false;
+        }
+
+        if self.branches_input_active() && self.handle_branches_key(key) {
             return false;
         }
 
@@ -1024,6 +1062,12 @@ impl App {
     fn git_input_active(&self) -> bool {
         self.state.navigation.focus == FocusTarget::Left
             && self.state.navigation.left_tab == LeftNavTab::Git
+    }
+
+    fn branches_input_active(&self) -> bool {
+        self.state.navigation.focus == FocusTarget::Main
+            && self.state.navigation.main_tab == MainTab::Branches
+            && !self.state.palette.open
     }
 
     fn github_input_active(&self) -> bool {
@@ -1153,6 +1197,24 @@ impl App {
             }
             KeyCode::Char('R') => self.dispatch(AppEvent::Command(AppCommand::GitRefresh)),
             KeyCode::Enter => self.dispatch(AppEvent::Command(AppCommand::GitOpenSelected)),
+            _ => false,
+        }
+    }
+
+    fn handle_branches_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        if !key.modifiers.is_empty() && key.code != KeyCode::Char('R') {
+            return false;
+        }
+
+        match key.code {
+            KeyCode::Char('j') => {
+                self.dispatch(AppEvent::Command(AppCommand::BranchMoveSelection(1)))
+            }
+            KeyCode::Char('k') => {
+                self.dispatch(AppEvent::Command(AppCommand::BranchMoveSelection(-1)))
+            }
+            KeyCode::Char('R') => self.dispatch(AppEvent::Command(AppCommand::BranchRefresh)),
+            KeyCode::Enter => self.dispatch(AppEvent::Command(AppCommand::BranchCheckoutSelected)),
             _ => false,
         }
     }

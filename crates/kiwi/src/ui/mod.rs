@@ -1,4 +1,5 @@
 mod agent;
+mod branches;
 mod diff;
 mod file_tree;
 mod git;
@@ -17,6 +18,7 @@ mod shell;
 mod status_bar;
 mod tabs;
 
+pub use branches::{branch_interaction_at, branches_viewport_rows};
 pub use file_tree::{file_tree_interaction_at, FileTreeMouseAction};
 pub use git::{git_interaction_at, git_viewport_rows};
 pub use github::{

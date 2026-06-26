@@ -11,7 +11,7 @@ mod tests {
     use crate::layout::FocusTarget;
     use crate::navigation::{LeftNavTab, MainTab, NavigationState};
     use crate::state::domains::{
-        AgentState, CommandPaletteState, DiffState, GitHubState, GitState, ShellState,
+        AgentState, BranchState, CommandPaletteState, DiffState, GitHubState, GitState, ShellState,
         StatusBarState, WorkspaceMeta,
     };
     use crate::state::{reduce, AppEvent, AppState, SideEffect};
@@ -34,6 +34,7 @@ mod tests {
             preview: crate::preview::PreviewState::default(),
             search: crate::search::SearchState::default(),
             git: GitState::default(),
+            branches: BranchState::default(),
             diff: DiffState::default(),
             github: GitHubState::default(),
             agent: AgentState::default(),

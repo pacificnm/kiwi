@@ -98,3 +98,14 @@ show_untracked = true
 - [x] Command palette "Git: Refresh Status" triggers refresh in git repos
 - [x] Manual refresh sets `git.loading` until `GitStatusUpdated` arrives
 - [x] Palette command hidden from execution when not in a git repo
+
+## Branches tab (main)
+
+- [x] Local branches listed when repo is git; non-repo shows inline message
+- [x] Current branch highlighted (`*` prefix, accent color)
+- [x] j/k selection with scroll preservation
+- [x] R refreshes branch list from Branches tab
+- [x] Enter and double-click checkout selected branch via libgit2
+- [x] Successful checkout refreshes git status, file tree badges, and status bar branch
+- [x] Checkout failure shows inline error without corrupting state
+- [x] No-op when checking out the already-current branch

@@ -52,6 +52,7 @@ pub enum MainTab {
     #[default]
     Agent,
     Issues,
+    Branches,
     Prs,
     Diff,
     Preview,
@@ -60,9 +61,10 @@ pub enum MainTab {
 
 impl MainTab {
     #[cfg_attr(not(test), allow(dead_code))]
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Agent,
         Self::Issues,
+        Self::Branches,
         Self::Prs,
         Self::Diff,
         Self::Preview,
@@ -74,10 +76,11 @@ impl MainTab {
         match self {
             Self::Agent => 0,
             Self::Issues => 1,
-            Self::Prs => 2,
-            Self::Diff => 3,
-            Self::Preview => 4,
-            Self::Logs => 5,
+            Self::Branches => 2,
+            Self::Prs => 3,
+            Self::Diff => 4,
+            Self::Preview => 5,
+            Self::Logs => 6,
         }
     }
 
@@ -86,6 +89,7 @@ impl MainTab {
         match self {
             Self::Agent => "Agent",
             Self::Issues => "Issues",
+            Self::Branches => "Branches",
             Self::Prs => "PRs",
             Self::Diff => "Diff",
             Self::Preview => "Preview",
@@ -98,10 +102,11 @@ impl MainTab {
         match index {
             0 => Some(Self::Agent),
             1 => Some(Self::Issues),
-            2 => Some(Self::Prs),
-            3 => Some(Self::Diff),
-            4 => Some(Self::Preview),
-            5 => Some(Self::Logs),
+            2 => Some(Self::Branches),
+            3 => Some(Self::Prs),
+            4 => Some(Self::Diff),
+            5 => Some(Self::Preview),
+            6 => Some(Self::Logs),
             _ => None,
         }
     }
@@ -115,9 +120,10 @@ pub const LEFT_TAB_LABELS: [&str; 5] = [
     LeftNavTab::Search.label(),
 ];
 
-pub const MAIN_TAB_LABELS: [&str; 6] = [
+pub const MAIN_TAB_LABELS: [&str; 7] = [
     MainTab::Agent.label(),
     MainTab::Issues.label(),
+    MainTab::Branches.label(),
     MainTab::Prs.label(),
     MainTab::Diff.label(),
     MainTab::Preview.label(),

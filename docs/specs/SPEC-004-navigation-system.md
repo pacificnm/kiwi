@@ -31,10 +31,11 @@ Manage left navigation tabs, main workspace tabs, focus routing, and keyboard/mo
 
 1. Agent — agent PTY
 2. Issues — GitHub issue detail (list lives in GH left tab)
-3. PRs — GitHub PR list/detail
-4. Diff — unified diff viewer
-5. Preview — read-only file preview
-6. Logs — application logs
+3. Branches — local branch list and checkout
+4. PRs — GitHub PR list/detail
+5. Diff — unified diff viewer
+6. Preview — read-only file preview
+7. Logs — application logs
 
 ### Focus targets
 
@@ -45,7 +46,7 @@ Manage left navigation tabs, main workspace tabs, focus routing, and keyboard/mo
 | Key | Action |
 |-----|--------|
 | `Alt+1`–`Alt+5` | Left nav tab |
-| `1`–`6` (main focused) | Main tab |
+| `1`–`7` (main focused) | Main tab |
 | `Tab` | Cycle focus: Left → Main → Palette → Shell |
 | `Shift+Tab` | Reverse cycle |
 | `Ctrl+P` | Focus command palette |
@@ -61,7 +62,7 @@ Mouse: click tab label to activate (SPEC-014).
 
 ```rust
 enum LeftNavTab { Files, Git, Diff, Gh, Search }
-enum MainTab { Agent, Issues, Prs, Diff, Preview, Logs }
+enum MainTab { Agent, Issues, Branches, Prs, Diff, Preview, Logs }
 enum FocusTarget { Left, Main, CommandPalette, Shell }
 
 struct NavigationState {

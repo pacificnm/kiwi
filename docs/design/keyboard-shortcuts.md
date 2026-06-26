@@ -58,10 +58,11 @@ Palette commands: **Clipboard: Copy**, **Clipboard: Cut**, **Clipboard: Paste**.
 |-----|--------|
 | `1` | Agent |
 | `2` | Issues |
-| `3` | PRs |
-| `4` | Diff |
-| `5` | Preview |
-| `6` | Logs |
+| `3` | Branches |
+| `4` | PRs |
+| `5` | Diff |
+| `6` | Preview |
+| `7` | Logs |
 
 ## Agent (main, Agent tab)
 
@@ -90,6 +91,15 @@ When the agent process exits, the pane footer shows the exit code and the restar
 | `j` / `k` | Move selection |
 | `Enter` | Open diff in main tab |
 | `R` | Refresh git status |
+
+## Branches (main, Branches tab)
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` | Move selection |
+| `Enter` | Checkout selected branch |
+| Double-click | Checkout branch |
+| `R` | Refresh branch list |
 
 ## Diff (main tab)
 

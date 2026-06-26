@@ -6,8 +6,10 @@ use crate::clipboard::{resolve_copy_text, PasteTarget};
 use crate::commands::{execute_command, history_input_for_id, refresh_matches};
 use crate::file_tree::ExpandAction;
 use crate::git::{
-    adjacent_changed_file, build_panel_rows, changed_file_paths, ensure_git_selection,
-    git_move_selection, git_select_row, patch_git_file_entries, row_for_path, GitFileEntry,
+    adjacent_changed_file, branch_move_selection, branch_select_row, branch_selected_name,
+    build_panel_rows, changed_file_paths, ensure_branch_selection, ensure_git_selection,
+    git_move_selection, git_select_row, patch_git_file_entries, row_for_path, BranchEntry,
+    GitFileEntry,
 };
 use crate::github::{
     advance_pr_create_prompt, apply_label_picker_load, ensure_issue_selection, ensure_pr_selection,
@@ -91,6 +93,12 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
         AppEvent::GitHubPrCreateCompleted { result } => {
             reduce_github_pr_create_completed(state, result)
         }
+        AppEvent::BranchListLoaded { entries, error } => {
+            reduce_branch_list_loaded(state, entries, error)
+        }
+        AppEvent::BranchCheckoutCompleted { branch_name, error } => {
+            reduce_branch_checkout_completed(state, branch_name, error)
+        }
     }
 }
 
@@ -104,6 +112,7 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
             effects.extend(github_pr_list_access_effects(state, false));
             effects.extend(github_issue_detail_access_effects(state, false));
             effects.extend(github_pr_detail_access_effects(state, false));
+            effects.extend(branch_list_access_effects(state, false));
             effects
         }
         AppCommand::Quit => {
@@ -158,6 +167,10 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         AppCommand::GitSelect(index) => reduce_git_select(state, index),
         AppCommand::GitOpenSelected => reduce_git_open_selected(state),
         AppCommand::GitRefresh => reduce_git_refresh_requested(state),
+        AppCommand::BranchMoveSelection(delta) => reduce_branch_move_selection(state, delta),
+        AppCommand::BranchSelect(index) => reduce_branch_select(state, index),
+        AppCommand::BranchCheckoutSelected => reduce_branch_checkout_selected(state),
+        AppCommand::BranchRefresh => reduce_branch_refresh(state),
         AppCommand::PreviewFile { path, line } => reduce_preview_file(state, path, line),
         AppCommand::PreviewScroll(delta) => reduce_preview_scroll(state, delta),
         AppCommand::PreviewPageScroll(delta) => reduce_preview_page_scroll(state, delta),
@@ -208,6 +221,9 @@ pub fn apply_navigation(state: &mut AppState, command: NavCommand) {
     }
     if state.navigation.left_tab == LeftNavTab::Git {
         ensure_git_selection(&mut state.git, state.config.git.show_untracked);
+    }
+    if state.navigation.main_tab == MainTab::Branches {
+        ensure_branch_selection(&mut state.branches);
     }
 }
 
@@ -261,6 +277,44 @@ pub fn git_refresh_effects(state: &mut AppState) -> Vec<SideEffect> {
 
     state.git.loading = true;
     vec![SideEffect::SpawnGitRefresh]
+}
+
+pub fn branch_list_access_effects(state: &mut AppState, force: bool) -> Vec<SideEffect> {
+    if state.navigation.main_tab != MainTab::Branches && !force {
+        return Vec::new();
+    }
+
+    if !state.workspace_meta.is_git_repo {
+        return Vec::new();
+    }
+
+    if state.branches.loading {
+        return Vec::new();
+    }
+
+    if !force && !state.branches.entries.is_empty() {
+        return Vec::new();
+    }
+
+    state.branches.loading = true;
+    state.branches.error = None;
+    state.dirty = true;
+    vec![SideEffect::SpawnBranchList]
+}
+
+pub fn branch_checkout_effects(state: &mut AppState, branch_name: String) -> Vec<SideEffect> {
+    if !state.workspace_meta.is_git_repo || state.branches.checkout_loading {
+        return Vec::new();
+    }
+
+    if state.git.branch.as_deref() == Some(branch_name.as_str()) {
+        return Vec::new();
+    }
+
+    state.branches.checkout_loading = true;
+    state.branches.checkout_error = None;
+    state.dirty = true;
+    vec![SideEffect::SpawnBranchCheckout { name: branch_name }]
 }
 
 pub fn github_refresh_effects(state: &mut AppState) -> Vec<SideEffect> {
@@ -820,9 +874,9 @@ fn reduce_github_issue_create_branch_completed(
     }
 
     if result.success {
-        state.github.issue_action_message = result.detail.or_else(|| {
-            Some(format!("Checked out branch for issue #{number}"))
-        });
+        state.github.issue_action_message = result
+            .detail
+            .or_else(|| Some(format!("Checked out branch for issue #{number}")));
         state.dirty = true;
         return git_refresh_effects(state);
     }
@@ -1043,6 +1097,105 @@ fn reduce_git_status_updated(
 
     state.dirty = true;
     Vec::new()
+}
+
+fn reduce_branch_refresh(state: &mut AppState) -> Vec<SideEffect> {
+    branch_list_access_effects(state, true)
+}
+
+fn reduce_branch_move_selection(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    let viewport_rows = crate::ui::branches_viewport_rows(state.layout.rects.main_content);
+    branch_move_selection(&mut state.branches, delta, viewport_rows);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_branch_select(state: &mut AppState, index: usize) -> Vec<SideEffect> {
+    let viewport_rows = crate::ui::branches_viewport_rows(state.layout.rects.main_content);
+    branch_select_row(&mut state.branches, index, viewport_rows);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_branch_checkout_selected(state: &mut AppState) -> Vec<SideEffect> {
+    let Some(branch_name) = branch_selected_name(&state.branches).map(str::to_string) else {
+        return Vec::new();
+    };
+
+    branch_checkout_effects(state, branch_name)
+}
+
+fn reduce_branch_list_loaded(
+    state: &mut AppState,
+    entries: Vec<BranchEntry>,
+    error: Option<String>,
+) -> Vec<SideEffect> {
+    let selected_name = state
+        .branches
+        .selected_index
+        .and_then(|index| state.branches.entries.get(index))
+        .map(|entry| entry.name.clone());
+
+    state.branches.loading = false;
+    if let Some(message) = error {
+        state.branches.error = Some(message.clone());
+        state
+            .logs
+            .push_error(format!("branch list failed: {message}"));
+    } else {
+        state.branches.error = None;
+        state.branches.entries = entries;
+    }
+
+    if let Some(name) = selected_name {
+        if let Some(index) = state
+            .branches
+            .entries
+            .iter()
+            .position(|entry| entry.name == name)
+        {
+            state.branches.selected_index = Some(index);
+            state.dirty = true;
+            return Vec::new();
+        }
+    }
+
+    ensure_branch_selection(&mut state.branches);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_branch_checkout_completed(
+    state: &mut AppState,
+    branch_name: String,
+    error: Option<String>,
+) -> Vec<SideEffect> {
+    state.branches.checkout_loading = false;
+
+    if let Some(message) = error {
+        state.branches.checkout_error = Some(message.clone());
+        state
+            .logs
+            .push_error(format!("checkout {branch_name} failed: {message}"));
+        state.dirty = true;
+        return Vec::new();
+    }
+
+    state.branches.checkout_error = None;
+    let mut effects = git_refresh_effects(state);
+    effects.extend(branch_list_access_effects(state, true));
+    if let Some(index) = state
+        .branches
+        .entries
+        .iter()
+        .position(|entry| entry.name == branch_name)
+    {
+        state.branches.selected_index = Some(index);
+    } else {
+        ensure_branch_selection(&mut state.branches);
+    }
+    state.dirty = true;
+    effects
 }
 
 fn sync_git_status_patch_to_file_tree(
@@ -1888,7 +2041,7 @@ mod tests {
 
     use crate::agent::AgentStatus;
     use crate::config::ResolvedConfig;
-    use crate::git::{GitFileEntry, GitFileStatus};
+    use crate::git::{BranchEntry, GitFileEntry, GitFileStatus};
     use crate::layout::compute_layout;
     use crate::layout::FocusTarget;
     use crate::navigation::{LeftNavTab, MainTab, NavCommand, NavigationState};
@@ -1900,7 +2053,7 @@ mod tests {
     use crate::preview::{PreviewLoadResult, PreviewState};
     use crate::search::{SearchMode, SearchResult, SearchState};
     use crate::state::domains::{
-        AgentState, CommandPaletteState, DiffState, GitHubState, GitState, ShellState,
+        AgentState, BranchState, CommandPaletteState, DiffState, GitHubState, GitState, ShellState,
         StatusBarState, WorkspaceMeta,
     };
 
@@ -1920,6 +2073,7 @@ mod tests {
             preview: PreviewState::default(),
             search: SearchState::default(),
             git: GitState::default(),
+            branches: BranchState::default(),
             diff: DiffState::default(),
             github: GitHubState::default(),
             agent: AgentState::default(),
@@ -2120,6 +2274,134 @@ mod tests {
         assert_eq!(state.git.branch, Some("main".to_string()));
         assert_eq!(state.git.error.as_deref(), Some("corrupt"));
         assert_eq!(state.logs.entries.len(), 1);
+    }
+
+    #[test]
+    fn branch_tab_navigation_spawns_branch_list() {
+        let mut state = test_state();
+        state.workspace_meta.is_git_repo = true;
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::Navigation(NavCommand::SelectMainTab(
+                MainTab::Branches,
+            ))),
+        );
+
+        assert!(effects.contains(&SideEffect::SpawnBranchList));
+        assert!(state.branches.loading);
+    }
+
+    #[test]
+    fn branch_checkout_selected_spawns_checkout_for_other_branch() {
+        let mut state = test_state();
+        state.workspace_meta.is_git_repo = true;
+        state.git.branch = Some("main".to_string());
+        state.branches.entries = vec![
+            BranchEntry {
+                name: "main".to_string(),
+                is_current: true,
+            },
+            BranchEntry {
+                name: "dev".to_string(),
+                is_current: false,
+            },
+        ];
+        state.branches.selected_index = Some(1);
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::BranchCheckoutSelected),
+        );
+
+        assert!(effects.iter().any(
+            |effect| matches!(effect, SideEffect::SpawnBranchCheckout { name } if name == "dev")
+        ));
+        assert!(state.branches.checkout_loading);
+    }
+
+    #[test]
+    fn branch_checkout_selected_no_op_for_current_branch() {
+        let mut state = test_state();
+        state.workspace_meta.is_git_repo = true;
+        state.git.branch = Some("main".to_string());
+        state.branches.entries = vec![BranchEntry {
+            name: "main".to_string(),
+            is_current: true,
+        }];
+        state.branches.selected_index = Some(0);
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::BranchCheckoutSelected),
+        );
+
+        assert!(effects.is_empty());
+        assert!(!state.branches.checkout_loading);
+    }
+
+    #[test]
+    fn branch_list_loaded_preserves_selection_by_name() {
+        let mut state = test_state();
+        state.branches.selected_index = Some(1);
+        state.branches.entries = vec![
+            BranchEntry {
+                name: "main".to_string(),
+                is_current: true,
+            },
+            BranchEntry {
+                name: "dev".to_string(),
+                is_current: false,
+            },
+        ];
+        state.branches.scroll_offset = 1;
+
+        reduce(
+            &mut state,
+            AppEvent::BranchListLoaded {
+                entries: vec![
+                    BranchEntry {
+                        name: "dev".to_string(),
+                        is_current: false,
+                    },
+                    BranchEntry {
+                        name: "feature".to_string(),
+                        is_current: false,
+                    },
+                    BranchEntry {
+                        name: "main".to_string(),
+                        is_current: true,
+                    },
+                ],
+                error: None,
+            },
+        );
+
+        assert_eq!(state.branches.selected_index, Some(0));
+        assert_eq!(state.branches.scroll_offset, 1);
+    }
+
+    #[test]
+    fn branch_checkout_completed_refreshes_git_and_branch_list() {
+        let mut state = test_state();
+        state.workspace_meta.is_git_repo = true;
+        state.branches.entries = vec![BranchEntry {
+            name: "dev".to_string(),
+            is_current: false,
+        }];
+        state.branches.selected_index = Some(0);
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::BranchCheckoutCompleted {
+                branch_name: "dev".to_string(),
+                error: None,
+            },
+        );
+
+        assert!(effects.contains(&SideEffect::SpawnGitRefresh));
+        assert!(effects.contains(&SideEffect::SpawnBranchList));
+        assert!(!state.branches.checkout_loading);
+        assert!(state.branches.checkout_error.is_none());
     }
 
     #[test]

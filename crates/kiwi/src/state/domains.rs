@@ -3,7 +3,7 @@ use std::time::SystemTime;
 
 use crate::agent::AgentStatus;
 use crate::diff::{DiffLine, DiffSource, FileDiffLoadResult};
-use crate::git::GitFileEntry;
+use crate::git::{BranchEntry, GitFileEntry};
 use crate::github::{Issue, PullRequest};
 use crate::layout::FocusTarget;
 use crate::shell::ScrollbackBuffer;
@@ -25,6 +25,17 @@ impl GitState {
     pub fn changed_count(&self) -> usize {
         self.file_entries.len()
     }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BranchState {
+    pub entries: Vec<BranchEntry>,
+    pub selected_index: Option<usize>,
+    pub scroll_offset: usize,
+    pub loading: bool,
+    pub checkout_loading: bool,
+    pub error: Option<String>,
+    pub checkout_error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
