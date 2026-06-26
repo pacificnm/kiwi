@@ -27,6 +27,7 @@ pub use github::{
     github_issue_interaction_at, github_pr_interaction_at, issue_detail_viewport_rows,
     issues_viewport_rows, pr_detail_viewport_rows, prs_viewport_rows,
 };
+pub use agent::{agent_scrollback_area, map_agent_session_click};
 pub use mouse::map_mouse_click;
 pub use mouse::mouse_interactions_enabled;
 pub use mouse_clicks::{DoubleClickTarget, DoubleClickTracker};

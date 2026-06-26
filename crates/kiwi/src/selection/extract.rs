@@ -2,6 +2,7 @@ use crate::ansi::strip_ansi;
 use crate::navigation::MainTab;
 use crate::shell::ScrollbackBuffer;
 use crate::state::AppState;
+use crate::ui::agent_scrollback_area;
 
 use super::state::{SelectionPane, TextPosition, TextSelection};
 
@@ -141,13 +142,14 @@ fn shell_visible_cols(state: &AppState) -> usize {
 }
 
 fn agent_visible_rows(state: &AppState) -> usize {
-    let inner_h = state.layout.rects.main_content.height.saturating_sub(2) as usize;
+    let pane = agent_scrollback_area(state);
+    let inner_h = pane.height.saturating_sub(2) as usize;
     let footer = usize::from(state.active_agent().restart_hint.is_some());
     inner_h.saturating_sub(footer)
 }
 
 fn agent_visible_cols(state: &AppState) -> usize {
-    state.layout.rects.main_content.width.saturating_sub(2) as usize
+    agent_scrollback_area(state).width.saturating_sub(2) as usize
 }
 
 #[cfg(test)]

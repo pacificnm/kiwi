@@ -4,6 +4,8 @@
 //! [`super::runtime::AgentRuntime`]; this module holds managed per-agent PTY
 //! state and metadata (`label`, `linked_issue`).
 
+#![allow(dead_code)] // remove_agent / link_active_issue for future session management.
+
 use std::collections::HashMap;
 use std::fmt;
 
@@ -184,6 +186,10 @@ impl AgentManager {
 
     pub fn active_pty_mut(&mut self) -> &mut AgentState {
         &mut self.active_session_mut().pty
+    }
+
+    pub fn session_id_at_index(&self, index: usize) -> Option<AgentId> {
+        self.session_ids().nth(index)
     }
 
     pub fn set_active(&mut self, id: AgentId) -> Result<(), AgentManagerError> {

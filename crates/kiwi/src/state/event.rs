@@ -148,6 +148,7 @@ pub enum AppCommand {
     AgentNew,
     AgentCycleNext,
     AgentCyclePrev,
+    AgentSetActive(crate::agent::AgentId),
     PaletteOpen,
     PaletteClose,
     PaletteAppendChar(char),

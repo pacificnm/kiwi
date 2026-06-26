@@ -3,6 +3,7 @@ use ratatui::layout::Rect;
 use crate::navigation::MainTab;
 use crate::shell::ScrollbackBuffer;
 use crate::state::AppState;
+use crate::ui::agent_scrollback_area;
 
 use super::state::{SelectionPane, TextPosition};
 
@@ -42,10 +43,11 @@ pub fn hit_test_text(
         return hit_test_pr_detail(state, column, row);
     }
 
-    if state.navigation.main_tab == MainTab::Agent && point_in_rect(column, row, rects.main_content)
+    if state.navigation.main_tab == MainTab::Agent
+        && point_in_rect(column, row, agent_scrollback_area(state))
     {
         return hit_test_scrollback(
-            rects.main_content,
+            agent_scrollback_area(state),
             column,
             row,
             &state.active_agent().scrollback,

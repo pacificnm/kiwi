@@ -167,6 +167,7 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         AppCommand::AgentNew => reduce_agent_new(state),
         AppCommand::AgentCycleNext => reduce_agent_cycle(state, 1),
         AppCommand::AgentCyclePrev => reduce_agent_cycle(state, -1),
+        AppCommand::AgentSetActive(id) => reduce_agent_set_active(state, id),
         AppCommand::PaletteOpen => reduce_palette_open(state),
         AppCommand::PaletteClose => reduce_palette_close(state),
         AppCommand::PaletteAppendChar(ch) => reduce_palette_append_char(state, ch),
@@ -1385,6 +1386,22 @@ fn reduce_agent_new(state: &mut AppState) -> Vec<SideEffect> {
         }
         Err(_) => Vec::new(),
     }
+}
+
+fn reduce_agent_set_active(
+    state: &mut AppState,
+    id: crate::agent::AgentId,
+) -> Vec<SideEffect> {
+    if state.navigation.main_tab != MainTab::Agent {
+        return Vec::new();
+    }
+
+    if state.agent_manager.set_active(id).is_err() {
+        return Vec::new();
+    }
+
+    state.dirty = true;
+    agent_spawn_effects_for(state, id)
 }
 
 fn reduce_agent_cycle(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
@@ -3682,6 +3699,25 @@ mod tests {
         assert!(effects.is_empty());
 
         let effects = reduce(&mut state, AppEvent::Command(AppCommand::AgentCyclePrev));
+        assert_eq!(state.agent_manager.active_id(), second);
+        assert!(effects.contains(&SideEffect::SpawnAgent(second)));
+    }
+
+    #[test]
+    fn agent_set_active_switches_session_and_spawns_if_needed() {
+        let mut state = test_state();
+        state.navigation.main_tab = MainTab::Agent;
+        reduce(&mut state, AppEvent::Command(AppCommand::AgentNew));
+        let second = state.agent_manager.active_id();
+        state
+            .agent_manager
+            .set_active(AgentId::FIRST)
+            .expect("switch");
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::AgentSetActive(second)),
+        );
         assert_eq!(state.agent_manager.active_id(), second);
         assert!(effects.contains(&SideEffect::SpawnAgent(second)));
     }

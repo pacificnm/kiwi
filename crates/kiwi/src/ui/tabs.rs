@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span};
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
 
-const TAB_SEPARATOR: &str = " | ";
+pub const TAB_SEPARATOR: &str = " | ";
 pub const TAB_LEADING_PAD: &str = "  ";
 
 pub fn tab_index_at_x(local_x: u16, labels: &[&str]) -> Option<usize> {
@@ -33,6 +33,14 @@ pub fn tab_index_at_x(local_x: u16, labels: &[&str]) -> Option<usize> {
 }
 
 pub fn tab_bar_line(tabs: &[&'static str], selected: usize, theme: &ThemePalette) -> Line<'static> {
+    tab_bar_line_str(tabs, selected, theme)
+}
+
+pub fn tab_bar_line_str<'a>(
+    tabs: &[&'a str],
+    selected: usize,
+    theme: &ThemePalette,
+) -> Line<'a> {
     let mut spans = Vec::new();
     spans.push(Span::styled(
         TAB_LEADING_PAD,

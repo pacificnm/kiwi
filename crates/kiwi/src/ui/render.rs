@@ -10,7 +10,7 @@ use crate::state::AppState;
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
 
-use super::agent::render_agent_pane;
+use super::agent::render_agent_tab;
 use super::branches::render_branches_pane;
 use super::diff::render_diff_pane;
 use super::file_tree::render_file_tree_pane;
@@ -83,14 +83,13 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
         );
     }
     if state.navigation.main_tab == MainTab::Agent {
-        let agent_title = format!("Agent: {}", state.agent_manager.active_session().label);
-        render_agent_pane(
+        render_agent_tab(
             frame,
             state.layout.rects.main_content,
-            &agent_title,
             state.navigation.focus.is_focused(Region::MainContent),
             &state.theme,
             hint_style(&state.theme),
+            chrome_style(&state.theme),
             state,
         );
     } else if state.navigation.main_tab == MainTab::Preview {
