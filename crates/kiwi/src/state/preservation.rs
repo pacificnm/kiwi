@@ -10,6 +10,7 @@ mod tests {
     use crate::layout::compute_layout;
     use crate::layout::FocusTarget;
     use crate::navigation::{LeftNavTab, MainTab, NavigationState};
+    use crate::agent::AgentManager;
     use crate::state::domains::{
         AgentState, BranchState, CommandPaletteState, DiffState, GitHubState, GitState,
         PluginsState, ShellState, StatusBarState, WorkspaceMeta,
@@ -37,7 +38,7 @@ mod tests {
             branches: BranchState::default(),
             diff: DiffState::default(),
             github: GitHubState::default(),
-            agent: AgentState::default(),
+            agent_manager: AgentManager::with_initial_agent(AgentState::default()),
             shell: ShellState::default(),
             palette: CommandPaletteState::default(),
             plugins: PluginsState::default(),

@@ -48,10 +48,10 @@ pub fn hit_test_text(
             rects.main_content,
             column,
             row,
-            &state.agent.scrollback,
-            state.agent.follow_tail,
-            state.agent.viewport_offset,
-            state.agent.restart_hint.is_some(),
+            &state.active_agent().scrollback,
+            state.active_agent().follow_tail,
+            state.active_agent().viewport_offset,
+            state.active_agent().restart_hint.is_some(),
             SelectionPane::Agent,
         );
     }
