@@ -81,9 +81,70 @@ fn load_candidate(
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use kiwi_plugin_api::PluginResult;
+    use kiwi_plugin_loader::{invoke_plugin_command, PluginInvokeOutcome};
 
     use super::*;
+
+    static SAMPLE_PLUGIN_TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    struct TempPluginInstall {
+        root: PathBuf,
+    }
+
+    impl TempPluginInstall {
+        fn new() -> Self {
+            let id = SAMPLE_PLUGIN_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let root = std::env::temp_dir().join(format!("kiwi-sample-plugin-{id}"));
+            let plugin_dir = root.join("hello");
+            fs::create_dir_all(&plugin_dir).expect("plugin dir");
+            fs::write(
+                plugin_dir.join("plugin.toml"),
+                r#"
+                name = "hello"
+                version = "0.1.0"
+                min_kiwi_version = "0.1.0"
+                "#,
+            )
+            .expect("manifest");
+            Self { root }
+        }
+
+        fn plugins_dir(&self) -> &Path {
+            &self.root
+        }
+
+        fn copy_library(&self, library_path: &Path) {
+            let ext = if cfg!(target_os = "macos") {
+                "dylib"
+            } else {
+                "so"
+            };
+            let dest = self.root.join("hello").join(format!("libhello.{ext}"));
+            fs::copy(library_path, dest).expect("copy library");
+        }
+    }
+
+    impl Drop for TempPluginInstall {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn sample_hello_library_path() -> PathBuf {
+        let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let profile = std::env::var("PROFILE").unwrap_or_else(|_| "debug".into());
+        let filename = if cfg!(target_os = "macos") {
+            "libkiwi_plugin_hello.dylib"
+        } else {
+            "libkiwi_plugin_hello.so"
+        };
+        workspace.join("target").join(profile).join(filename)
+    }
 
     #[test]
     fn disabled_config_skips_discovery() {
@@ -96,5 +157,43 @@ mod tests {
         );
         assert!(outcome.state.commands.is_empty());
         assert!(outcome.messages.is_empty());
+    }
+
+    #[test]
+    fn sample_hello_plugin_registers_palette_command() {
+        let library_path = sample_hello_library_path();
+        assert!(
+            library_path.is_file(),
+            "missing sample plugin library at {} — build with `cargo build -p kiwi_plugin_hello`",
+            library_path.display()
+        );
+
+        let install = TempPluginInstall::new();
+        install.copy_library(&library_path);
+
+        let outcome = load_plugins(
+            &PluginsSettings {
+                enabled: true,
+                directory: install.plugins_dir().to_path_buf(),
+            },
+            env!("CARGO_PKG_VERSION"),
+        );
+
+        assert!(
+            outcome
+                .messages
+                .iter()
+                .any(|message| message.contains("Plugin `hello` loaded")),
+            "messages: {:?}",
+            outcome.messages
+        );
+        assert_eq!(outcome.state.commands.len(), 1);
+        assert_eq!(outcome.state.commands[0].id, "hello.greet");
+        assert_eq!(outcome.state.commands[0].title, "Hello Plugin: Greet");
+
+        match invoke_plugin_command(outcome.state.commands[0].callback) {
+            PluginInvokeOutcome::Completed(PluginResult::Ok) => {}
+            other => panic!("unexpected plugin callback outcome: {other:?}"),
+        }
     }
 }
