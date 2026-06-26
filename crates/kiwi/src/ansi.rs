@@ -313,7 +313,10 @@ mod tests {
         let line = ansi_line_with_cursor("prompt$ ", 20, Some(7));
         assert_eq!(line.spans[0].content, "prompt$");
         assert_eq!(line.spans[1].content, " ");
-        assert!(line.spans[1].style.add_modifier.contains(Modifier::REVERSED));
+        assert!(line.spans[1]
+            .style
+            .add_modifier
+            .contains(Modifier::REVERSED));
     }
 
     #[test]
@@ -321,6 +324,9 @@ mod tests {
         let line = ansi_line_with_cursor("abc", 20, Some(3));
         assert_eq!(line.spans[0].content, "abc");
         assert_eq!(line.spans[1].content, " ");
-        assert!(line.spans[1].style.add_modifier.contains(Modifier::REVERSED));
+        assert!(line.spans[1]
+            .style
+            .add_modifier
+            .contains(Modifier::REVERSED));
     }
 }

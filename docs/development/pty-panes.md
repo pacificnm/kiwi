@@ -78,6 +78,7 @@ Both panes share the `ScrollbackBuffer` implementation (10_000 line cap). The bu
 - Each viewport row is clipped to pane width (ANSI-aware visible width)
 - **PTY content** uses host terminal colors via `Color::Reset` and an SGR parser (`ansi.rs`) — child ANSI is not remapped to the Kiwi theme (see [themes.md](../design/themes.md))
 - **Chrome** (borders, tabs, status bar, hints) uses `ThemePalette`
+- **Focused cursor** — when a PTY pane is focused, tail-following, and the PTY is running, a blinking reversed cell marks the cursor column (530ms interval); hidden when unfocused or scrolled off the tail
 
 For symptom → cause → fix notes on scrollback bugs, see [issue-resolution-log.md](./issue-resolution-log.md).
 

@@ -32,7 +32,10 @@ pub fn render_agent_pane(
             idle_hint: None,
             footer: state.agent.restart_hint.as_deref(),
             selection_pane: Some(SelectionPane::Agent),
-            show_pty_cursor: false,
+            show_pty_cursor: focused
+                && state.agent.running
+                && state.agent.follow_tail
+                && state.pty_cursor_blink_on,
         },
         &state.text_selection,
     );

@@ -67,18 +67,21 @@ pub fn render_scrollback_pane(
     let lines = pane
         .scrollback
         .viewport_lines(start, visible_height, max_width, include_pending);
-    let cursor_col_on_row = pane.show_pty_cursor.then(|| {
-        pane.scrollback
-            .cursor_display_position(include_pending)
-            .and_then(|(line_index, col)| {
-                let row = line_index.checked_sub(start)?;
-                if row < visible_height {
-                    Some((row, col))
-                } else {
-                    None
-                }
-            })
-    }).flatten();
+    let cursor_col_on_row = pane
+        .show_pty_cursor
+        .then(|| {
+            pane.scrollback
+                .cursor_display_position(include_pending)
+                .and_then(|(line_index, col)| {
+                    let row = line_index.checked_sub(start)?;
+                    if row < visible_height {
+                        Some((row, col))
+                    } else {
+                        None
+                    }
+                })
+        })
+        .flatten();
 
     if lines.is_empty() {
         if let Some(footer) = pane.footer {
@@ -96,13 +99,16 @@ pub fn render_scrollback_pane(
     }
 
     for (row, line) in lines.iter().enumerate().take(visible_height) {
-        let cursor_col = cursor_col_on_row.and_then(|(cursor_row, col)| {
-            if cursor_row == row {
-                Some(col)
-            } else {
-                None
-            }
-        });
+        let cursor_col =
+            cursor_col_on_row.and_then(
+                |(cursor_row, col)| {
+                    if cursor_row == row {
+                        Some(col)
+                    } else {
+                        None
+                    }
+                },
+            );
         render_pty_line(
             frame,
             inner,

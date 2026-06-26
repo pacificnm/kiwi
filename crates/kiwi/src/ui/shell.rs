@@ -40,7 +40,10 @@ pub fn render_shell_pane(
             },
             footer: None,
             selection_pane: Some(SelectionPane::Shell),
-            show_pty_cursor: focused && state.shell.running && state.pty_cursor_blink_on,
+            show_pty_cursor: focused
+                && state.shell.running
+                && state.shell.follow_tail
+                && state.pty_cursor_blink_on,
         },
         &state.text_selection,
     );
