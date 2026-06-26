@@ -13,7 +13,8 @@ const SEPARATOR: &str = " | ";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatusBarSnapshot {
-    pub repo_name: String,
+    pub remote_repo: Option<String>,
+    pub root_name: String,
     pub branch: String,
     pub agent_label: String,
     pub git_label: String,
@@ -27,7 +28,8 @@ pub fn compute_status_bar(state: &AppState) -> StatusBarSnapshot {
     let git_modified = state.git.changed_count() > 0;
 
     StatusBarSnapshot {
-        repo_name: state.status_bar.repo_name.clone(),
+        remote_repo: state.git.remote_repo.clone(),
+        root_name: state.status_bar.root_name.clone(),
         branch: branch_label(state),
         agent_label: agent_label(state),
         git_label: git_label(state),
@@ -36,6 +38,22 @@ pub fn compute_status_bar(state: &AppState) -> StatusBarSnapshot {
         agent_running: state.agent.running,
         git_modified,
     }
+}
+
+fn labeled_segment(prefix: &str, value: &str) -> String {
+    format!("{prefix}: {value}")
+}
+
+fn repo_segment(remote_repo: Option<&str>) -> String {
+    labeled_segment("Repo", remote_repo.unwrap_or("—"))
+}
+
+fn root_segment(root_name: &str) -> String {
+    labeled_segment("Root", root_name)
+}
+
+fn branch_segment(branch: &str) -> String {
+    labeled_segment("Branch", branch)
 }
 
 fn branch_label(state: &AppState) -> String {
@@ -100,6 +118,7 @@ pub fn format_status_line(snapshot: &StatusBarSnapshot, width: u16) -> String {
 
 struct FittedSegments {
     repo: String,
+    root: String,
     branch: String,
     agent: String,
     git: String,
@@ -108,8 +127,9 @@ struct FittedSegments {
 
 fn fit_segments(snapshot: &StatusBarSnapshot, width: u16) -> FittedSegments {
     let width = width as usize;
-    let mut repo = snapshot.repo_name.clone();
-    let mut branch = snapshot.branch.clone();
+    let mut repo = repo_segment(snapshot.remote_repo.as_deref());
+    let mut root = root_segment(&snapshot.root_name);
+    let mut branch = branch_segment(&snapshot.branch);
     let mut agent = snapshot.agent_label.clone();
     let mut git = snapshot.git_label.clone();
     let issue = snapshot.issue_label.clone();
@@ -118,6 +138,7 @@ fn fit_segments(snapshot: &StatusBarSnapshot, width: u16) -> FittedSegments {
     if width == 0 {
         return FittedSegments {
             repo: String::new(),
+            root: String::new(),
             branch: String::new(),
             agent: String::new(),
             git: String::new(),
@@ -128,6 +149,7 @@ fn fit_segments(snapshot: &StatusBarSnapshot, width: u16) -> FittedSegments {
     loop {
         let fitted = FittedSegments {
             repo: repo.clone(),
+            root: root.clone(),
             branch: branch.clone(),
             agent: agent.clone(),
             git: git.clone(),
@@ -154,13 +176,19 @@ fn fit_segments(snapshot: &StatusBarSnapshot, width: u16) -> FittedSegments {
             continue;
         }
 
-        if repo.chars().count() > 4 {
-            repo = truncate_to_chars(&repo, repo.chars().count() - 1);
+        for label in [&mut repo, &mut root] {
+            if label.chars().count() > 4 {
+                *label = truncate_to_chars(label, label.chars().count() - 1);
+                changed = true;
+            }
+        }
+        if changed {
             continue;
         }
 
         return FittedSegments {
             repo: truncate_to_chars(&repo, width.min(repo.chars().count())),
+            root: String::new(),
             branch: String::new(),
             agent: String::new(),
             git: String::new(),
@@ -173,6 +201,7 @@ fn join_segments(segments: &FittedSegments) -> String {
     let mut parts = vec![
         BRAND,
         segments.repo.as_str(),
+        segments.root.as_str(),
         segments.branch.as_str(),
         segments.agent.as_str(),
         segments.git.as_str(),
@@ -238,9 +267,10 @@ pub fn status_bar_line(
     };
 
     let mut spans = Vec::new();
-    let styled_segments: [(String, _); 5] = [
+    let styled_segments: [(String, _); 6] = [
         (BRAND.to_string(), normal),
         (segments.repo, normal),
+        (segments.root, normal),
         (segments.branch, normal),
         (segments.agent, agent_style),
         (segments.git, highlight_git),
@@ -302,7 +332,8 @@ mod tests {
     #[test]
     fn compute_status_bar_uses_domain_defaults() {
         let snapshot = compute_status_bar(&test_state());
-        assert_eq!(snapshot.repo_name, "cityartwalks");
+        assert_eq!(snapshot.root_name, "cityartwalks");
+        assert_eq!(snapshot.remote_repo, None);
         assert_eq!(snapshot.branch, "no git");
         assert_eq!(snapshot.agent_label, "Agent Idle");
         assert_eq!(snapshot.git_label, "Clean");
@@ -312,6 +343,7 @@ mod tests {
     #[test]
     fn compute_status_bar_reflects_git_agent_and_issue_state() {
         let mut state = test_state();
+        state.git.remote_repo = Some("org/cityartwalks".to_string());
         state.git.branch = Some("feature/42".to_string());
         state.git.file_entries = vec![
             GitFileEntry {
@@ -332,6 +364,7 @@ mod tests {
         state.github.selected_issue = Some(42);
 
         let snapshot = compute_status_bar(&state);
+        assert_eq!(snapshot.remote_repo.as_deref(), Some("org/cityartwalks"));
         assert_eq!(snapshot.branch, "feature/42");
         assert_eq!(snapshot.agent_label, "Agent Executing");
         assert_eq!(snapshot.git_label, "3 Modified");
@@ -360,7 +393,8 @@ mod tests {
     #[test]
     fn format_status_line_matches_spec_example_at_120_cols() {
         let snapshot = StatusBarSnapshot {
-            repo_name: "cityartwalks".to_string(),
+            remote_repo: Some("org/cityartwalks".to_string()),
+            root_name: "cityartwalks".to_string(),
             branch: "feature/42".to_string(),
             agent_label: "Agent Executing".to_string(),
             git_label: "3 Modified".to_string(),
@@ -373,14 +407,35 @@ mod tests {
         let line = format_status_line(&snapshot, 120);
         assert_eq!(
             line,
-            "Kiwi | cityartwalks | feature/42 | Agent Executing | 3 Modified | #42"
+            "Kiwi | Repo: org/cityartwalks | Root: cityartwalks | Branch: feature/42 | Agent Executing | 3 Modified | #42"
         );
+    }
+
+    #[test]
+    fn format_status_line_distinguishes_brand_from_root_folder() {
+        let snapshot = StatusBarSnapshot {
+            remote_repo: Some("pacificnm/kiwi".to_string()),
+            root_name: "kiwi".to_string(),
+            branch: "main".to_string(),
+            agent_label: "Agent Idle".to_string(),
+            git_label: "Clean".to_string(),
+            issue_label: None,
+            agent_status: AgentStatus::Idle,
+            agent_running: false,
+            git_modified: false,
+        };
+
+        let line = format_status_line(&snapshot, 120);
+        assert!(line.contains("Repo: pacificnm/kiwi"));
+        assert!(line.contains("Root: kiwi"));
+        assert!(line.contains("Branch: main"));
     }
 
     #[test]
     fn format_status_line_respects_display_width() {
         let snapshot = StatusBarSnapshot {
-            repo_name: "cityartwalks".to_string(),
+            remote_repo: Some("org/cityartwalks".to_string()),
+            root_name: "cityartwalks".to_string(),
             branch: "feature/very-long-branch-name".to_string(),
             agent_label: "Agent Executing".to_string(),
             git_label: "2 Modified".to_string(),
@@ -401,7 +456,8 @@ mod tests {
         use ratatui::Terminal;
 
         let mut state = test_state();
-        state.status_bar.repo_name = "cityartwalks".to_string();
+        state.status_bar.root_name = "cityartwalks".to_string();
+        state.git.remote_repo = Some("org/cityartwalks".to_string());
         state.git.branch = Some("feature/very-long-branch-name".to_string());
         state.git.file_entries = vec![
             GitFileEntry {
@@ -427,7 +483,8 @@ mod tests {
     #[test]
     fn format_status_line_never_returns_empty_for_nonzero_width() {
         let snapshot = StatusBarSnapshot {
-            repo_name: "repo".to_string(),
+            remote_repo: None,
+            root_name: "repo".to_string(),
             branch: "branch".to_string(),
             agent_label: "Agent Idle".to_string(),
             git_label: "Clean".to_string(),

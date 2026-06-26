@@ -14,7 +14,33 @@ pub struct GitBranchInfo {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitRepoSnapshot {
     pub branch: GitBranchInfo,
+    pub remote_repo: Option<String>,
     pub file_entries: Vec<GitFileEntry>,
+}
+
+pub fn parse_remote_repo_slug(url: &str) -> Option<String> {
+    let url = url.trim_end_matches(".git");
+
+    let path = if url.contains("://") {
+        url.split("://").nth(1)?.split('@').next_back()?
+    } else {
+        url.split(':').next_back()?
+    };
+
+    let segments: Vec<&str> = path.split('/').filter(|segment| !segment.is_empty()).collect();
+    if segments.len() >= 2 {
+        let owner = segments[segments.len() - 2];
+        let repo = segments[segments.len() - 1];
+        return Some(format!("{owner}/{repo}"));
+    }
+
+    None
+}
+
+fn read_remote_repo_name(repo: &Repository) -> Option<String> {
+    let remote = repo.find_remote("origin").ok()?;
+    let url = remote.url()?;
+    parse_remote_repo_slug(url)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,9 +78,11 @@ pub fn load_repo_snapshot(
 ) -> Result<GitRepoSnapshot, GitError> {
     let repo = Repository::open(repo_root).map_err(|err| GitError::Open(err.to_string()))?;
     let branch = read_branch_info(&repo)?;
+    let remote_repo = read_remote_repo_name(&repo);
     let file_entries = read_file_statuses(&repo, show_untracked)?;
     Ok(GitRepoSnapshot {
         branch,
+        remote_repo,
         file_entries,
     })
 }
@@ -251,6 +279,23 @@ mod tests {
             args,
             cwd.display()
         );
+    }
+
+    #[test]
+    fn parse_remote_repo_slug_supports_https_and_scp_urls() {
+        assert_eq!(
+            parse_remote_repo_slug("https://github.com/pacificnm/kiwi.git"),
+            Some("pacificnm/kiwi".to_string())
+        );
+        assert_eq!(
+            parse_remote_repo_slug("git@github.com:pacificnm/kiwi.git"),
+            Some("pacificnm/kiwi".to_string())
+        );
+        assert_eq!(
+            parse_remote_repo_slug("ssh://git@github.com/pacificnm/kiwi.git"),
+            Some("pacificnm/kiwi".to_string())
+        );
+        assert_eq!(parse_remote_repo_slug("bare-repo"), None);
     }
 
     #[test]

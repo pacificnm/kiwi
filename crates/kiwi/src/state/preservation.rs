@@ -69,6 +69,7 @@ mod tests {
             &mut state,
             AppEvent::GitStatusUpdated {
                 branch: Some("main".to_string()),
+                remote_repo: None,
                 ahead: 0,
                 behind: 0,
                 file_entries: modified_entries("file", 21),
@@ -103,6 +104,7 @@ mod tests {
             &mut state,
             AppEvent::GitStatusUpdated {
                 branch: None,
+                remote_repo: None,
                 ahead: 0,
                 behind: 0,
                 file_entries: vec![GitFileEntry {
@@ -128,6 +130,7 @@ mod tests {
             &mut state,
             AppEvent::GitStatusUpdated {
                 branch: None,
+                remote_repo: None,
                 ahead: 0,
                 behind: 0,
                 file_entries: vec![GitFileEntry {

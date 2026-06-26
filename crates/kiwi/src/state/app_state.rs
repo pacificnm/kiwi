@@ -51,7 +51,7 @@ impl AppState {
         theme: ThemePalette,
         layout: LayoutState,
     ) -> Self {
-        let repo_name = repo_root
+        let root_name = repo_root
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("kiwi")
@@ -89,7 +89,7 @@ impl AppState {
             palette: CommandPaletteState::default(),
             logs: LogsState::default(),
             notifications: NotificationState::default(),
-            status_bar: StatusBarState { repo_name },
+            status_bar: StatusBarState { root_name },
             workspace_meta: WorkspaceMeta {
                 repo_root: repo_root.display().to_string(),
                 is_git_repo,

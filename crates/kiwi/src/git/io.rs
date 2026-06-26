@@ -9,6 +9,7 @@ use super::repository::{load_repo_snapshot, GitError};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitRefreshSnapshot {
     pub branch: Option<String>,
+    pub remote_repo: Option<String>,
     pub ahead: u32,
     pub behind: u32,
     pub file_entries: Vec<GitFileEntry>,
@@ -19,6 +20,7 @@ pub fn load_git_snapshot(repo_root: &Path, show_untracked: bool) -> GitRefreshSn
     match load_repo_snapshot(repo_root, show_untracked) {
         Ok(snapshot) => GitRefreshSnapshot {
             branch: Some(snapshot.branch.branch),
+            remote_repo: snapshot.remote_repo,
             ahead: snapshot.branch.ahead,
             behind: snapshot.branch.behind,
             file_entries: snapshot.file_entries,
@@ -26,6 +28,7 @@ pub fn load_git_snapshot(repo_root: &Path, show_untracked: bool) -> GitRefreshSn
         },
         Err(GitError::Open(message)) => GitRefreshSnapshot {
             branch: None,
+            remote_repo: None,
             ahead: 0,
             behind: 0,
             file_entries: Vec::new(),
@@ -33,6 +36,7 @@ pub fn load_git_snapshot(repo_root: &Path, show_untracked: bool) -> GitRefreshSn
         },
         Err(GitError::Head(message) | GitError::Status(message)) => GitRefreshSnapshot {
             branch: None,
+            remote_repo: None,
             ahead: 0,
             behind: 0,
             file_entries: Vec::new(),
@@ -40,6 +44,7 @@ pub fn load_git_snapshot(repo_root: &Path, show_untracked: bool) -> GitRefreshSn
         },
         Err(GitError::Branches(message) | GitError::Checkout(message)) => GitRefreshSnapshot {
             branch: None,
+            remote_repo: None,
             ahead: 0,
             behind: 0,
             file_entries: Vec::new(),
@@ -99,6 +104,7 @@ pub fn spawn_git_refresh(repo_root: PathBuf, show_untracked: bool, sender: Event
         let snapshot = load_git_snapshot(&repo_root, show_untracked);
         let _ = sender.send(AppEvent::GitStatusUpdated {
             branch: snapshot.branch,
+            remote_repo: snapshot.remote_repo,
             ahead: snapshot.ahead,
             behind: snapshot.behind,
             file_entries: snapshot.file_entries,
@@ -165,6 +171,7 @@ mod tests {
             for event in channel.drain_coalesced() {
                 if let AppEvent::GitStatusUpdated {
                     branch,
+                    remote_repo: _,
                     ahead,
                     behind,
                     file_entries,

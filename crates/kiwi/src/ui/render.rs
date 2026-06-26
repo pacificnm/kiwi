@@ -350,7 +350,7 @@ mod tests {
     #[test]
     fn draw_frame_status_bar_truncates_on_narrow_terminal() {
         let mut state = test_state();
-        state.status_bar.repo_name = "cityartwalks".to_string();
+        state.status_bar.root_name = "cityartwalks".to_string();
         state.git.branch = Some("feature/very-long-branch-name".to_string());
         state.git.file_entries = vec![
             crate::git::GitFileEntry {
@@ -379,7 +379,7 @@ mod tests {
 
         let content = buffer_content(terminal.backend().buffer());
         assert!(content.contains("Kiwi |"));
-        assert!(content.contains("Modified"));
+        assert!(content.contains("Root: cityartwalks"));
     }
 
     #[test]
@@ -389,6 +389,7 @@ mod tests {
             &mut state,
             AppEvent::GitStatusUpdated {
                 branch: None,
+                remote_repo: None,
                 ahead: 0,
                 behind: 0,
                 file_entries: vec![

@@ -17,6 +17,7 @@ pub enum AppEvent {
     #[cfg_attr(not(test), allow(dead_code))]
     GitStatusUpdated {
         branch: Option<String>,
+        remote_repo: Option<String>,
         ahead: u32,
         behind: u32,
         file_entries: Vec<GitFileEntry>,

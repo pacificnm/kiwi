@@ -21,20 +21,21 @@ Display persistent contextual information in a single full-width bottom status r
 Format:
 
 ```text
-Kiwi | <repo> | <branch> | <agent> | <git> | <issue>
+Kiwi | Repo: <remote> | Root: <folder> | Branch: <branch> | <agent> | <git> | <issue>
 ```
 
 Example:
 
 ```text
-Kiwi | cityartwalks | feature/42 | Agent Running | 3 Modified | #42
+Kiwi | Repo: org/cityartwalks | Root: cityartwalks | Branch: feature/42 | Agent Running | 3 Modified | #42
 ```
 
 Segments:
 
 | Segment | Source | Fallback |
 |---------|--------|----------|
-| repo | directory basename | — |
+| Repo | `origin` remote URL (`owner/repo`) | `—` |
+| Root | directory basename | — |
 | branch | `GitState.branch` | `no git` |
 | agent | `AgentState.status` | `Agent Idle` |
 | git | modified count summary | `Clean` |
@@ -53,7 +54,7 @@ Truncate middle segments on narrow terminals; never wrap.
 
 ```rust
 struct StatusBarState {
-    repo_name: String,
+    root_name: String,
     branch: String,
     agent_label: String,
     git_label: String,
