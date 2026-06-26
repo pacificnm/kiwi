@@ -2,7 +2,7 @@
 
 ## Dual Tab Model
 
-Kiwi uses **two independent tab bars**. This is intentional: users keep file context visible while switching main workspace views.
+Kiwi uses **two tab bars**. Left and main selection are mostly independent so users can keep file context visible while switching main workspace views. Selecting certain **main** tabs auto-activates a paired **left** tab (see [SPEC-004](../specs/SPEC-004-navigation-system.md#main-tab--left-tab-pairing)).
 
 Example combinations:
 

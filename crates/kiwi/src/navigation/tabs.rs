@@ -106,6 +106,17 @@ impl MainTab {
             _ => None,
         }
     }
+
+    /// Left nav tab to activate when this main tab is selected (SPEC-004 pairing).
+    #[must_use]
+    pub const fn paired_left_tab(self) -> Option<LeftNavTab> {
+        match self {
+            Self::Issues | Self::Prs | Self::Branches => Some(LeftNavTab::Gh),
+            Self::Preview => Some(LeftNavTab::Files),
+            Self::Diff => Some(LeftNavTab::Git),
+            Self::Agent | Self::Logs => None,
+        }
+    }
 }
 
 pub const LEFT_TAB_LABELS: [&str; 4] = [
@@ -128,6 +139,17 @@ pub const MAIN_TAB_LABELS: [&str; 7] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn main_tab_paired_left_tab_matches_spec() {
+        assert_eq!(MainTab::Issues.paired_left_tab(), Some(LeftNavTab::Gh));
+        assert_eq!(MainTab::Prs.paired_left_tab(), Some(LeftNavTab::Gh));
+        assert_eq!(MainTab::Branches.paired_left_tab(), Some(LeftNavTab::Gh));
+        assert_eq!(MainTab::Preview.paired_left_tab(), Some(LeftNavTab::Files));
+        assert_eq!(MainTab::Diff.paired_left_tab(), Some(LeftNavTab::Git));
+        assert_eq!(MainTab::Agent.paired_left_tab(), None);
+        assert_eq!(MainTab::Logs.paired_left_tab(), None);
+    }
 
     #[test]
     fn left_tabs_match_spec_order() {

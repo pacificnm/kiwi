@@ -224,7 +224,12 @@ pub fn apply_navigation(state: &mut AppState, command: NavCommand) {
     if state.navigation != before {
         state.dirty = true;
     }
-    if state.navigation.left_tab == LeftNavTab::Gh {
+    if state.navigation.left_tab == LeftNavTab::Gh
+        || matches!(
+            state.navigation.main_tab,
+            MainTab::Issues | MainTab::Prs
+        )
+    {
         sync_github_left_pane_from_main_tab(state);
     }
     if state.navigation.left_tab == LeftNavTab::Files {
@@ -2142,7 +2147,61 @@ mod tests {
     }
 
     #[test]
-    fn orthogonal_tabs_preserved_in_app_state() {
+    fn main_tab_select_pairs_left_tab_for_issues() {
+        let mut state = test_state();
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::Navigation(NavCommand::SelectMainTab(
+                MainTab::Issues,
+            ))),
+        );
+        assert_eq!(state.navigation.left_tab, LeftNavTab::Gh);
+        assert_eq!(state.navigation.main_tab, MainTab::Issues);
+        assert_eq!(state.github.left_pane, GitHubLeftPane::Issues);
+    }
+
+    #[test]
+    fn main_tab_select_pairs_left_tab_for_prs_preview_diff_and_branches() {
+        let mut state = test_state();
+
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::Navigation(NavCommand::SelectMainTab(
+                MainTab::Prs,
+            ))),
+        );
+        assert_eq!(state.navigation.left_tab, LeftNavTab::Gh);
+        assert_eq!(state.github.left_pane, GitHubLeftPane::Prs);
+
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::Navigation(NavCommand::SelectMainTab(
+                MainTab::Preview,
+            ))),
+        );
+        assert_eq!(state.navigation.left_tab, LeftNavTab::Files);
+
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::Navigation(NavCommand::SelectMainTab(
+                MainTab::Diff,
+            ))),
+        );
+        assert_eq!(state.navigation.left_tab, LeftNavTab::Git);
+
+        state.github.left_pane = GitHubLeftPane::Prs;
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::Navigation(NavCommand::SelectMainTab(
+                MainTab::Branches,
+            ))),
+        );
+        assert_eq!(state.navigation.left_tab, LeftNavTab::Gh);
+        assert_eq!(state.github.left_pane, GitHubLeftPane::Prs);
+    }
+
+    #[test]
+    fn main_tab_select_does_not_force_left_tab_for_agent_or_logs() {
         let mut state = test_state();
         reduce(
             &mut state,
@@ -2150,14 +2209,15 @@ mod tests {
                 LeftNavTab::Git,
             ))),
         );
-        reduce(
-            &mut state,
-            AppEvent::Command(AppCommand::Navigation(NavCommand::SelectMainTab(
-                MainTab::Issues,
-            ))),
-        );
-        assert_eq!(state.navigation.left_tab, LeftNavTab::Git);
-        assert_eq!(state.navigation.main_tab, MainTab::Issues);
+
+        for tab in [MainTab::Agent, MainTab::Logs] {
+            reduce(
+                &mut state,
+                AppEvent::Command(AppCommand::Navigation(NavCommand::SelectMainTab(tab))),
+            );
+            assert_eq!(state.navigation.left_tab, LeftNavTab::Git);
+            assert_eq!(state.navigation.main_tab, tab);
+        }
     }
 
     #[test]
