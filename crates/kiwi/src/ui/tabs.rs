@@ -36,11 +36,7 @@ pub fn tab_bar_line(tabs: &[&'static str], selected: usize, theme: &ThemePalette
     tab_bar_line_str(tabs, selected, theme)
 }
 
-pub fn tab_bar_line_str<'a>(
-    tabs: &[&'a str],
-    selected: usize,
-    theme: &ThemePalette,
-) -> Line<'a> {
+pub fn tab_bar_line_str<'a>(tabs: &[&'a str], selected: usize, theme: &ThemePalette) -> Line<'a> {
     let mut spans = Vec::new();
     spans.push(Span::styled(
         TAB_LEADING_PAD,
@@ -112,6 +108,7 @@ mod tests {
     fn main_tab_labels_match_design() {
         assert_eq!(MAIN_TAB_LABELS[0], MainTab::Agent.label());
         assert_eq!(MAIN_TAB_LABELS[6], MainTab::Logs.label());
+        assert_eq!(MAIN_TAB_LABELS[7], MainTab::Settings.label());
     }
 
     #[test]

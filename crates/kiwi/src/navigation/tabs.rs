@@ -53,11 +53,12 @@ pub enum MainTab {
     Diff,
     Preview,
     Logs,
+    Settings,
 }
 
 impl MainTab {
     #[cfg_attr(not(test), allow(dead_code))]
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Agent,
         Self::Issues,
         Self::Branches,
@@ -65,6 +66,7 @@ impl MainTab {
         Self::Diff,
         Self::Preview,
         Self::Logs,
+        Self::Settings,
     ];
 
     #[must_use]
@@ -77,6 +79,7 @@ impl MainTab {
             Self::Diff => 4,
             Self::Preview => 5,
             Self::Logs => 6,
+            Self::Settings => 7,
         }
     }
 
@@ -90,6 +93,7 @@ impl MainTab {
             Self::Diff => "Diff",
             Self::Preview => "Preview",
             Self::Logs => "Logs",
+            Self::Settings => "Settings",
         }
     }
 
@@ -103,6 +107,7 @@ impl MainTab {
             4 => Some(Self::Diff),
             5 => Some(Self::Preview),
             6 => Some(Self::Logs),
+            7 => Some(Self::Settings),
             _ => None,
         }
     }
@@ -114,7 +119,7 @@ impl MainTab {
             Self::Issues | Self::Prs | Self::Branches => Some(LeftNavTab::Gh),
             Self::Preview => Some(LeftNavTab::Files),
             Self::Diff => Some(LeftNavTab::Git),
-            Self::Agent | Self::Logs => None,
+            Self::Agent | Self::Logs | Self::Settings => None,
         }
     }
 }
@@ -126,7 +131,7 @@ pub const LEFT_TAB_LABELS: [&str; 4] = [
     LeftNavTab::Search.label(),
 ];
 
-pub const MAIN_TAB_LABELS: [&str; 7] = [
+pub const MAIN_TAB_LABELS: [&str; 8] = [
     MainTab::Agent.label(),
     MainTab::Issues.label(),
     MainTab::Branches.label(),
@@ -134,6 +139,7 @@ pub const MAIN_TAB_LABELS: [&str; 7] = [
     MainTab::Diff.label(),
     MainTab::Preview.label(),
     MainTab::Logs.label(),
+    MainTab::Settings.label(),
 ];
 
 #[cfg(test)]
@@ -149,6 +155,7 @@ mod tests {
         assert_eq!(MainTab::Diff.paired_left_tab(), Some(LeftNavTab::Git));
         assert_eq!(MainTab::Agent.paired_left_tab(), None);
         assert_eq!(MainTab::Logs.paired_left_tab(), None);
+        assert_eq!(MainTab::Settings.paired_left_tab(), None);
     }
 
     #[test]

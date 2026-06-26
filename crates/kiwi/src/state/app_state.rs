@@ -9,11 +9,12 @@ use crate::preview::PreviewState;
 use crate::search::SearchState;
 use crate::selection::TextSelection;
 use crate::shell::shell_launch_spec;
+use crate::theme::capabilities::TerminalCapabilities;
 use crate::theme::ThemePalette;
 
 use super::domains::{
     AgentState, BranchState, CommandPaletteState, DiffState, GitHubState, GitState, LogsState,
-    NotificationState, PluginsState, ShellState, StatusBarState, WorkspaceMeta,
+    NotificationState, PluginsState, SettingsState, ShellState, StatusBarState, WorkspaceMeta,
 };
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppState {
@@ -21,6 +22,7 @@ pub struct AppState {
     pub navigation: NavigationState,
     pub layout: LayoutState,
     pub theme: ThemePalette,
+    pub terminal_capabilities: TerminalCapabilities,
     pub repo_root: PathBuf,
     pub dirty: bool,
     pub file_tree: FileTreeState,
@@ -35,6 +37,7 @@ pub struct AppState {
     pub palette: CommandPaletteState,
     pub plugins: PluginsState,
     pub logs: LogsState,
+    pub settings: SettingsState,
     pub notifications: NotificationState,
     pub status_bar: StatusBarState,
     pub workspace_meta: WorkspaceMeta,
@@ -67,6 +70,7 @@ impl AppState {
             navigation: NavigationState::default(),
             layout,
             theme,
+            terminal_capabilities: TerminalCapabilities::detect(),
             repo_root: repo_root.clone(),
             dirty: true,
             file_tree,
@@ -89,6 +93,7 @@ impl AppState {
             palette: CommandPaletteState::default(),
             plugins: PluginsState::default(),
             logs: LogsState::default(),
+            settings: SettingsState::default(),
             notifications: NotificationState::default(),
             status_bar: StatusBarState { root_name },
             workspace_meta: WorkspaceMeta {

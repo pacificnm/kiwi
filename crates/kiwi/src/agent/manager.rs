@@ -122,7 +122,10 @@ impl AgentManager {
 
     #[must_use]
     pub fn running_count(&self) -> usize {
-        self.agents.values().filter(|session| session.pty.running).count()
+        self.agents
+            .values()
+            .filter(|session| session.pty.running)
+            .count()
     }
 
     #[must_use]
@@ -131,8 +134,7 @@ impl AgentManager {
     }
 
     pub fn sessions(&self) -> impl Iterator<Item = &ManagedAgentSession> {
-        self.session_ids()
-            .filter_map(|id| self.agents.get(&id))
+        self.session_ids().filter_map(|id| self.agents.get(&id))
     }
 
     pub fn session_ids(&self) -> impl Iterator<Item = AgentId> + '_ {
@@ -266,10 +268,7 @@ impl AgentManager {
     pub fn status_bar_label(&self) -> String {
         let active = self.active_pty();
         if self.session_count() <= 1 {
-            return active
-                .status
-                .status_bar_label(active.running)
-                .to_string();
+            return active.status.status_bar_label(active.running).to_string();
         }
 
         let total = self.session_count();
@@ -326,8 +325,7 @@ mod tests {
 
     #[test]
     fn create_agent_respects_capacity() {
-        let mut manager =
-            AgentManager::with_initial_agent(sample_pty("cursor")).with_max_agents(2);
+        let mut manager = AgentManager::with_initial_agent(sample_pty("cursor")).with_max_agents(2);
         manager.create_agent(None, None).expect("second");
         let err = manager.create_agent(None, None).expect_err("full");
         assert_eq!(err, AgentManagerError::AtCapacity);
@@ -336,7 +334,9 @@ mod tests {
     #[test]
     fn set_active_switches_pty_target() {
         let mut manager = AgentManager::with_initial_agent(sample_pty("first"));
-        let second = manager.create_agent(Some("second".to_string()), None).expect("create");
+        let second = manager
+            .create_agent(Some("second".to_string()), None)
+            .expect("create");
         manager.set_active(AgentId::FIRST).expect("switch");
         assert_eq!(manager.active_session().label, "first");
         manager.set_active(second).expect("switch back");
@@ -346,7 +346,9 @@ mod tests {
     #[test]
     fn remove_agent_reassigns_active_when_needed() {
         let mut manager = AgentManager::with_initial_agent(sample_pty("first"));
-        let second = manager.create_agent(Some("second".to_string()), None).expect("create");
+        let second = manager
+            .create_agent(Some("second".to_string()), None)
+            .expect("create");
         manager.remove_agent(second).expect("remove");
         assert_eq!(manager.session_count(), 1);
         assert_eq!(manager.active_id(), AgentId::FIRST);
@@ -362,7 +364,9 @@ mod tests {
     #[test]
     fn cycle_active_wraps_sessions() {
         let mut manager = AgentManager::with_initial_agent(sample_pty("first"));
-        let second = manager.create_agent(Some("second".to_string()), None).expect("create");
+        let second = manager
+            .create_agent(Some("second".to_string()), None)
+            .expect("create");
         assert_eq!(manager.active_id(), second);
         assert_eq!(manager.cycle_active(1), AgentId::FIRST);
         assert_eq!(manager.cycle_active(1), second);

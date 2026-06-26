@@ -28,7 +28,7 @@ pub fn map_key(event: KeyEvent, focus: FocusTarget) -> Option<NavCommand> {
             Some(NavCommand::PreviousFocus)
         }
         KeyCode::Tab => Some(NavCommand::NextFocus),
-        KeyCode::Char(c @ '1'..='7') if matches!(focus, FocusTarget::Main | FocusTarget::Left) => {
+        KeyCode::Char(c @ '1'..='8') if matches!(focus, FocusTarget::Main | FocusTarget::Left) => {
             main_tab_from_digit(c)
         }
         _ => None,
@@ -121,6 +121,12 @@ mod tests {
     }
 
     #[test]
+    fn digit_eight_selects_settings_tab() {
+        let cmd = map_key(press(KeyCode::Char('8')), FocusTarget::Main);
+        assert_eq!(cmd, Some(NavCommand::SelectMainTab(MainTab::Settings)));
+    }
+
+    #[test]
     fn main_tab_shortcuts_match_design_doc() {
         let expected = [
             (KeyCode::Char('1'), MainTab::Agent),
@@ -130,6 +136,7 @@ mod tests {
             (KeyCode::Char('5'), MainTab::Diff),
             (KeyCode::Char('6'), MainTab::Preview),
             (KeyCode::Char('7'), MainTab::Logs),
+            (KeyCode::Char('8'), MainTab::Settings),
         ];
 
         for (digit, tab) in expected {

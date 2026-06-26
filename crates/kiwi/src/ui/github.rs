@@ -605,7 +605,7 @@ fn render_prs_list_status_line(
     } else if state.github.prs.is_empty() {
         "R refresh"
     } else {
-        "j/k move · Enter view · i/p switch · R refresh"
+        "j/k move · Enter view · right-click menu · i/p switch · R refresh"
     };
 
     frame.render_widget(
@@ -1015,7 +1015,7 @@ fn render_issues_list_status_line(
     } else if state.github.issues.is_empty() {
         "R refresh"
     } else {
-        "j/k move · Enter view · i/p switch · R refresh"
+        "j/k move · Enter view · right-click menu · i/p switch · R refresh"
     };
 
     frame.render_widget(

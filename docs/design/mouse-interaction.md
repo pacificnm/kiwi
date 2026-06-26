@@ -12,6 +12,7 @@ Provide **lightweight mouse support** that complements keyboard workflows withou
 | Single click | Main tab label | Activate main tab and focus Main pane |
 | Single click | Agent pane (Agent tab) | Focus Main pane |
 | Single click | Shell pane | Focus Shell pane |
+| Right click | GH issue/PR row (Issues/PRs hub) | Open context menu (View, Create Branch, Comment, Add Labels, Open in Browser, Send To Agent) |
 | Single click | GH issue row (Issues hub) | Select issue |
 | Double click | GH issue row (Issues hub) | Open Issues main tab detail |
 | Single click | List/tree row | Select item |
@@ -24,7 +25,7 @@ Provide **lightweight mouse support** that complements keyboard workflows withou
 ## Unsupported (v1)
 
 - Drag to resize panes
-- Right-click context menus (planned)
+- Right-click context menus on other panes (Files, Git, Search)
 - Click-and-drag scrolling (wheel only)
 
 ## Terminal Text Selection

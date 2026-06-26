@@ -137,6 +137,15 @@ pub enum AppCommand {
     GitHubLabelPickerToggle,
     GitHubLabelPickerApply,
     GitHubLabelPickerCancel,
+    GitHubContextMenuOpen {
+        anchor_x: u16,
+        anchor_y: u16,
+        target: crate::github::GhContextTarget,
+    },
+    GitHubContextMenuMove(i32),
+    GitHubContextMenuExecute,
+    GitHubContextMenuSelect(usize),
+    GitHubContextMenuCancel,
     GitHubOpenInBrowser,
     ShellWrite(Vec<u8>),
     ShellScroll(i32),
@@ -222,6 +231,11 @@ pub enum AppCommand {
     },
     SelectionEnd,
     SelectionClear,
+    SettingsMoveSelection(i32),
+    SettingsSelect(usize),
+    SettingsApplyTheme,
+    #[cfg_attr(not(test), allow(dead_code))]
+    SetTheme(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -288,6 +302,9 @@ pub enum SideEffect {
     },
     SpawnGitHubPrCreate {
         request: crate::github::PrCreateRequest,
+    },
+    PersistUserTheme {
+        name: String,
     },
 }
 

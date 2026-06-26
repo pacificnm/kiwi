@@ -26,7 +26,7 @@ use crate::github::{
     spawn_github_auth_check, spawn_github_issue_comment, spawn_github_issue_create_branch,
     spawn_github_issue_detail_load, spawn_github_issue_label_apply, spawn_github_issue_list_load,
     spawn_github_open_browser, spawn_github_pr_create, spawn_github_pr_detail_load,
-    spawn_github_pr_list_load, spawn_github_repo_labels_load,
+    spawn_github_pr_list_load, spawn_github_repo_labels_load, GhContextTarget, GitHubLeftPane,
 };
 use crate::layout::{agent_pty_size, compute_layout, shell_pty_size, FocusTarget, Region};
 use crate::navigation::{map_key, LeftNavTab, MainTab, NavCommand};
@@ -42,10 +42,10 @@ use crate::state::{
 };
 use crate::ui::{
     branch_interaction_at, draw_frame, file_tree_interaction_at, git_interaction_at,
-    github_issue_interaction_at, github_pr_interaction_at, map_agent_session_click,
-    map_mouse_click, map_mouse_wheel,
-    mouse_interactions_enabled, palette_match_at, search_interaction_at, DoubleClickTarget,
-    DoubleClickTracker, FileTreeMouseAction, WheelDirection,
+    github_context_menu_item_at, github_issue_interaction_at, github_pr_interaction_at,
+    map_agent_session_click, map_mouse_click, map_mouse_wheel, mouse_interactions_enabled,
+    palette_match_at, search_interaction_at, DoubleClickTarget, DoubleClickTracker,
+    FileTreeMouseAction, WheelDirection,
 };
 use crate::watcher::RepoWatcher;
 use crate::workspace::{try_load_workspace, try_save_workspace_from_state};
@@ -665,6 +665,26 @@ impl App {
                         self.state.dirty = true;
                     }
                 },
+                SideEffect::PersistUserTheme { name } => {
+                    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+                    match home {
+                        Some(home) => match crate::config::persist_user_theme(&home, &name) {
+                            Ok(()) => {}
+                            Err(err) => {
+                                self.state
+                                    .notifications
+                                    .show_toast(format!("Failed to save theme to config: {err}"));
+                                self.state.dirty = true;
+                            }
+                        },
+                        None => {
+                            self.state
+                                .notifications
+                                .show_toast("Cannot save theme: HOME not set");
+                            self.state.dirty = true;
+                        }
+                    }
+                }
             }
         }
         false
@@ -698,6 +718,7 @@ impl App {
 
         match mouse.kind {
             MouseEventKind::Down(MouseButton::Left) => self.handle_mouse_left_down(mouse),
+            MouseEventKind::Down(MouseButton::Right) => self.handle_mouse_right_down(mouse),
             MouseEventKind::Drag(MouseButton::Left) => self.handle_mouse_left_drag(mouse),
             MouseEventKind::Up(MouseButton::Left) => {
                 self.dispatch(AppEvent::Command(AppCommand::SelectionEnd))
@@ -718,6 +739,17 @@ impl App {
     }
 
     fn handle_mouse_left_down(&mut self, mouse: MouseEvent) -> bool {
+        if let Some(menu) = &self.state.github.context_menu {
+            let bounds = self.state.layout.rects.left_content;
+            if let Some(index) = github_context_menu_item_at(bounds, menu, mouse.column, mouse.row)
+            {
+                return self.dispatch(AppEvent::Command(AppCommand::GitHubContextMenuSelect(
+                    index,
+                )));
+            }
+            return self.dispatch(AppEvent::Command(AppCommand::GitHubContextMenuCancel));
+        }
+
         if let Some((pane, pos)) = hit_test_text(&self.state, mouse.column, mouse.row) {
             self.apply_selection_focus(pane);
             return self.dispatch(AppEvent::Command(AppCommand::SelectionBegin {
@@ -863,7 +895,7 @@ impl App {
         }
 
         if self.state.navigation.left_tab == LeftNavTab::Gh
-            && self.state.github.left_pane == crate::github::GitHubLeftPane::Prs
+            && self.state.github.left_pane == GitHubLeftPane::Prs
         {
             if let Some(index) = github_pr_interaction_at(
                 &self.state,
@@ -886,7 +918,7 @@ impl App {
         }
 
         if self.state.navigation.left_tab == LeftNavTab::Gh
-            && self.state.github.left_pane == crate::github::GitHubLeftPane::Issues
+            && self.state.github.left_pane == GitHubLeftPane::Issues
         {
             if let Some(index) = github_issue_interaction_at(
                 &self.state,
@@ -928,6 +960,21 @@ impl App {
             }
         }
 
+        if self.state.navigation.main_tab == MainTab::Settings {
+            if let Some(index) = crate::ui::settings_interaction_at(
+                &self.state,
+                self.state.layout.rects.main_content,
+                mouse.column,
+                mouse.row,
+            ) {
+                let _ = self.dispatch(AppEvent::Command(AppCommand::Navigation(
+                    crate::navigation::NavCommand::SetFocus(FocusTarget::Main),
+                )));
+                let _ = self.dispatch(AppEvent::Command(AppCommand::SettingsSelect(index)));
+                return self.dispatch(AppEvent::Command(AppCommand::SettingsApplyTheme));
+            }
+        }
+
         if let Some(command) = map_agent_session_click(&self.state, mouse.column, mouse.row) {
             return self.dispatch(AppEvent::Command(command));
         }
@@ -935,6 +982,50 @@ impl App {
         for command in map_mouse_click(&self.state, mouse.column, mouse.row) {
             if self.dispatch(AppEvent::Command(AppCommand::Navigation(command))) {
                 return true;
+            }
+        }
+
+        false
+    }
+
+    fn handle_mouse_right_down(&mut self, mouse: MouseEvent) -> bool {
+        if self.state.github.context_menu.is_some() {
+            return self.dispatch(AppEvent::Command(AppCommand::GitHubContextMenuCancel));
+        }
+
+        if self.state.navigation.left_tab != LeftNavTab::Gh {
+            return false;
+        }
+
+        let area = self.state.layout.rects.left_content;
+
+        if self.state.github.left_pane == GitHubLeftPane::Issues {
+            if let Some(index) =
+                github_issue_interaction_at(&self.state, area, mouse.column, mouse.row)
+            {
+                let _ = self.dispatch(AppEvent::Command(AppCommand::Navigation(
+                    crate::navigation::NavCommand::SetFocus(FocusTarget::Left),
+                )));
+                return self.dispatch(AppEvent::Command(AppCommand::GitHubContextMenuOpen {
+                    anchor_x: mouse.column,
+                    anchor_y: mouse.row,
+                    target: GhContextTarget::Issue { list_index: index },
+                }));
+            }
+        }
+
+        if self.state.github.left_pane == GitHubLeftPane::Prs {
+            if let Some(index) =
+                github_pr_interaction_at(&self.state, area, mouse.column, mouse.row)
+            {
+                let _ = self.dispatch(AppEvent::Command(AppCommand::Navigation(
+                    crate::navigation::NavCommand::SetFocus(FocusTarget::Left),
+                )));
+                return self.dispatch(AppEvent::Command(AppCommand::GitHubContextMenuOpen {
+                    anchor_x: mouse.column,
+                    anchor_y: mouse.row,
+                    target: GhContextTarget::PullRequest { list_index: index },
+                }));
             }
         }
 
@@ -955,6 +1046,10 @@ impl App {
 
         if self.state.github.label_picker.is_some() {
             return self.handle_label_picker_key(key);
+        }
+
+        if self.state.github.context_menu.is_some() {
+            return self.handle_github_context_menu_key(key);
         }
 
         if self.is_palette_open_key(key) {
@@ -1023,6 +1118,10 @@ impl App {
             return false;
         }
 
+        if self.settings_input_active() && self.handle_settings_key(key) {
+            return false;
+        }
+
         if self.github_input_active() && self.handle_github_key(key) {
             return false;
         }
@@ -1085,6 +1184,22 @@ impl App {
         }
     }
 
+    fn handle_github_context_menu_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Esc => self.dispatch(AppEvent::Command(AppCommand::GitHubContextMenuCancel)),
+            KeyCode::Enter => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubContextMenuExecute))
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubContextMenuMove(1)))
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubContextMenuMove(-1)))
+            }
+            _ => false,
+        }
+    }
+
     fn handle_palette_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
         let prompt_mode = self.state.palette.prompt.is_some();
         match key.code {
@@ -1132,6 +1247,12 @@ impl App {
     fn branches_input_active(&self) -> bool {
         self.state.navigation.focus == FocusTarget::Main
             && self.state.navigation.main_tab == MainTab::Branches
+            && !self.state.palette.open
+    }
+
+    fn settings_input_active(&self) -> bool {
+        self.state.navigation.focus == FocusTarget::Main
+            && self.state.navigation.main_tab == MainTab::Settings
             && !self.state.palette.open
     }
 
@@ -1280,6 +1401,28 @@ impl App {
             }
             KeyCode::Char('R') => self.dispatch(AppEvent::Command(AppCommand::BranchRefresh)),
             KeyCode::Enter => self.dispatch(AppEvent::Command(AppCommand::BranchCheckoutSelected)),
+            _ => false,
+        }
+    }
+
+    fn handle_settings_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        if !key.modifiers.is_empty() {
+            return false;
+        }
+
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.dispatch(AppEvent::Command(AppCommand::SettingsMoveSelection(1)));
+                true
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.dispatch(AppEvent::Command(AppCommand::SettingsMoveSelection(-1)));
+                true
+            }
+            KeyCode::Enter => {
+                self.dispatch(AppEvent::Command(AppCommand::SettingsApplyTheme));
+                true
+            }
             _ => false,
         }
     }

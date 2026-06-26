@@ -47,7 +47,8 @@ pub fn render_scrollback_pane(
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
-        .border_style(border_style);
+        .border_style(border_style)
+        .style(chrome_style(theme));
 
     let inner = block.inner(area);
     frame.render_widget(Clear, area);
@@ -204,6 +205,17 @@ fn render_pty_line(
         ansi_line(text, max_width)
     };
     frame.render_widget(Paragraph::new(line).style(pty_base_style()), row_area);
+}
+
+fn chrome_style(theme: &ThemePalette) -> Style {
+    let mut style = Style::default();
+    if let Some(bg) = theme.get(SemanticRole::Bg).bg {
+        style = style.bg(bg);
+    }
+    if let Some(fg) = theme.get(SemanticRole::Fg).fg {
+        style = style.fg(fg);
+    }
+    style
 }
 
 fn fill_pty_background(frame: &mut Frame<'_>, area: Rect) {

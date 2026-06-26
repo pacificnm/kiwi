@@ -151,6 +151,7 @@ fn main_pane_scrollable(state: &AppState) -> bool {
             | MainTab::Prs
             | MainTab::Diff
             | MainTab::Preview
+            | MainTab::Settings
     )
 }
 
@@ -183,6 +184,7 @@ fn main_wheel_command(state: &AppState, delta: i32) -> Option<AppCommand> {
         MainTab::Prs => Some(AppCommand::GitHubPrDetailScroll(delta)),
         MainTab::Diff => Some(AppCommand::DiffScroll(delta)),
         MainTab::Preview => Some(AppCommand::PreviewScroll(delta)),
+        MainTab::Settings => Some(AppCommand::SettingsMoveSelection(delta)),
         MainTab::Logs => None,
     }
 }

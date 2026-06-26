@@ -324,6 +324,20 @@ pub const COMMANDS: &[CommandDef] = &[
         action: PaletteAction::Navigation(NavCommand::SelectMainTab(MainTab::Logs)),
     },
     CommandDef {
+        id: "main.settings",
+        title: "Main Tab: Settings",
+        shortcut: Some("8"),
+        context: CommandContext::Always,
+        action: PaletteAction::Navigation(NavCommand::SelectMainTab(MainTab::Settings)),
+    },
+    CommandDef {
+        id: "settings.open",
+        title: "Open Settings",
+        shortcut: Some("8"),
+        context: CommandContext::Always,
+        action: PaletteAction::Navigation(NavCommand::SelectMainTab(MainTab::Settings)),
+    },
+    CommandDef {
         id: "left.files",
         title: "Left Tab: Files",
         shortcut: None,

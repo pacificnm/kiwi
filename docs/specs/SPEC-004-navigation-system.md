@@ -35,6 +35,7 @@ Manage left navigation tabs, main workspace tabs, focus routing, and keyboard/mo
 5. Diff — unified diff viewer
 6. Preview — read-only file preview
 7. Logs — application logs
+8. Settings — configuration and theme selection
 
 ### Focus targets
 
@@ -45,7 +46,7 @@ Manage left navigation tabs, main workspace tabs, focus routing, and keyboard/mo
 | Key | Action |
 |-----|--------|
 | `Alt+1`–`Alt+4` | Left nav tab |
-| `1`–`7` (main focused) | Main tab |
+| `1`–`8` (main focused) | Main tab |
 | `Tab` | Cycle focus: Left → Main → Palette → Shell |
 | `Shift+Tab` | Reverse cycle |
 | `Ctrl+P` | Focus command palette |
@@ -63,7 +64,7 @@ Selecting a **main** tab (mouse, digit shortcut, or command palette) auto-activa
 | Branches | GH |
 | Preview | Files |
 | Diff | Git |
-| Agent, Logs | (none — left tab unchanged) |
+| Agent, Logs, Settings | (none — left tab unchanged) |
 
 When main **Issues** or **PRs** is selected, the GH left sub-pane (`Issues` / `PRs` list mode) syncs to match.
 
@@ -76,7 +77,7 @@ When main **Issues** or **PRs** is selected, the GH left sub-pane (`Issues` / `P
 
 ```rust
 enum LeftNavTab { Files, Git, Gh, Search }
-enum MainTab { Agent, Issues, Branches, Prs, Diff, Preview, Logs }
+enum MainTab { Agent, Issues, Branches, Prs, Diff, Preview, Logs, Settings }
 enum FocusTarget { Left, Main, CommandPalette, Shell }
 
 struct NavigationState {
