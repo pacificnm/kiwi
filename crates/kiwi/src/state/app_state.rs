@@ -39,6 +39,7 @@ pub struct AppState {
     pub status_bar: StatusBarState,
     pub workspace_meta: WorkspaceMeta,
     pub text_selection: TextSelection,
+    pub pty_cursor_blink_on: bool,
 }
 
 impl AppState {
@@ -94,6 +95,7 @@ impl AppState {
                 is_git_repo,
             },
             text_selection: TextSelection::default(),
+            pty_cursor_blink_on: true,
         }
     }
 

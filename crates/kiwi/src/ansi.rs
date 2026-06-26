@@ -7,6 +7,85 @@ pub fn pty_base_style() -> Style {
     Style::default().fg(Color::Reset).bg(Color::Reset)
 }
 
+/// Build a ratatui line from PTY text, optionally highlighting a cursor column.
+#[must_use]
+pub fn ansi_line_with_cursor(
+    text: &str,
+    max_width: usize,
+    cursor_col: Option<usize>,
+) -> Line<'static> {
+    if max_width == 0 {
+        return Line::from(String::new());
+    }
+
+    let Some(cursor_col) = cursor_col else {
+        return ansi_line(text, max_width);
+    };
+
+    if cursor_col >= max_width {
+        return ansi_line(text, max_width);
+    }
+
+    let mut spans = Vec::new();
+    let mut style = pty_base_style();
+    let mut buf = String::new();
+    let mut visible = 0usize;
+    let mut chars = text.chars().peekable();
+    let cursor_style = style.add_modifier(Modifier::REVERSED);
+
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            flush_span(&mut spans, &mut buf, style);
+            if chars.next_if_eq(&'[').is_some() {
+                let mut params = String::new();
+                for c in chars.by_ref() {
+                    if ('@'..='~').contains(&c) {
+                        if c == 'm' {
+                            style = apply_sgr(&params, style);
+                        }
+                        break;
+                    }
+                    params.push(c);
+                }
+            }
+            continue;
+        }
+
+        if visible == cursor_col {
+            flush_span(&mut spans, &mut buf, style);
+            if visible >= max_width {
+                break;
+            }
+            spans.push(Span::styled(ch.to_string(), cursor_style));
+            visible += 1;
+            continue;
+        }
+
+        if visible >= max_width {
+            break;
+        }
+
+        buf.push(ch);
+        visible += 1;
+    }
+
+    flush_span(&mut spans, &mut buf, style);
+
+    if visible == cursor_col && visible < max_width {
+        spans.push(Span::styled(" ", cursor_style));
+    }
+
+    if visible >= max_width && visible_width(text) > max_width {
+        append_ellipsis(&mut spans);
+    }
+
+    if spans.is_empty() {
+        Line::from(String::new())
+    } else {
+        Line::from(spans)
+    }
+}
+
 /// Build a ratatui line from PTY text, preserving SGR color codes.
 #[must_use]
 pub fn ansi_line(text: &str, max_width: usize) -> Line<'static> {
@@ -227,5 +306,21 @@ mod tests {
     fn ansi_line_truncates_visible_width() {
         let line = ansi_line("hello world", 5);
         assert_eq!(line.to_string(), "hell…");
+    }
+
+    #[test]
+    fn ansi_line_with_cursor_reverses_character_at_column() {
+        let line = ansi_line_with_cursor("prompt$ ", 20, Some(7));
+        assert_eq!(line.spans[0].content, "prompt$");
+        assert_eq!(line.spans[1].content, " ");
+        assert!(line.spans[1].style.add_modifier.contains(Modifier::REVERSED));
+    }
+
+    #[test]
+    fn ansi_line_with_cursor_appends_block_at_end() {
+        let line = ansi_line_with_cursor("abc", 20, Some(3));
+        assert_eq!(line.spans[0].content, "abc");
+        assert_eq!(line.spans[1].content, " ");
+        assert!(line.spans[1].style.add_modifier.contains(Modifier::REVERSED));
     }
 }

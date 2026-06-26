@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
-use crate::ansi::{ansi_line, pty_base_style, strip_ansi};
+use crate::ansi::{ansi_line, ansi_line_with_cursor, pty_base_style, strip_ansi};
 use crate::selection::{line_spans_with_selection, SelectionPane};
 use crate::shell::ScrollbackBuffer;
 use crate::theme::SemanticRole;
@@ -18,6 +18,7 @@ pub struct ScrollbackPane<'a> {
     pub idle_hint: Option<&'a str>,
     pub footer: Option<&'a str>,
     pub selection_pane: Option<SelectionPane>,
+    pub show_pty_cursor: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -66,6 +67,18 @@ pub fn render_scrollback_pane(
     let lines = pane
         .scrollback
         .viewport_lines(start, visible_height, max_width, include_pending);
+    let cursor_col_on_row = pane.show_pty_cursor.then(|| {
+        pane.scrollback
+            .cursor_display_position(include_pending)
+            .and_then(|(line_index, col)| {
+                let row = line_index.checked_sub(start)?;
+                if row < visible_height {
+                    Some((row, col))
+                } else {
+                    None
+                }
+            })
+    }).flatten();
 
     if lines.is_empty() {
         if let Some(footer) = pane.footer {
@@ -83,6 +96,13 @@ pub fn render_scrollback_pane(
     }
 
     for (row, line) in lines.iter().enumerate().take(visible_height) {
+        let cursor_col = cursor_col_on_row.and_then(|(cursor_row, col)| {
+            if cursor_row == row {
+                Some(col)
+            } else {
+                None
+            }
+        });
         render_pty_line(
             frame,
             inner,
@@ -92,6 +112,7 @@ pub fn render_scrollback_pane(
             pane.selection_pane,
             selection,
             theme,
+            cursor_col,
         );
     }
 
@@ -116,6 +137,7 @@ fn render_pty_line(
     selection_pane: Option<SelectionPane>,
     selection: &crate::selection::TextSelection,
     theme: &ThemePalette,
+    cursor_col: Option<usize>,
 ) {
     if row >= inner.height as usize {
         return;
@@ -150,10 +172,12 @@ fn render_pty_line(
         }
     }
 
-    frame.render_widget(
-        Paragraph::new(ansi_line(text, max_width)).style(pty_base_style()),
-        row_area,
-    );
+    let line = if cursor_col.is_some() {
+        ansi_line_with_cursor(text, max_width, cursor_col)
+    } else {
+        ansi_line(text, max_width)
+    };
+    frame.render_widget(Paragraph::new(line).style(pty_base_style()), row_area);
 }
 
 fn fill_pty_background(frame: &mut Frame<'_>, area: Rect) {
