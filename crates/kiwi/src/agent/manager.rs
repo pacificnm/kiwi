@@ -1,9 +1,8 @@
 //! Multi-agent session state per ADR-017 (#71).
 //!
-//! Runtime PTY handles remain in [`super::session::AgentSession`]; this module
-//! holds the managed per-agent PTY state and metadata (`label`, `linked_issue`).
-
-#![allow(dead_code)] // Multi-agent API; session lifecycle wired in #72/#73.
+//! Runtime PTY handles remain in [`super::session::AgentSession`] and
+//! [`super::runtime::AgentRuntime`]; this module holds managed per-agent PTY
+//! state and metadata (`label`, `linked_issue`).
 
 use std::collections::HashMap;
 use std::fmt;
@@ -130,8 +129,37 @@ impl AgentManager {
     }
 
     pub fn sessions(&self) -> impl Iterator<Item = &ManagedAgentSession> {
-        self.ordered_ids()
+        self.session_ids()
             .filter_map(|id| self.agents.get(&id))
+    }
+
+    pub fn session_ids(&self) -> impl Iterator<Item = AgentId> + '_ {
+        self.ordered_ids()
+    }
+
+    #[must_use]
+    pub fn pty(&self, id: AgentId) -> Option<&AgentState> {
+        self.agents.get(&id).map(|session| &session.pty)
+    }
+
+    pub fn pty_mut(&mut self, id: AgentId) -> Option<&mut AgentState> {
+        self.agents.get_mut(&id).map(|session| &mut session.pty)
+    }
+
+    pub fn cycle_active(&mut self, delta: i32) -> AgentId {
+        let ids: Vec<AgentId> = self.ordered_ids().collect();
+        if ids.is_empty() {
+            return self.active_agent;
+        }
+
+        let current = ids
+            .iter()
+            .position(|&id| id == self.active_agent)
+            .unwrap_or(0);
+        let len = ids.len() as i32;
+        let next = (current as i32 + delta).rem_euclid(len) as usize;
+        self.active_agent = ids[next];
+        self.active_agent
     }
 
     #[must_use]
@@ -323,6 +351,16 @@ mod tests {
         let mut manager = AgentManager::with_initial_agent(sample_pty("only"));
         let err = manager.remove_agent(AgentId::FIRST).expect_err("last");
         assert_eq!(err, AgentManagerError::CannotRemoveLast);
+    }
+
+    #[test]
+    fn cycle_active_wraps_sessions() {
+        let mut manager = AgentManager::with_initial_agent(sample_pty("first"));
+        let second = manager.create_agent(Some("second".to_string()), None).expect("create");
+        assert_eq!(manager.active_id(), second);
+        assert_eq!(manager.cycle_active(1), AgentId::FIRST);
+        assert_eq!(manager.cycle_active(1), second);
+        assert_eq!(manager.cycle_active(-1), AgentId::FIRST);
     }
 
     #[test]

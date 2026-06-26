@@ -28,9 +28,15 @@ pub enum AppEvent {
     ShellOutput(Vec<u8>),
     #[cfg_attr(not(test), allow(dead_code))]
     ShellExited(i32),
-    AgentOutput(Vec<u8>),
+    AgentOutput {
+        agent_id: crate::agent::AgentId,
+        data: Vec<u8>,
+    },
     #[cfg_attr(not(test), allow(dead_code))]
-    AgentExited(i32),
+    AgentExited {
+        agent_id: crate::agent::AgentId,
+        code: i32,
+    },
     FileTreeChildrenLoaded {
         parent: PathBuf,
         children: Vec<crate::file_tree::DirectoryEntry>,
@@ -139,6 +145,9 @@ pub enum AppCommand {
     AgentScroll(i32),
     AgentScrollLines(i32),
     AgentRestart,
+    AgentNew,
+    AgentCycleNext,
+    AgentCyclePrev,
     PaletteOpen,
     PaletteClose,
     PaletteAppendChar(char),
@@ -224,8 +233,8 @@ pub enum SideEffect {
     },
     #[cfg_attr(not(test), allow(dead_code))]
     SpawnGitHubRefresh,
-    SpawnAgent,
-    RestartAgent,
+    SpawnAgent(crate::agent::AgentId),
+    RestartAgent(crate::agent::AgentId),
     WriteShell(Vec<u8>),
     WriteAgent(Vec<u8>),
     ResizeShell {

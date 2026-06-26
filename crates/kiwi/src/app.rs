@@ -10,7 +10,7 @@ use crossterm::event::{
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
-use crate::agent::{AgentOutputReader, AgentSession};
+use crate::agent::{AgentRuntime, AgentSession};
 use crate::bootstrap::StartupContext;
 use crate::clipboard::{
     clipboard_op_from_key, clipboard_shortcut_allowed, ClipboardOp, ClipboardService,
@@ -63,8 +63,7 @@ pub struct App {
     events: EventChannel,
     shell: Option<ShellSession>,
     shell_io: Option<ShellOutputReader>,
-    agent: Option<AgentSession>,
-    agent_io: Option<AgentOutputReader>,
+    agent_runtime: AgentRuntime,
     last_shell_interrupt: Option<Instant>,
     search_debounce: DebounceTimer,
     search_cancel: SearchCancelHandle,
@@ -146,8 +145,7 @@ impl App {
             events,
             shell,
             shell_io,
-            agent: None,
-            agent_io: None,
+            agent_runtime: AgentRuntime::new(),
             last_shell_interrupt: None,
             search_debounce: DebounceTimer::default(),
             search_cancel: SearchCancelHandle::default(),
@@ -184,72 +182,61 @@ impl App {
         app
     }
 
-    fn spawn_agent(&mut self) {
-        if self.state.active_agent().spawned {
+    fn spawn_agent(&mut self, id: crate::agent::AgentId) {
+        if self
+            .state
+            .agent_manager
+            .pty(id)
+            .is_some_and(|pty| pty.spawned)
+            || self.agent_runtime.has_session(id)
+        {
             return;
         }
 
         let (cols, rows) = agent_pty_size(&self.state.layout.rects);
         match AgentSession::spawn(&self.state.repo_root, &self.state.config.agent, cols, rows) {
             Ok(session) => {
-                self.state.active_agent_mut().apply_spawn(
-                    &session.spec.command,
-                    &session.spec.agent_name,
-                    session.pid(),
-                    session.cols,
-                    session.rows,
-                );
-                self.agent_io = session
-                    .try_clone_reader()
-                    .ok()
-                    .map(|reader| AgentOutputReader::spawn(reader, self.events.sender()));
-                self.agent = Some(session);
+                if let Some(pty) = self.state.agent_manager.pty_mut(id) {
+                    pty.apply_spawn(
+                        &session.spec.command,
+                        &session.spec.agent_name,
+                        session.pid(),
+                        session.cols,
+                        session.rows,
+                    );
+                }
+                if let Ok(reader) = session.try_clone_reader() {
+                    self.agent_runtime
+                        .attach_reader(id, reader, self.events.sender());
+                }
+                self.agent_runtime.attach_session(id, session);
             }
             Err(err) => {
-                self.state.active_agent_mut().apply_spawn_error(err.to_string());
+                if let Some(pty) = self.state.agent_manager.pty_mut(id) {
+                    pty.apply_spawn_error(err.to_string());
+                }
             }
         }
         self.state.dirty = true;
     }
 
-    fn restart_agent(&mut self) {
+    fn restart_agent(&mut self, id: crate::agent::AgentId) {
         if self.state.navigation.main_tab != MainTab::Agent {
             return;
         }
 
-        if let Some(reader) = self.agent_io.take() {
-            reader.abandon();
+        self.agent_runtime.shutdown(id);
+        if let Some(pty) = self.state.agent_manager.pty_mut(id) {
+            pty.prepare_restart();
         }
-        if let Some(mut agent) = self.agent.take() {
-            agent.shutdown();
-        }
-
-        self.state.active_agent_mut().prepare_restart();
-        self.spawn_agent();
+        self.spawn_agent(id);
     }
 
-    fn poll_agent_exit(&mut self) {
-        if !self.state.active_agent().running {
-            return;
+    fn poll_agent_exits(&mut self) {
+        let exits = self.agent_runtime.poll_exits();
+        for (agent_id, code) in exits {
+            self.dispatch(AppEvent::AgentExited { agent_id, code });
         }
-
-        let exit_code = {
-            let Some(agent) = self.agent.as_mut() else {
-                return;
-            };
-            agent.poll_exit()
-        };
-
-        let Some(code) = exit_code else {
-            return;
-        };
-
-        if let Some(reader) = self.agent_io.take() {
-            reader.abandon();
-        }
-        self.agent.take();
-
-        self.dispatch(AppEvent::AgentExited(code));
     }
 
     #[must_use]
@@ -281,7 +268,7 @@ impl App {
                 break;
             }
 
-            self.poll_agent_exit();
+            self.poll_agent_exits();
 
             if self.process_pending_events() {
                 break;
@@ -339,9 +326,7 @@ impl App {
         if let Some(reader) = self.shell_io.take() {
             reader.abandon();
         }
-        if let Some(reader) = self.agent_io.take() {
-            reader.abandon();
-        }
+        self.agent_runtime.shutdown_all();
 
         let _ = terminal.clear();
         let _ = terminal.show_cursor();
@@ -349,9 +334,6 @@ impl App {
 
         if let Some(mut shell) = self.shell.take() {
             shell.shutdown();
-        }
-        if let Some(mut agent) = self.agent.take() {
-            agent.shutdown();
         }
 
         if self.state.config.workspace.persist {
@@ -593,11 +575,11 @@ impl App {
                         self.events.sender(),
                     );
                 }
-                SideEffect::SpawnAgent => {
-                    self.spawn_agent();
+                SideEffect::SpawnAgent(id) => {
+                    self.spawn_agent(id);
                 }
-                SideEffect::RestartAgent => {
-                    self.restart_agent();
+                SideEffect::RestartAgent(id) => {
+                    self.restart_agent(id);
                 }
                 SideEffect::WriteShell(data) => {
                     if let Some(shell) = self.shell.as_mut() {
@@ -605,9 +587,8 @@ impl App {
                     }
                 }
                 SideEffect::WriteAgent(data) => {
-                    if let Some(agent) = self.agent.as_mut() {
-                        let _ = agent.write(&data);
-                    }
+                    let id = self.state.agent_manager.active_id();
+                    let _ = self.agent_runtime.write(id, &data);
                 }
                 SideEffect::ResizeShell { cols, rows } => {
                     if let Some(shell) = self.shell.as_mut() {
@@ -996,6 +977,14 @@ impl App {
             return self.dispatch(AppEvent::Command(AppCommand::AgentRestart));
         }
 
+        if self.is_agent_new_key(key) {
+            return self.dispatch(AppEvent::Command(AppCommand::AgentNew));
+        }
+
+        if self.is_agent_cycle_key(key) {
+            return self.dispatch(AppEvent::Command(AppCommand::AgentCycleNext));
+        }
+
         if self.is_focus_cycle_key(key) {
             let command = if key.modifiers.contains(KeyModifiers::SHIFT) {
                 crate::navigation::NavCommand::PreviousFocus
@@ -1062,7 +1051,7 @@ impl App {
     }
 
     fn is_focus_cycle_key(&self, key: crossterm::event::KeyEvent) -> bool {
-        matches!(key.code, KeyCode::Tab)
+        matches!(key.code, KeyCode::Tab) && !key.modifiers.contains(KeyModifiers::CONTROL)
     }
 
     fn is_palette_open_key(&self, key: crossterm::event::KeyEvent) -> bool {
@@ -1543,6 +1532,20 @@ impl App {
             && key.modifiers.contains(KeyModifiers::CONTROL)
             && key.modifiers.contains(KeyModifiers::SHIFT)
             && matches!(key.code, KeyCode::Char('r' | 'R'))
+    }
+
+    fn is_agent_new_key(&self, key: crossterm::event::KeyEvent) -> bool {
+        self.state.navigation.main_tab == MainTab::Agent
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && key.modifiers.contains(KeyModifiers::SHIFT)
+            && matches!(key.code, KeyCode::Char('n' | 'N'))
+    }
+
+    fn is_agent_cycle_key(&self, key: crossterm::event::KeyEvent) -> bool {
+        self.state.navigation.main_tab == MainTab::Agent
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::SHIFT)
+            && matches!(key.code, KeyCode::Tab)
     }
 
     fn is_force_quit(&self, key: crossterm::event::KeyEvent) -> bool {

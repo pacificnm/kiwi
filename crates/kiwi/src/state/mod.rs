@@ -23,6 +23,8 @@ pub use domains::{GitHubPrCreatePrompt, GitHubPrCreateStep, PluginPaletteCommand
 #[cfg(test)]
 pub use domains::{LogEntry, LogsState};
 pub use event::{AppCommand, AppEvent, SideEffect};
+pub use reducer::agent_cycle_effects;
+pub use reducer::agent_new_effects;
 pub use reducer::agent_spawn_effects_if_needed;
 pub use reducer::apply_navigation;
 pub use reducer::diff_move_file_effects;
