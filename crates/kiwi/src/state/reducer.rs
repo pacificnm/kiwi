@@ -366,11 +366,11 @@ fn workspace_apply_pending_selection(state: &mut AppState) {
 }
 
 pub fn git_refresh_effects(state: &mut AppState) -> Vec<SideEffect> {
-    state.dirty = true;
-    if !state.workspace_meta.is_git_repo {
+    if !state.workspace_meta.is_git_repo || state.git.loading {
         return Vec::new();
     }
 
+    state.dirty = true;
     state.git.loading = true;
     vec![SideEffect::SpawnGitRefresh]
 }
@@ -2766,6 +2766,55 @@ mod tests {
         );
 
         assert!(!effects.contains(&SideEffect::SpawnGitRefresh));
+    }
+
+    #[test]
+    fn fs_changed_skips_git_refresh_when_already_loading() {
+        let mut state = test_state();
+        state.workspace_meta.is_git_repo = true;
+        state.config.git.watch = true;
+        state.git.loading = true;
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::FsChanged {
+                paths: vec![PathBuf::from("/tmp/repo/src/main.rs")],
+            },
+        );
+
+        assert!(!effects.contains(&SideEffect::SpawnGitRefresh));
+        assert!(state.git.loading);
+    }
+
+    #[test]
+    fn git_refresh_skips_when_already_loading() {
+        let mut state = test_state();
+        state.workspace_meta.is_git_repo = true;
+        state.git.loading = true;
+
+        let effects = reduce(&mut state, AppEvent::GitRefreshRequested);
+
+        assert!(effects.is_empty());
+        assert!(state.git.loading);
+    }
+
+    #[test]
+    fn fs_changed_after_git_refresh_requested_spawns_single_refresh() {
+        let mut state = test_state();
+        state.workspace_meta.is_git_repo = true;
+        state.config.git.watch = true;
+
+        let first = reduce(&mut state, AppEvent::GitRefreshRequested);
+        let second = reduce(
+            &mut state,
+            AppEvent::FsChanged {
+                paths: vec![PathBuf::from("/repo/src/main.rs")],
+            },
+        );
+
+        assert!(first.contains(&SideEffect::SpawnGitRefresh));
+        assert!(!second.contains(&SideEffect::SpawnGitRefresh));
+        assert!(state.git.loading);
     }
 
     #[test]

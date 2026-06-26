@@ -311,6 +311,14 @@ Format for new entries:
 - **Files:** `file_tree/invalidation.rs`, `state/reducer.rs`, `file_tree/mod.rs`
 - **Verify:** `directories_to_invalidate_*`, `apply_fs_invalidation_*`, `fs_changed_invalidates_expanded_file_tree_directory`; manual: create a file in an expanded folder and confirm it appears without pressing `r`.
 
+### Wire git refresh to FsChanged when git.watch enabled (GitHub #116, SPEC-008, ADR-011)
+
+- **Symptom:** Debounced `FsChanged` from the repo watcher reloaded preview and file-tree caches but did not refresh git status; users needed manual palette refresh or `R` in the Git panel.
+- **Cause:** `reduce_fs_changed` had no git refresh path when `[git] watch = true` (initial watcher work in #37 only wired preview reload).
+- **Fix:** `reduce_fs_changed` calls `reduce_git_refresh_requested` when `workspace_meta.is_git_repo` and `config.git.watch`; `git_refresh_effects` skips duplicate spawns while a refresh is in flight. Channel `drain_coalesced` already merges `GitRefreshRequested` and coalesces `FsChanged` paths.
+- **Files:** `state/reducer.rs`, `state/channel.rs`, `state/preservation.rs`
+- **Verify:** `fs_changed_requests_git_refresh_when_watch_enabled`, `fs_changed_skips_git_refresh_when_watch_disabled`, `fs_changed_skips_git_refresh_when_already_loading`, `fs_changed_git_head_triggers_refresh`, `fs_changed_many_paths_trigger_single_git_refresh`, `git_refresh_skips_when_already_loading`; manual: save a tracked file and confirm git panel/status bar updates after watcher debounce without pressing `R`.
+
 ### Scroll/selection preservation tests (GitHub #49, ADR-007)
 
 - **Symptom:** Watcher and git refresh paths had scattered preservation behavior but no consolidated regression coverage for scroll offsets and focus.
