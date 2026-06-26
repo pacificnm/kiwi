@@ -1,17 +1,9 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TerminalCapabilities {
-    Ansi16,
-    Colors256,
-    TrueColor,
-}
+pub use kiwi_core::theme::TerminalCapabilities;
 
-impl TerminalCapabilities {
-    #[must_use]
-    pub fn detect() -> Self {
-        match crossterm::style::available_color_count() {
-            u16::MAX => Self::TrueColor,
-            count if count >= 256 => Self::Colors256,
-            _ => Self::Ansi16,
-        }
+pub fn detect_terminal_capabilities() -> TerminalCapabilities {
+    match crossterm::style::available_color_count() {
+        u16::MAX => TerminalCapabilities::TrueColor,
+        count if count >= 256 => TerminalCapabilities::Colors256,
+        _ => TerminalCapabilities::Ansi16,
     }
 }

@@ -737,6 +737,7 @@ dependencies = [
  "clap",
  "crossterm",
  "git2",
+ "kiwi_core",
  "kiwi_plugin_api",
  "kiwi_plugin_loader",
  "notify",
@@ -746,6 +747,15 @@ dependencies = [
  "serde_json",
  "signal-hook",
  "tokio",
+ "toml",
+]
+
+[[package]]
+name = "kiwi_core"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "serde",
  "toml",
 ]
 

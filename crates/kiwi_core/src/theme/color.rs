@@ -1,5 +1,3 @@
-use ratatui::style::Color;
-
 use super::capabilities::TerminalCapabilities;
 use super::error::ThemeError;
 use super::roles::SemanticRole;
@@ -28,17 +26,23 @@ impl ColorValue {
     }
 
     #[must_use]
-    pub fn to_ratatui_color(self, capabilities: TerminalCapabilities) -> Color {
+    pub fn resolve(self, capabilities: TerminalCapabilities) -> ResolvedColor {
         match self {
             Self::Rgb(r, g, b) => match capabilities {
-                TerminalCapabilities::TrueColor => Color::Rgb(r, g, b),
+                TerminalCapabilities::TrueColor => ResolvedColor::Rgb(r, g, b),
                 TerminalCapabilities::Colors256 | TerminalCapabilities::Ansi16 => {
-                    Color::Indexed(rgb_to_256(r, g, b))
+                    ResolvedColor::Indexed(rgb_to_256(r, g, b))
                 }
             },
-            Self::Ansi(index) => Color::Indexed(index),
+            Self::Ansi(index) => ResolvedColor::Indexed(index),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResolvedColor {
+    Rgb(u8, u8, u8),
+    Indexed(u8),
 }
 
 fn parse_hex(hex: &str, role: SemanticRole, raw: &str) -> Result<ColorValue, ThemeError> {
@@ -74,9 +78,8 @@ fn rgb_to_256(r: u8, g: u8, b: u8) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use ratatui::style::Color;
-
     use super::ColorValue;
+    use super::ResolvedColor;
     use super::TerminalCapabilities;
     use crate::theme::roles::SemanticRole;
 
@@ -84,8 +87,8 @@ mod tests {
     fn parses_hex_for_truecolor() {
         let color = ColorValue::parse("#e0af68", SemanticRole::GitModified).expect("parse hex");
         assert_eq!(
-            color.to_ratatui_color(TerminalCapabilities::TrueColor),
-            Color::Rgb(224, 175, 104)
+            color.resolve(TerminalCapabilities::TrueColor),
+            ResolvedColor::Rgb(224, 175, 104)
         );
     }
 
@@ -93,8 +96,8 @@ mod tests {
     fn parses_ansi_index() {
         let color = ColorValue::parse("ansi_11", SemanticRole::GitModified).expect("parse ansi");
         assert_eq!(
-            color.to_ratatui_color(TerminalCapabilities::Ansi16),
-            Color::Indexed(11)
+            color.resolve(TerminalCapabilities::Ansi16),
+            ResolvedColor::Indexed(11)
         );
     }
 }

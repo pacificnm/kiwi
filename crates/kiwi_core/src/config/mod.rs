@@ -1,0 +1,12 @@
+mod error;
+mod loader;
+mod types;
+mod writer;
+
+pub use error::ConfigError;
+pub use loader::{load_config, load_config_with_home, ConfigLoadOptions};
+pub use types::{
+    default_plugins_directory, expand_tilde, AgentSettings, EditorSettings, MouseMode,
+    MouseSettings, PluginsSettings, ResolvedConfig, ShellSettings, ThemeSettings,
+};
+pub use writer::{persist_user_theme, project_has_theme_override, user_config_path};

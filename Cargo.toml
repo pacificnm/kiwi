@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/kiwi",
+    "crates/kiwi_core",
     "crates/kiwi_plugin_api",
     "crates/kiwi_plugin_loader",
     "plugins/kiwi_plugin_hello",
@@ -35,3 +36,4 @@ notify = "7.0.0"
 arboard = "3.4"
 git2 = "0.19"
 libloading = "0.8"
+kiwi_core = { path = "crates/kiwi_core" }
