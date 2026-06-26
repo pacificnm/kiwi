@@ -100,7 +100,7 @@ impl App {
         let plugin_messages = plugin_outcome.messages;
         if state.config.workspace.persist {
             if let Some(snapshot) = try_load_workspace(&repo_root) {
-                snapshot.apply_to_app_state(&mut state);
+                snapshot.apply_to_reduce_view(&mut state.reduce_view());
                 let (width, height) = state.layout.terminal_size;
                 if let Ok(updated) = compute_layout(width, height, state.config.app.left_width) {
                     state.layout = updated;
@@ -339,7 +339,7 @@ impl App {
         }
 
         if self.state.config.workspace.persist {
-            try_save_workspace_from_state(&self.state);
+            try_save_workspace_from_state(&mut self.state);
         }
     }
 
@@ -382,13 +382,13 @@ impl App {
         }
         let interval = Duration::from_secs(self.state.config.workspace.save_interval_secs);
         if self.workspace_last_saved.elapsed() >= interval {
-            try_save_workspace_from_state(&self.state);
+            try_save_workspace_from_state(&mut self.state);
             self.workspace_last_saved = Instant::now();
         }
     }
 
     fn save_workspace(&mut self) {
-        try_save_workspace_from_state(&self.state);
+        try_save_workspace_from_state(&mut self.state);
         self.workspace_last_saved = Instant::now();
     }
 

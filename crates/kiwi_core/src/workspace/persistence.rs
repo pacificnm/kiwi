@@ -4,8 +4,9 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use crate::state::ReduceView;
+
 use super::snapshot::{trim_history, WorkspaceSnapshot, WORKSPACE_SCHEMA_VERSION};
-use crate::state::AppState;
 
 pub fn load_snapshot(repo_root: &Path) -> Option<WorkspaceSnapshot> {
     load_workspace_snapshot(repo_root, false)
@@ -50,20 +51,20 @@ fn load_workspace_snapshot(repo_root: &Path, log_errors: bool) -> Option<Workspa
     }
 }
 
-pub fn save_workspace_from_state(state: &AppState) -> std::io::Result<()> {
-    let snapshot = WorkspaceSnapshot::from_app_state(state);
-    save_snapshot(&state.repo_root, &snapshot)
+pub fn save_from_reduce_view(view: &ReduceView<'_>) -> std::io::Result<()> {
+    let snapshot = WorkspaceSnapshot::from_reduce_view(view);
+    save_snapshot(view.repo_root, &snapshot)
 }
 
 /// Persist current app state when `workspace.persist` is enabled (SPEC-017).
-pub fn try_save_workspace_from_state(state: &AppState) {
-    if !state.config.workspace.persist {
+pub fn try_save_from_reduce_view(view: &ReduceView<'_>) {
+    if !view.config.workspace.persist {
         return;
     }
-    if let Err(err) = save_workspace_from_state(state) {
+    if let Err(err) = save_from_reduce_view(view) {
         eprintln!(
             "workspace: failed to save {}: {err}",
-            workspace_file_path(&state.repo_root).display()
+            workspace_file_path(view.repo_root).display()
         );
     }
 }
@@ -128,6 +129,11 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Mutex;
 
+    use crate::config::ResolvedConfig;
+    use crate::navigation::{LeftNavTab, MainTab};
+    use crate::state::{AppState, ReduceView, ViewportMetrics};
+    use crate::theme::{load_theme_with_capabilities, TerminalCapabilities};
+
     use super::*;
     use crate::workspace::snapshot::{scroll_view, WorkspaceSnapshot};
 
@@ -166,6 +172,35 @@ mod tests {
             }
             let _ = fs::remove_dir_all(&self.path);
         }
+    }
+
+    fn test_state(repo: &Path) -> AppState {
+        AppState::from_startup(
+            repo.to_path_buf(),
+            false,
+            ResolvedConfig::default(),
+            load_theme_with_capabilities(
+                &ResolvedConfig::default().theme,
+                TerminalCapabilities::TrueColor,
+            )
+            .expect("theme"),
+            TerminalCapabilities::TrueColor,
+            ViewportMetrics {
+                settings_rows: 10,
+                github_list_rows: 10,
+                github_detail_rows: 20,
+                branches_rows: 10,
+                git_rows: 10,
+                file_tree_rows: 10,
+                preview_rows: 20,
+                preview_cols: 80,
+                search_rows: 10,
+                shell_rows: 20,
+                shell_cols: 80,
+                agent_rows: 15,
+                agent_cols: 100,
+            },
+        )
     }
 
     #[test]
@@ -232,33 +267,16 @@ mod tests {
     }
 
     #[test]
-    fn save_workspace_from_state_round_trip() {
-        use crate::config::ResolvedConfig;
-        use crate::layout::compute_layout;
-        use crate::navigation::{LeftNavTab, MainTab};
-        use crate::state::AppState;
-        use crate::theme::capabilities::TerminalCapabilities;
-        use crate::theme::loader::load_theme_with_capabilities;
-
+    fn save_from_reduce_view_round_trip() {
         let _dir = TempStateDir::new("from-state");
         let repo = Path::new("/tmp/kiwi-workspace-from-state");
-        let mut state = AppState::from_startup(
-            repo.to_path_buf(),
-            false,
-            ResolvedConfig::default(),
-            load_theme_with_capabilities(
-                &ResolvedConfig::default().theme,
-                TerminalCapabilities::TrueColor,
-            )
-            .expect("theme"),
-            compute_layout(120, 40, 30).expect("layout"),
-        );
+        let mut state = test_state(repo);
         state.navigation.left_tab = LeftNavTab::Git;
         state.navigation.main_tab = MainTab::Preview;
         state.config.app.left_width = 27;
         state.palette.history = vec!["quit".to_string()];
 
-        save_workspace_from_state(&state).expect("save");
+        save_from_reduce_view(&ReduceView::from_app_state(&mut state)).expect("save");
         let loaded = load_snapshot(repo).expect("load");
 
         assert_eq!(loaded.left_nav_tab, "Git");
@@ -285,42 +303,16 @@ mod tests {
 
     #[test]
     fn palette_history_round_trips_through_workspace_restore() {
-        use crate::config::ResolvedConfig;
-        use crate::layout::compute_layout;
-        use crate::state::AppState;
-        use crate::theme::capabilities::TerminalCapabilities;
-        use crate::theme::loader::load_theme_with_capabilities;
-
         let _dir = TempStateDir::new("palette-restore");
         let repo = Path::new("/tmp/kiwi-workspace-palette-restore");
-        let mut state = AppState::from_startup(
-            repo.to_path_buf(),
-            false,
-            ResolvedConfig::default(),
-            load_theme_with_capabilities(
-                &ResolvedConfig::default().theme,
-                TerminalCapabilities::TrueColor,
-            )
-            .expect("theme"),
-            compute_layout(120, 40, 30).expect("layout"),
-        );
+        let mut state = test_state(repo);
         state.palette.history = vec!["git.refresh".to_string(), "quit".to_string()];
 
-        save_workspace_from_state(&state).expect("save");
+        save_from_reduce_view(&ReduceView::from_app_state(&mut state)).expect("save");
 
-        let mut restored = AppState::from_startup(
-            repo.to_path_buf(),
-            false,
-            ResolvedConfig::default(),
-            load_theme_with_capabilities(
-                &ResolvedConfig::default().theme,
-                TerminalCapabilities::TrueColor,
-            )
-            .expect("theme"),
-            compute_layout(120, 40, 30).expect("layout"),
-        );
+        let mut restored = test_state(repo);
         let snapshot = try_load_workspace(repo).expect("load snapshot");
-        snapshot.apply_to_app_state(&mut restored);
+        snapshot.apply_to_reduce_view(&mut ReduceView::from_app_state(&mut restored));
 
         assert_eq!(
             restored.palette.history,
