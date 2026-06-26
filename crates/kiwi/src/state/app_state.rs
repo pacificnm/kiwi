@@ -93,6 +93,7 @@ impl AppState {
             workspace_meta: WorkspaceMeta {
                 repo_root: repo_root.display().to_string(),
                 is_git_repo,
+                ..WorkspaceMeta::default()
             },
             text_selection: TextSelection::default(),
             pty_cursor_blink_on: true,

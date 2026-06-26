@@ -667,4 +667,8 @@ pub struct StatusBarState {
 pub struct WorkspaceMeta {
     pub repo_root: String,
     pub is_git_repo: bool,
+    /// Expanded directories from a saved snapshot that are not yet present in the tree.
+    pub pending_expanded_paths: Vec<std::path::PathBuf>,
+    /// Selected file path from a saved snapshot waiting for tree nodes to load.
+    pub pending_selected_path: Option<std::path::PathBuf>,
 }

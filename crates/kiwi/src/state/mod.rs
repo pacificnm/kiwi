@@ -30,3 +30,4 @@ pub use reducer::file_tree_startup_effects;
 pub use reducer::git_refresh_effects;
 pub use reducer::github_refresh_effects;
 pub use reducer::reduce;
+pub use reducer::workspace_restore_effects;

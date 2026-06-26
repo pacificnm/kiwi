@@ -225,10 +225,7 @@ pub fn apply_navigation(state: &mut AppState, command: NavCommand) {
         state.dirty = true;
     }
     if state.navigation.left_tab == LeftNavTab::Gh
-        || matches!(
-            state.navigation.main_tab,
-            MainTab::Issues | MainTab::Prs
-        )
+        || matches!(state.navigation.main_tab, MainTab::Issues | MainTab::Prs)
     {
         sync_github_left_pane_from_main_tab(state);
     }
@@ -288,6 +285,52 @@ fn reduce_terminal_resize(state: &mut AppState, width: u16, height: u16) -> Vec<
 pub fn file_tree_startup_effects(state: &mut AppState) -> Vec<SideEffect> {
     let root = state.file_tree.root.clone();
     reduce_file_tree_expand(state, root)
+}
+
+pub fn workspace_expand_pending_effects(state: &mut AppState) -> Vec<SideEffect> {
+    let pending = std::mem::take(&mut state.workspace_meta.pending_expanded_paths);
+    let mut remaining = Vec::new();
+    let mut effects = Vec::new();
+
+    for path in pending {
+        if !state.file_tree.nodes.contains_key(&path) {
+            remaining.push(path);
+            continue;
+        }
+
+        match state.file_tree.expand(&path) {
+            Ok(ExpandAction::NeedsLoad) => {
+                effects.push(SideEffect::LoadDirectoryChildren(path));
+            }
+            Ok(ExpandAction::AlreadyExpanded) => {}
+            Err(_) => {}
+        }
+    }
+
+    state.workspace_meta.pending_expanded_paths = remaining;
+    effects
+}
+
+pub fn workspace_restore_effects(state: &mut AppState) -> Vec<SideEffect> {
+    let mut effects = workspace_expand_pending_effects(state);
+    workspace_apply_pending_selection(state);
+    effects.extend(github_first_access_effects(state));
+    effects.extend(github_issue_list_access_effects(state, false));
+    effects.extend(github_pr_list_access_effects(state, false));
+    effects.extend(branch_list_access_effects(state, false));
+    effects
+}
+
+fn workspace_apply_pending_selection(state: &mut AppState) {
+    let Some(path) = state.workspace_meta.pending_selected_path.clone() else {
+        return;
+    };
+
+    if state.file_tree.nodes.contains_key(&path) {
+        state.file_tree.select(path);
+        state.workspace_meta.pending_selected_path = None;
+        state.dirty = true;
+    }
 }
 
 pub fn git_refresh_effects(state: &mut AppState) -> Vec<SideEffect> {
@@ -1664,7 +1707,9 @@ fn reduce_file_tree_children_loaded(
         .apply_children_loaded(&parent, children, error);
     sync_git_statuses_to_file_tree(state);
     state.dirty = true;
-    Vec::new()
+    let effects = workspace_expand_pending_effects(state);
+    workspace_apply_pending_selection(state);
+    effects
 }
 
 fn preview_viewport_rows(state: &AppState) -> usize {
@@ -3793,6 +3838,106 @@ mod tests {
         assert!(state.file_tree.nodes[&root].expanded);
         assert!(state.file_tree.loading.contains(&root));
         assert!(effects.contains(&SideEffect::LoadDirectoryChildren(root)));
+    }
+
+    #[test]
+    fn workspace_expand_pending_emits_load_for_known_directory() {
+        let mut state = test_state();
+        let root = state.file_tree.root.clone();
+        let src = root.join("src");
+        state.file_tree.nodes.insert(
+            src.clone(),
+            crate::file_tree::FileNode {
+                path: src.clone(),
+                name: "src".to_string(),
+                is_dir: true,
+                expanded: false,
+                children_loaded: false,
+                load_error: None,
+                git_status: None,
+            },
+        );
+        state.workspace_meta.pending_expanded_paths = vec![src.clone()];
+
+        let effects = workspace_expand_pending_effects(&mut state);
+
+        assert!(state.file_tree.nodes[&src].expanded);
+        assert!(effects.contains(&SideEffect::LoadDirectoryChildren(src)));
+        assert!(state.workspace_meta.pending_expanded_paths.is_empty());
+    }
+
+    #[test]
+    fn workspace_expand_pending_keeps_missing_paths() {
+        let mut state = test_state();
+        let missing = state.file_tree.root.join("missing");
+        state.workspace_meta.pending_expanded_paths = vec![missing.clone()];
+
+        let effects = workspace_expand_pending_effects(&mut state);
+
+        assert!(effects.is_empty());
+        assert_eq!(state.workspace_meta.pending_expanded_paths, vec![missing]);
+    }
+
+    #[test]
+    fn file_tree_children_loaded_retries_pending_expansion_and_selection() {
+        let mut state = test_state();
+        let root = state.file_tree.root.clone();
+        let src = root.join("src");
+        state.workspace_meta.pending_expanded_paths = vec![src.clone()];
+        state.workspace_meta.pending_selected_path = Some(src.join("main.rs"));
+
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::FileTreeExpand(root.clone())),
+        );
+        reduce(
+            &mut state,
+            AppEvent::FileTreeChildrenLoaded {
+                parent: root.clone(),
+                children: vec![
+                    DirectoryEntry {
+                        path: src.clone(),
+                        name: "src".to_string(),
+                        is_dir: true,
+                    },
+                    DirectoryEntry {
+                        path: src.join("main.rs"),
+                        name: "main.rs".to_string(),
+                        is_dir: false,
+                    },
+                ],
+                error: None,
+            },
+        );
+
+        assert!(state.file_tree.nodes[&src].expanded);
+        assert_eq!(
+            state.file_tree.selected.as_ref(),
+            Some(&src.join("main.rs"))
+        );
+        assert!(state.workspace_meta.pending_selected_path.is_none());
+    }
+
+    #[test]
+    fn workspace_restore_applies_saved_tabs_and_left_width() {
+        use crate::workspace::WorkspaceSnapshot;
+
+        let mut state = test_state();
+        let snapshot = WorkspaceSnapshot {
+            left_nav_tab: "Git".to_string(),
+            main_tab: "Diff".to_string(),
+            focus: "Left".to_string(),
+            left_width: 35,
+            command_palette_history: vec!["quit".to_string()],
+            ..WorkspaceSnapshot::default()
+        };
+        snapshot.apply_to_app_state(&mut state);
+
+        assert_eq!(state.navigation.left_tab, LeftNavTab::Git);
+        assert_eq!(state.navigation.main_tab, MainTab::Diff);
+        assert_eq!(state.navigation.focus, FocusTarget::Left);
+        assert_eq!(state.config.app.left_width, 35);
+        assert_eq!(state.palette.history, vec!["quit".to_string()]);
     }
 
     #[test]

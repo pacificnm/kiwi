@@ -155,15 +155,25 @@ impl WorkspaceSnapshot {
 
         state.config.app.left_width = self.left_width;
 
-        for rel in &self.expanded_paths {
-            let path = abs_path(&state.repo_root, rel);
-            if let Some(node) = state.file_tree.nodes.get_mut(&path) {
+        state.workspace_meta.pending_expanded_paths = self
+            .expanded_paths
+            .iter()
+            .map(|rel| abs_path(&state.repo_root, rel))
+            .collect();
+        for path in &state.workspace_meta.pending_expanded_paths {
+            if let Some(node) = state.file_tree.nodes.get_mut(path) {
                 node.expanded = true;
             }
         }
 
+        state.workspace_meta.pending_selected_path = None;
         if let Some(rel) = &self.selected_path {
-            state.file_tree.select(abs_path(&state.repo_root, rel));
+            let path = abs_path(&state.repo_root, rel);
+            if state.file_tree.nodes.contains_key(&path) {
+                state.file_tree.select(path);
+            } else {
+                state.workspace_meta.pending_selected_path = Some(path);
+            }
         }
 
         apply_scroll_positions(state, &self.scroll_positions);
