@@ -4,6 +4,7 @@ use std::time::SystemTime;
 use crate::agent::infer_status_from_scrollback;
 use crate::clipboard::{resolve_copy_text, PasteTarget};
 use crate::commands::{execute_command, history_input_for_id, refresh_matches};
+use crate::config::{project_has_theme_override, ThemeSettings};
 use crate::file_tree::ExpandAction;
 use crate::git::{
     adjacent_changed_file, branch_move_selection, branch_select_row, branch_selected_name,
@@ -13,15 +14,18 @@ use crate::git::{
 };
 use crate::github::{
     advance_pr_create_prompt, apply_label_picker_load, ensure_issue_selection, ensure_pr_selection,
-    issue_move_selection, issue_select_row, missing_browser_target_message,
-    page_scroll_issue_detail, pr_move_selection, pr_select_row, resolve_browser_target,
-    scroll_issue_detail, GitHubLeftPane, IssueDetailLoadResult, IssueListLoadResult,
+    format_issue_agent_prompt, format_pr_agent_prompt, issue_move_selection, issue_select_row,
+    missing_browser_target_message, page_scroll_issue_detail, pr_move_selection, pr_select_row,
+    resolve_browser_target, scroll_issue_detail, GhContextMenuAction, GhContextMenuState,
+    GhContextTarget, GitHubLeftPane, IssueDetailLoadResult, IssueListLoadResult, LabelPickerState,
     PrCreatePromptAdvance, PrDetailLoadResult, PrListLoadResult, ISSUE_LIST_CACHE_SECS,
     PR_LIST_CACHE_SECS,
 };
 use crate::layout::{agent_pty_size, compute_layout, shell_pty_size, FocusTarget};
 use crate::navigation::{LeftNavTab, MainTab, NavCommand};
+use crate::settings::{ensure_settings_selection, settings_move_selection, settings_select_row};
 use crate::state::PalettePrompt;
+use crate::theme::loader::load_theme_with_capabilities;
 
 use super::app_state::AppState;
 use super::event::{AppCommand, AppEvent, SideEffect};
@@ -156,6 +160,17 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         AppCommand::GitHubLabelPickerToggle => reduce_github_label_picker_toggle(state),
         AppCommand::GitHubLabelPickerApply => reduce_github_label_picker_apply(state),
         AppCommand::GitHubLabelPickerCancel => reduce_github_label_picker_cancel(state),
+        AppCommand::GitHubContextMenuOpen {
+            anchor_x,
+            anchor_y,
+            target,
+        } => reduce_github_context_menu_open(state, anchor_x, anchor_y, target),
+        AppCommand::GitHubContextMenuMove(delta) => reduce_github_context_menu_move(state, delta),
+        AppCommand::GitHubContextMenuExecute => reduce_github_context_menu_execute(state),
+        AppCommand::GitHubContextMenuSelect(index) => {
+            reduce_github_context_menu_select(state, index)
+        }
+        AppCommand::GitHubContextMenuCancel => reduce_github_context_menu_cancel(state),
         AppCommand::GitHubOpenInBrowser => reduce_github_open_in_browser(state),
         AppCommand::ShellWrite(data) => vec![SideEffect::WriteShell(data)],
         AppCommand::ShellScroll(delta) => reduce_shell_scroll(state, delta),
@@ -223,6 +238,10 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         AppCommand::SelectionExtend { line, col } => reduce_selection_extend(state, line, col),
         AppCommand::SelectionEnd => reduce_selection_end(state),
         AppCommand::SelectionClear => reduce_selection_clear(state),
+        AppCommand::SettingsMoveSelection(delta) => reduce_settings_move_selection(state, delta),
+        AppCommand::SettingsSelect(index) => reduce_settings_select(state, index),
+        AppCommand::SettingsApplyTheme => reduce_settings_apply_theme(state),
+        AppCommand::SetTheme(name) => reduce_set_theme(state, name),
     }
 }
 
@@ -245,6 +264,15 @@ pub fn apply_navigation(state: &mut AppState, command: NavCommand) {
     }
     if state.navigation.main_tab == MainTab::Branches {
         ensure_branch_selection(&mut state.branches);
+    }
+    if state.navigation.main_tab == MainTab::Settings && before.main_tab != MainTab::Settings {
+        let viewport_rows =
+            crate::ui::settings_viewport_rows(state.layout.rects.main_content);
+        ensure_settings_selection(
+            &mut state.settings,
+            &state.config.theme.name,
+            viewport_rows,
+        );
     }
 }
 
@@ -277,10 +305,7 @@ fn agent_spawn_effects_for(state: &mut AppState, id: crate::agent::AgentId) -> V
         return Vec::new();
     }
 
-    let needs_spawn = state
-        .agent_manager
-        .pty(id)
-        .is_some_and(|pty| !pty.spawned);
+    let needs_spawn = state.agent_manager.pty(id).is_some_and(|pty| !pty.spawned);
     if !needs_spawn {
         return Vec::new();
     }
@@ -1078,6 +1103,298 @@ fn reduce_github_label_picker_cancel(state: &mut AppState) -> Vec<SideEffect> {
     Vec::new()
 }
 
+fn reduce_github_context_menu_open(
+    state: &mut AppState,
+    anchor_x: u16,
+    anchor_y: u16,
+    target: GhContextTarget,
+) -> Vec<SideEffect> {
+    if !state.github.auth_ok {
+        state
+            .notifications
+            .show_toast("GitHub authentication required");
+        state.dirty = true;
+        return Vec::new();
+    }
+
+    let effects = match target {
+        GhContextTarget::Issue { list_index } => {
+            let viewport_rows = issues_viewport_rows(state);
+            issue_select_row(&mut state.github, list_index, viewport_rows);
+            Vec::new()
+        }
+        GhContextTarget::PullRequest { list_index } => {
+            let viewport_rows = prs_viewport_rows(state);
+            pr_select_row(&mut state.github, list_index, viewport_rows);
+            Vec::new()
+        }
+    };
+
+    state.github.context_menu = Some(GhContextMenuState::new(target, anchor_x, anchor_y));
+    state.dirty = true;
+    effects
+}
+
+fn reduce_github_context_menu_move(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    if let Some(menu) = state.github.context_menu.as_mut() {
+        menu.move_cursor(delta);
+        state.dirty = true;
+    }
+    Vec::new()
+}
+
+fn reduce_github_context_menu_select(state: &mut AppState, index: usize) -> Vec<SideEffect> {
+    if let Some(menu) = state.github.context_menu.as_mut() {
+        if index < menu.items.len() {
+            menu.cursor = index;
+            state.dirty = true;
+        }
+    }
+    reduce_github_context_menu_execute(state)
+}
+
+fn reduce_github_context_menu_execute(state: &mut AppState) -> Vec<SideEffect> {
+    let Some(menu) = state.github.context_menu.take() else {
+        return Vec::new();
+    };
+
+    let Some(action) = menu.selected_action() else {
+        state.dirty = true;
+        return Vec::new();
+    };
+
+    match action {
+        GhContextMenuAction::View => match menu.target {
+            GhContextTarget::Issue { list_index } => {
+                let viewport_rows = issues_viewport_rows(state);
+                issue_select_row(&mut state.github, list_index, viewport_rows);
+                reduce_github_open_selected(state)
+            }
+            GhContextTarget::PullRequest { list_index } => {
+                let viewport_rows = prs_viewport_rows(state);
+                pr_select_row(&mut state.github, list_index, viewport_rows);
+                reduce_github_open_selected(state)
+            }
+        },
+        GhContextMenuAction::CreateBranch => {
+            github_issue_create_branch_effects(state, selected_issue_number(&state.github))
+        }
+        GhContextMenuAction::Comment => github_issue_comment_prompt_effects(state),
+        GhContextMenuAction::AddLabels => github_issue_label_picker_effects(state),
+        GhContextMenuAction::OpenInBrowser => github_open_in_browser_effects(state),
+        GhContextMenuAction::SendToAgent => match menu.target {
+            GhContextTarget::Issue { list_index } => {
+                let viewport_rows = issues_viewport_rows(state);
+                issue_select_row(&mut state.github, list_index, viewport_rows);
+                github_send_issue_to_agent_effects(state)
+            }
+            GhContextTarget::PullRequest { list_index } => {
+                let viewport_rows = prs_viewport_rows(state);
+                pr_select_row(&mut state.github, list_index, viewport_rows);
+                github_send_pr_to_agent_effects(state)
+            }
+        },
+    }
+}
+
+fn reduce_github_context_menu_cancel(state: &mut AppState) -> Vec<SideEffect> {
+    if state.github.context_menu.is_some() {
+        state.github.context_menu = None;
+        state.dirty = true;
+    }
+    Vec::new()
+}
+
+fn github_issue_create_branch_effects(
+    state: &mut AppState,
+    number: Option<u32>,
+) -> Vec<SideEffect> {
+    if !state.github.auth_ok {
+        state
+            .notifications
+            .show_toast("GitHub authentication required");
+        state.dirty = true;
+        return Vec::new();
+    }
+
+    let Some(number) = number else {
+        state
+            .notifications
+            .show_toast("Select an issue in the GH left list first");
+        state.dirty = true;
+        return Vec::new();
+    };
+
+    state.github.issue_action_message = Some(format!("Creating branch for issue #{number}..."));
+    state.dirty = true;
+    vec![SideEffect::SpawnGitHubIssueCreateBranch { number }]
+}
+
+fn github_issue_comment_prompt_effects(state: &mut AppState) -> Vec<SideEffect> {
+    if !state.github.auth_ok {
+        state
+            .notifications
+            .show_toast("GitHub authentication required");
+        state.dirty = true;
+        return Vec::new();
+    }
+
+    let Some(number) = selected_issue_number(&state.github) else {
+        state
+            .notifications
+            .show_toast("Select an issue in the GH left list first");
+        state.dirty = true;
+        return Vec::new();
+    };
+
+    let focus = state.navigation.focus;
+    state
+        .palette
+        .begin_prompt(PalettePrompt::GitHubIssueComment { number }, focus);
+    state.navigation.focus = FocusTarget::CommandPalette;
+    state.dirty = true;
+    Vec::new()
+}
+
+fn github_issue_label_picker_effects(state: &mut AppState) -> Vec<SideEffect> {
+    if !state.github.auth_ok {
+        state
+            .notifications
+            .show_toast("GitHub authentication required");
+        state.dirty = true;
+        return Vec::new();
+    }
+
+    let Some(number) = selected_issue_number(&state.github) else {
+        state
+            .notifications
+            .show_toast("Select an issue in the GH left list first");
+        state.dirty = true;
+        return Vec::new();
+    };
+
+    let existing_labels = issue_labels_for_number(&state.github, number);
+    state.github.label_picker = Some(LabelPickerState::new(number, existing_labels));
+    state.dirty = true;
+    vec![SideEffect::SpawnGitHubRepoLabels]
+}
+
+fn github_open_in_browser_effects(state: &mut AppState) -> Vec<SideEffect> {
+    if !state.github.auth_ok {
+        state
+            .notifications
+            .show_toast("GitHub authentication required");
+        state.dirty = true;
+        return Vec::new();
+    }
+
+    let Some(target) = resolve_browser_target(state) else {
+        state
+            .notifications
+            .show_toast(missing_browser_target_message(state));
+        state.dirty = true;
+        return Vec::new();
+    };
+
+    state.dirty = true;
+    vec![SideEffect::SpawnGitHubOpenBrowser { target }]
+}
+
+fn issue_labels_for_number(github: &crate::state::GitHubState, number: u32) -> Vec<String> {
+    if github
+        .issue_detail
+        .as_ref()
+        .is_some_and(|detail| detail.number == number)
+    {
+        return github
+            .issue_detail
+            .as_ref()
+            .map(|detail| detail.labels.clone())
+            .unwrap_or_default();
+    }
+
+    github
+        .issues
+        .iter()
+        .find(|issue| issue.number == number)
+        .map(|issue| issue.labels.clone())
+        .unwrap_or_default()
+}
+
+fn github_send_issue_to_agent_effects(state: &mut AppState) -> Vec<SideEffect> {
+    let Some(number) = selected_issue_number(&state.github) else {
+        state
+            .notifications
+            .show_toast("Select an issue in the GH left list first");
+        state.dirty = true;
+        return Vec::new();
+    };
+
+    let title = issue_title_for_number(&state.github, number)
+        .unwrap_or_else(|| "Untitled issue".to_string());
+    let prompt = format_issue_agent_prompt(number, &title);
+    github_send_prompt_to_agent_effects(state, prompt)
+}
+
+fn github_send_pr_to_agent_effects(state: &mut AppState) -> Vec<SideEffect> {
+    let Some(number) = selected_pr_number(&state.github) else {
+        state
+            .notifications
+            .show_toast("Select a PR in the GH left list first");
+        state.dirty = true;
+        return Vec::new();
+    };
+
+    let title = pr_title_for_number(&state.github, number)
+        .unwrap_or_else(|| "Untitled pull request".to_string());
+    let prompt = format_pr_agent_prompt(number, &title);
+    github_send_prompt_to_agent_effects(state, prompt)
+}
+
+fn github_send_prompt_to_agent_effects(state: &mut AppState, prompt: String) -> Vec<SideEffect> {
+    state
+        .navigation
+        .apply(NavCommand::SelectMainTab(MainTab::Agent));
+    state
+        .navigation
+        .apply(NavCommand::SetFocus(FocusTarget::Main));
+    state.dirty = true;
+
+    let mut effects = agent_spawn_effects_if_needed(state);
+    effects.push(SideEffect::WriteAgent(prompt.into_bytes()));
+    effects
+}
+
+fn issue_title_for_number(github: &crate::state::GitHubState, number: u32) -> Option<String> {
+    github
+        .issues
+        .iter()
+        .find(|issue| issue.number == number)
+        .map(|issue| issue.title.clone())
+        .or_else(|| {
+            github
+                .issue_detail
+                .as_ref()
+                .filter(|detail| detail.number == number)
+                .map(|detail| detail.title.clone())
+        })
+}
+
+fn pr_title_for_number(github: &crate::state::GitHubState, number: u32) -> Option<String> {
+    github
+        .prs
+        .iter()
+        .find(|pr| pr.number == number)
+        .map(|pr| pr.title.clone())
+        .or_else(|| {
+            github
+                .pr_detail
+                .as_ref()
+                .filter(|detail| detail.number == number)
+                .map(|detail| detail.title.clone())
+        })
+}
+
 fn reduce_github_open_in_browser(state: &mut AppState) -> Vec<SideEffect> {
     if !state.github.auth_ok {
         state
@@ -1370,10 +1687,7 @@ fn reduce_agent_new(state: &mut AppState) -> Vec<SideEffect> {
     }
 
     let linked_issue = state.github.selected_issue;
-    match state
-        .agent_manager
-        .create_agent(None, linked_issue)
-    {
+    match state.agent_manager.create_agent(None, linked_issue) {
         Ok(id) => {
             state.dirty = true;
             vec![SideEffect::SpawnAgent(id)]
@@ -1388,10 +1702,7 @@ fn reduce_agent_new(state: &mut AppState) -> Vec<SideEffect> {
     }
 }
 
-fn reduce_agent_set_active(
-    state: &mut AppState,
-    id: crate::agent::AgentId,
-) -> Vec<SideEffect> {
+fn reduce_agent_set_active(state: &mut AppState, id: crate::agent::AgentId) -> Vec<SideEffect> {
     if state.navigation.main_tab != MainTab::Agent {
         return Vec::new();
     }
@@ -2169,6 +2480,68 @@ fn reduce_selection_clear(state: &mut AppState) -> Vec<SideEffect> {
     Vec::new()
 }
 
+fn reduce_settings_move_selection(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
+    let viewport_rows = crate::ui::settings_viewport_rows(state.layout.rects.main_content);
+    settings_move_selection(&mut state.settings, delta, viewport_rows);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_settings_select(state: &mut AppState, index: usize) -> Vec<SideEffect> {
+    let viewport_rows = crate::ui::settings_viewport_rows(state.layout.rects.main_content);
+    settings_select_row(&mut state.settings, index, viewport_rows);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_settings_apply_theme(state: &mut AppState) -> Vec<SideEffect> {
+    let Some(name) = crate::theme::loader::BUILTIN_THEME_NAMES
+        .get(state.settings.selected_index)
+        .copied()
+    else {
+        return Vec::new();
+    };
+
+    reduce_set_theme(state, name.to_string())
+}
+
+fn reduce_set_theme(state: &mut AppState, name: String) -> Vec<SideEffect> {
+    if name == state.config.theme.name && state.config.theme.custom.is_none() {
+        return Vec::new();
+    }
+
+    let settings = ThemeSettings {
+        name: name.clone(),
+        custom: None,
+    };
+
+    let palette = match load_theme_with_capabilities(&settings, state.terminal_capabilities) {
+        Ok(palette) => palette,
+        Err(err) => {
+            state
+                .notifications
+                .show_toast(format!("Failed to load theme: {err}"));
+            return Vec::new();
+        }
+    };
+
+    state.theme = palette;
+    state.config.theme = settings;
+    state.dirty = true;
+    let viewport_rows = crate::ui::settings_viewport_rows(state.layout.rects.main_content);
+    ensure_settings_selection(&mut state.settings, &name, viewport_rows);
+
+    let mut message = format!("Theme set to {name}");
+    if project_has_theme_override(&state.repo_root) {
+        message.push_str("; saved to user config (project .kiwi.toml may override on restart)");
+    } else {
+        message.push_str("; saved to user config");
+    }
+    state.notifications.show_toast(message);
+
+    vec![SideEffect::PersistUserTheme { name }]
+}
+
 fn apply_cut_mutation(state: &mut AppState) {
     if state.palette.open {
         state.palette.input.clear();
@@ -2242,10 +2615,10 @@ mod tests {
     use crate::theme::loader::load_theme_with_capabilities;
 
     use super::*;
+    use crate::agent::{AgentId, AgentManager};
     use crate::file_tree::{DirectoryEntry, FileTreeState};
     use crate::preview::{PreviewLoadResult, PreviewState};
     use crate::search::{SearchMode, SearchResult, SearchState};
-    use crate::agent::{AgentId, AgentManager};
     use crate::state::domains::{
         AgentState, BranchState, CommandPaletteState, DiffState, GitHubState, GitState,
         PluginsState, ShellState, StatusBarState, WorkspaceMeta,
@@ -2261,6 +2634,7 @@ mod tests {
                 TerminalCapabilities::TrueColor,
             )
             .expect("theme"),
+            terminal_capabilities: TerminalCapabilities::TrueColor,
             repo_root: PathBuf::from("."),
             dirty: false,
             file_tree: FileTreeState::at_root(PathBuf::from(".")),
@@ -2275,6 +2649,7 @@ mod tests {
             palette: CommandPaletteState::default(),
             plugins: PluginsState::default(),
             logs: crate::state::domains::LogsState::default(),
+            settings: crate::state::domains::SettingsState::default(),
             notifications: crate::state::domains::NotificationState::default(),
             status_bar: StatusBarState::default(),
             workspace_meta: WorkspaceMeta::default(),
@@ -2351,7 +2726,7 @@ mod tests {
     }
 
     #[test]
-    fn main_tab_select_does_not_force_left_tab_for_agent_or_logs() {
+    fn main_tab_select_does_not_force_left_tab_for_agent_logs_or_settings() {
         let mut state = test_state();
         reduce(
             &mut state,
@@ -2360,7 +2735,7 @@ mod tests {
             ))),
         );
 
-        for tab in [MainTab::Agent, MainTab::Logs] {
+        for tab in [MainTab::Agent, MainTab::Logs, MainTab::Settings] {
             reduce(
                 &mut state,
                 AppEvent::Command(AppCommand::Navigation(NavCommand::SelectMainTab(tab))),
@@ -2368,6 +2743,39 @@ mod tests {
             assert_eq!(state.navigation.left_tab, LeftNavTab::Git);
             assert_eq!(state.navigation.main_tab, tab);
         }
+    }
+
+    #[test]
+    fn set_theme_updates_runtime_palette_and_emits_persist_effect() {
+        let mut state = test_state();
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::SetTheme("dracula".to_string())),
+        );
+
+        assert_eq!(state.config.theme.name, "dracula");
+        assert_eq!(state.theme.name, "dracula");
+        assert_eq!(
+            effects,
+            vec![SideEffect::PersistUserTheme {
+                name: "dracula".to_string()
+            }]
+        );
+    }
+
+    #[test]
+    fn settings_tab_syncs_selection_to_active_theme() {
+        let mut state = test_state();
+        state.config.theme.name = "nord".to_string();
+
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::Navigation(NavCommand::SelectMainTab(
+                MainTab::Settings,
+            ))),
+        );
+
+        assert_eq!(state.settings.selected_index, 6);
     }
 
     #[test]
@@ -3398,6 +3806,79 @@ mod tests {
         );
 
         assert_eq!(state.github.pr_detail_scroll_offset, 5);
+    }
+
+    #[test]
+    fn github_context_menu_open_selects_issue_and_stores_menu() {
+        use crate::github::{GhContextTarget, Issue, IssueState};
+
+        let mut state = test_state();
+        state.github.auth_ok = true;
+        state.github.issues = vec![Issue {
+            number: 42,
+            title: "Context menu".to_string(),
+            state: IssueState::Open,
+            labels: Vec::new(),
+            assignees: Vec::new(),
+        }];
+
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::GitHubContextMenuOpen {
+                anchor_x: 12,
+                anchor_y: 8,
+                target: GhContextTarget::Issue { list_index: 0 },
+            }),
+        );
+
+        assert_eq!(state.github.selected_issue, Some(42));
+        let menu = state.github.context_menu.as_ref().expect("menu open");
+        assert_eq!(menu.anchor_x, 12);
+        assert_eq!(menu.items.len(), 6);
+    }
+
+    #[test]
+    fn github_context_menu_send_to_agent_writes_prompt() {
+        use crate::github::{
+            GhContextMenuAction, GhContextMenuState, GhContextTarget, Issue, IssueState,
+        };
+
+        let mut state = test_state();
+        state.github.auth_ok = true;
+        state.github.issues = vec![Issue {
+            number: 42,
+            title: "Context menu".to_string(),
+            state: IssueState::Open,
+            labels: Vec::new(),
+            assignees: Vec::new(),
+        }];
+        state.github.selected_issue = Some(42);
+        state.github.context_menu = Some(GhContextMenuState {
+            target: GhContextTarget::Issue { list_index: 0 },
+            anchor_x: 1,
+            anchor_y: 2,
+            items: vec![
+                GhContextMenuAction::View,
+                GhContextMenuAction::CreateBranch,
+                GhContextMenuAction::Comment,
+                GhContextMenuAction::AddLabels,
+                GhContextMenuAction::OpenInBrowser,
+                GhContextMenuAction::SendToAgent,
+            ],
+            cursor: 5,
+        });
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::GitHubContextMenuExecute),
+        );
+
+        assert!(state.github.context_menu.is_none());
+        assert_eq!(state.navigation.main_tab, MainTab::Agent);
+        assert!(effects.iter().any(|effect| matches!(
+            effect,
+            SideEffect::WriteAgent(bytes) if std::str::from_utf8(bytes).is_ok_and(|text| text.contains("#42"))
+        )));
     }
 
     #[test]

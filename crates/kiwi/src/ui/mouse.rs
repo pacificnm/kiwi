@@ -180,10 +180,8 @@ mod tests {
             .agent_manager
             .create_agent(Some("second".to_string()), None)
             .expect("create");
-        let layout = super::super::agent::split_agent_main_content(
-            state.layout.rects.main_content,
-            true,
-        );
+        let layout =
+            super::super::agent::split_agent_main_content(state.layout.rects.main_content, true);
         assert_eq!(
             map_mouse_click(&state, layout.subtabs.x + 2, layout.subtabs.y),
             Vec::<NavCommand>::new()

@@ -4,13 +4,13 @@
 mod tests {
     use std::path::PathBuf;
 
+    use crate::agent::AgentManager;
     use crate::config::ResolvedConfig;
     use crate::file_tree::{DirectoryEntry, FileTreeState};
     use crate::git::{GitFileEntry, GitFileStatus};
     use crate::layout::compute_layout;
     use crate::layout::FocusTarget;
     use crate::navigation::{LeftNavTab, MainTab, NavigationState};
-    use crate::agent::AgentManager;
     use crate::state::domains::{
         AgentState, BranchState, CommandPaletteState, DiffState, GitHubState, GitState,
         PluginsState, ShellState, StatusBarState, WorkspaceMeta,
@@ -29,6 +29,7 @@ mod tests {
                 TerminalCapabilities::TrueColor,
             )
             .expect("theme"),
+            terminal_capabilities: TerminalCapabilities::TrueColor,
             repo_root: PathBuf::from("/repo"),
             dirty: false,
             file_tree: FileTreeState::at_root(PathBuf::from("/repo")),
@@ -43,6 +44,7 @@ mod tests {
             palette: CommandPaletteState::default(),
             plugins: PluginsState::default(),
             logs: crate::state::domains::LogsState::default(),
+            settings: crate::state::domains::SettingsState::default(),
             notifications: crate::state::domains::NotificationState::default(),
             status_bar: StatusBarState::default(),
             workspace_meta: WorkspaceMeta::default(),

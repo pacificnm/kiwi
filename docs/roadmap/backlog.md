@@ -176,6 +176,7 @@ Prioritized work items mapped to GitHub issues. Use labels: `milestone-1` … `m
 | #56 | Issue detail view | SPEC-009 |
 | #57 | Issue comment and label actions | SPEC-009 |
 | #58 | Create branch from issue | SPEC-009 |
+| #193 | GH left tab right-click context menu | SPEC-014, SPEC-009 |
 
 ### E15: GitHub PRs
 
@@ -261,6 +262,7 @@ Prioritized work items mapped to GitHub issues. Use labels: `milestone-1` … `m
 | #190 | Terminal + agent PTY panels | SPEC-011, SPEC-010, ADR-006 |
 | #191 | GitHub issues/PRs panels | SPEC-009 |
 | #192 | Search and preview panels | SPEC-007, SPEC-006 |
+| #194 | GUI GitHub list context menu | SPEC-009, SPEC-022 |
 
 ---
 
@@ -278,7 +280,7 @@ Prioritized work items mapped to GitHub issues. Use labels: `milestone-1` … `m
 | Triage GitHub issues | M5 | #54–#58 |
 | Create PR | M5 | #59–#63 |
 | Resume session | M6 | #64–#67 |
-| Use desktop GUI with dockable panels | M8 | #175–#192 |
+| Use desktop GUI with dockable panels | M8 | #175–#194 |
 | Rearrange GUI layout persistently | M8 | #184–#186 |
 
 ## Technical Debt Tracker

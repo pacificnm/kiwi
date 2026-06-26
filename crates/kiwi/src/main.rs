@@ -18,6 +18,7 @@ mod preview;
 mod repo;
 mod search;
 mod selection;
+mod settings;
 mod shell;
 mod shutdown;
 mod state;

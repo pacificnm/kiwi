@@ -1,5 +1,5 @@
 use ratatui::layout::Rect;
-use ratatui::style::Modifier;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
@@ -39,7 +39,8 @@ pub fn render_palette_pane(
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
-        .border_style(border_style);
+        .border_style(border_style)
+        .style(chrome_style(theme));
 
     let inner = block.inner(area);
     frame.render_widget(Clear, area);
@@ -155,6 +156,17 @@ pub fn palette_match_at(state: &AppState, area: Rect, column: u16, row: u16) -> 
     }
 
     Some(match_index)
+}
+
+fn chrome_style(theme: &ThemePalette) -> Style {
+    let mut style = Style::default();
+    if let Some(bg) = theme.get(SemanticRole::Bg).bg {
+        style = style.bg(bg);
+    }
+    if let Some(fg) = theme.get(SemanticRole::Fg).fg {
+        style = style.fg(fg);
+    }
+    style
 }
 
 fn truncate_line(text: &str, max_width: usize) -> String {

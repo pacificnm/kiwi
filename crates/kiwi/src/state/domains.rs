@@ -9,6 +9,12 @@ use crate::layout::FocusTarget;
 use crate::shell::ScrollbackBuffer;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SettingsState {
+    pub selected_index: usize,
+    pub scroll_offset: usize,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GitState {
     pub branch: Option<String>,
     pub remote_repo: Option<String>,
@@ -185,6 +191,7 @@ pub struct GitHubState {
     pub pr_detail_scroll_offset: usize,
     pub left_pane: crate::github::GitHubLeftPane,
     pub label_picker: Option<crate::github::LabelPickerState>,
+    pub context_menu: Option<crate::github::GhContextMenuState>,
     pub issue_action_message: Option<String>,
 }
 

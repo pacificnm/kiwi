@@ -1,6 +1,7 @@
 mod actions;
 mod auth;
 mod browser;
+mod context_menu;
 mod detail;
 mod hub;
 mod io;
@@ -14,6 +15,10 @@ mod selection;
 pub use actions::IssueActionResult;
 pub use auth::{GitHubAuthCheckResult, GitHubAuthErrorKind};
 pub use browser::{missing_browser_target_message, resolve_browser_target, GitHubBrowserTarget};
+pub use context_menu::{
+    format_issue_agent_prompt, format_pr_agent_prompt, GhContextMenuAction, GhContextMenuState,
+    GhContextTarget,
+};
 pub use detail::{
     page_scroll_issue_detail, scroll_issue_detail, IssueDetail, IssueDetailLoadResult,
 };

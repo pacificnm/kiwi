@@ -12,6 +12,7 @@ use crate::theme::ThemePalette;
 
 use super::agent::render_agent_tab;
 use super::branches::render_branches_pane;
+use super::context_menu::render_github_context_menu;
 use super::diff::render_diff_pane;
 use super::file_tree::render_file_tree_pane;
 use super::git::render_git_pane;
@@ -22,6 +23,7 @@ use super::notifications::render_notifications;
 use super::palette::render_palette_pane;
 use super::preview::render_preview_pane;
 use super::search::render_search_pane;
+use super::settings::render_settings_pane;
 use super::shell::render_shell_pane;
 use super::status_bar::render_status_bar;
 use super::tabs::tab_bar_line;
@@ -116,6 +118,14 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
             &state.theme,
             state,
         );
+    } else if state.navigation.main_tab == MainTab::Settings {
+        render_settings_pane(
+            frame,
+            state.layout.rects.main_content,
+            state.navigation.focus.is_focused(Region::MainContent),
+            &state.theme,
+            state,
+        );
     } else if state.navigation.main_tab == MainTab::Issues {
         render_issue_detail_pane(
             frame,
@@ -153,6 +163,11 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
     }
     if state.github.label_picker.is_some() {
         render_label_picker_overlay(frame, state.layout.rects.main_content, &state.theme, state);
+    }
+    if state.github.context_menu.is_some() {
+        if let Some(menu) = &state.github.context_menu {
+            render_github_context_menu(frame, state.layout.rects.left_content, &state.theme, menu);
+        }
     }
     render_palette_pane(
         frame,
@@ -555,7 +570,10 @@ mod tests {
         state.navigation.main_tab = MainTab::Agent;
         state.active_agent_mut().running = true;
         state.pty_cursor_blink_on = true;
-        state.active_agent_mut().scrollback.append_bytes(b"\x1b[?25lagent> ");
+        state
+            .active_agent_mut()
+            .scrollback
+            .append_bytes(b"\x1b[?25lagent> ");
 
         let rects = state.layout.rects;
         let backend = TestBackend::new(120, 40);
@@ -614,7 +632,10 @@ mod tests {
     #[test]
     fn draw_frame_renders_agent_scrollback() {
         let mut state = test_state();
-        state.active_agent_mut().scrollback.append_bytes(b"agent output\n");
+        state
+            .active_agent_mut()
+            .scrollback
+            .append_bytes(b"agent output\n");
 
         let backend = TestBackend::new(120, 40);
         let mut terminal = Terminal::new(backend).expect("terminal");

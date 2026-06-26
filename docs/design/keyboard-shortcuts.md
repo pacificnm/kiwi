@@ -62,6 +62,14 @@ Palette commands: **Clipboard: Copy**, **Clipboard: Cut**, **Clipboard: Paste**.
 | `5` | Diff |
 | `6` | Preview |
 | `7` | Logs |
+| `8` | Settings |
+
+## Settings (main, Settings tab)
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` | Down / up theme list |
+| `Enter` | Apply selected theme |
 
 ## Agent (main, Agent tab)
 

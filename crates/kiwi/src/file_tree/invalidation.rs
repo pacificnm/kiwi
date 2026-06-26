@@ -211,10 +211,7 @@ mod tests {
         let root = PathBuf::from("/repo");
         let dirs = directories_to_invalidate(
             &root,
-            &[
-                root.join("src/old.rs"),
-                root.join("src/new.rs"),
-            ],
+            &[root.join("src/old.rs"), root.join("src/new.rs")],
             |_| false,
         );
         assert_eq!(dirs, vec![root.join("src")]);
