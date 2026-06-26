@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::agent::agent_launch_spec;
+use crate::agent::{agent_launch_spec, AgentManager};
 use crate::config::ResolvedConfig;
 use crate::file_tree::FileTreeState;
 use crate::layout::LayoutState;
@@ -15,7 +15,6 @@ use super::domains::{
     AgentState, BranchState, CommandPaletteState, DiffState, GitHubState, GitState, LogsState,
     NotificationState, PluginsState, ShellState, StatusBarState, WorkspaceMeta,
 };
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppState {
     pub config: ResolvedConfig,
@@ -31,7 +30,7 @@ pub struct AppState {
     pub branches: BranchState,
     pub diff: DiffState,
     pub github: GitHubState,
-    pub agent: AgentState,
+    pub agent_manager: AgentManager,
     pub shell: ShellState,
     pub palette: CommandPaletteState,
     pub plugins: PluginsState,
@@ -77,11 +76,11 @@ impl AppState {
             branches: BranchState::default(),
             diff: DiffState::default(),
             github: GitHubState::default(),
-            agent: AgentState {
+            agent_manager: AgentManager::with_initial_agent(AgentState {
                 command: agent_spec.command,
                 agent_name: agent_spec.agent_name,
                 ..AgentState::default()
-            },
+            }),
             shell: ShellState {
                 command: shell_spec.command,
                 shell_name: shell_spec.shell_name,
@@ -104,5 +103,14 @@ impl AppState {
 
     pub fn mark_clean(&mut self) {
         self.dirty = false;
+    }
+
+    #[must_use]
+    pub fn active_agent(&self) -> &AgentState {
+        self.agent_manager.active_pty()
+    }
+
+    pub fn active_agent_mut(&mut self) -> &mut AgentState {
+        self.agent_manager.active_pty_mut()
     }
 }

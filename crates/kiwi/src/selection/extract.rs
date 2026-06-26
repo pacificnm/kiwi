@@ -51,9 +51,9 @@ fn lines_for_pane(state: &AppState, pane: SelectionPane) -> Option<Vec<String>> 
                 return None;
             }
             Some(scrollback_plain_lines(
-                &state.agent.scrollback,
-                state.agent.follow_tail,
-                state.agent.viewport_offset,
+                &state.active_agent().scrollback,
+                state.active_agent().follow_tail,
+                state.active_agent().viewport_offset,
                 agent_visible_rows(state),
                 agent_visible_cols(state),
             ))
@@ -142,7 +142,7 @@ fn shell_visible_cols(state: &AppState) -> usize {
 
 fn agent_visible_rows(state: &AppState) -> usize {
     let inner_h = state.layout.rects.main_content.height.saturating_sub(2) as usize;
-    let footer = usize::from(state.agent.restart_hint.is_some());
+    let footer = usize::from(state.active_agent().restart_hint.is_some());
     inner_h.saturating_sub(footer)
 }
 

@@ -62,7 +62,7 @@ pub fn resolve_paste_target(state: &AppState) -> PasteTarget {
 
     if state.navigation.focus == FocusTarget::Main
         && state.navigation.main_tab == MainTab::Agent
-        && state.agent.running
+        && state.active_agent().running
     {
         return PasteTarget::AgentPty;
     }
@@ -94,9 +94,9 @@ fn copy_main_pane(state: &AppState) -> Option<String> {
     match state.navigation.main_tab {
         MainTab::Preview => copy_preview_line(state),
         MainTab::Agent => copy_scrollback_pane(
-            &state.agent.scrollback,
-            state.agent.follow_tail,
-            state.agent.viewport_offset,
+            &state.active_agent().scrollback,
+            state.active_agent().follow_tail,
+            state.active_agent().viewport_offset,
             agent_visible_rows(state),
             agent_visible_cols(state),
         ),

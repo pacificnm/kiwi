@@ -253,7 +253,7 @@ fn sync_github_left_pane_from_main_tab(state: &mut AppState) {
 }
 
 pub fn agent_spawn_effects_if_needed(state: &mut AppState) -> Vec<SideEffect> {
-    if state.navigation.main_tab != MainTab::Agent || state.agent.spawned {
+    if state.navigation.main_tab != MainTab::Agent || state.active_agent().spawned {
         return Vec::new();
     }
 
@@ -1304,17 +1304,18 @@ fn reduce_shell_exited(state: &mut AppState) -> Vec<SideEffect> {
 }
 
 fn reduce_agent_output(state: &mut AppState, data: Vec<u8>) -> Vec<SideEffect> {
-    state.agent.scrollback.set_cols(state.agent.cols);
-    state.agent.scrollback.append_bytes(&data);
-    if let Some(status) = infer_status_from_scrollback(&state.agent.scrollback) {
-        state.agent.status = status;
+    let cols = state.active_agent().cols;
+    state.active_agent_mut().scrollback.set_cols(cols);
+    state.active_agent_mut().scrollback.append_bytes(&data);
+    if let Some(status) = infer_status_from_scrollback(&state.active_agent().scrollback) {
+        state.active_agent_mut().status = status;
     }
     state.dirty = true;
     Vec::new()
 }
 
 fn reduce_agent_exited(state: &mut AppState, code: i32) -> Vec<SideEffect> {
-    state.agent.apply_exit(code);
+    state.active_agent_mut().apply_exit(code);
     state.dirty = true;
     Vec::new()
 }
@@ -1356,7 +1357,7 @@ fn reduce_agent_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
     }
 
     let (_, page_size) = agent_pty_size(&state.layout.rects);
-    state.agent.scroll_by(delta, page_size);
+    state.active_agent_mut().scroll_by(delta, page_size);
     state.dirty = true;
     Vec::new()
 }
@@ -1367,7 +1368,7 @@ fn reduce_agent_scroll_lines(state: &mut AppState, lines: i32) -> Vec<SideEffect
     }
 
     let (_, page_size) = agent_pty_size(&state.layout.rects);
-    state.agent.scroll_by_lines(lines, page_size);
+    state.active_agent_mut().scroll_by_lines(lines, page_size);
     state.dirty = true;
     Vec::new()
 }
@@ -2146,6 +2147,7 @@ mod tests {
     use crate::file_tree::{DirectoryEntry, FileTreeState};
     use crate::preview::{PreviewLoadResult, PreviewState};
     use crate::search::{SearchMode, SearchResult, SearchState};
+    use crate::agent::AgentManager;
     use crate::state::domains::{
         AgentState, BranchState, CommandPaletteState, DiffState, GitHubState, GitState,
         PluginsState, ShellState, StatusBarState, WorkspaceMeta,
@@ -2170,7 +2172,7 @@ mod tests {
             branches: BranchState::default(),
             diff: DiffState::default(),
             github: GitHubState::default(),
-            agent: AgentState::default(),
+            agent_manager: AgentManager::with_initial_agent(AgentState::default()),
             shell: ShellState::default(),
             palette: CommandPaletteState::default(),
             plugins: PluginsState::default(),
@@ -3546,7 +3548,7 @@ mod tests {
     fn agent_spawn_requested_on_agent_tab() {
         let mut state = test_state();
         state.navigation.main_tab = MainTab::Agent;
-        state.agent.spawned = false;
+        state.active_agent_mut().spawned = false;
         let effects = agent_spawn_effects_if_needed(&mut state);
         assert!(effects.contains(&SideEffect::SpawnAgent));
     }
@@ -3554,7 +3556,7 @@ mod tests {
     #[test]
     fn agent_spawn_requested_only_once() {
         let mut state = test_state();
-        state.agent.spawned = true;
+        state.active_agent_mut().spawned = true;
         let effects = agent_spawn_effects_if_needed(&mut state);
         assert!(effects.is_empty());
     }
@@ -3605,40 +3607,40 @@ mod tests {
     fn agent_output_appends_to_scrollback_and_sets_dirty() {
         let mut state = test_state();
         reduce(&mut state, AppEvent::AgentOutput(b"agent line\n".to_vec()));
-        assert_eq!(state.agent.scrollback.line_count(), 1);
+        assert_eq!(state.active_agent().scrollback.line_count(), 1);
         assert!(state.dirty);
     }
 
     #[test]
     fn agent_exited_clears_running_and_sets_dirty() {
         let mut state = test_state();
-        state.agent.running = true;
-        state.agent.status = AgentStatus::Executing;
+        state.active_agent_mut().running = true;
+        state.active_agent_mut().status = AgentStatus::Executing;
         reduce(&mut state, AppEvent::AgentExited(1));
-        assert!(!state.agent.running);
-        assert_eq!(state.agent.status, AgentStatus::Error);
+        assert!(!state.active_agent().running);
+        assert_eq!(state.active_agent().status, AgentStatus::Error);
         assert!(state.dirty);
     }
 
     #[test]
     fn agent_output_updates_status_from_heuristics() {
         let mut state = test_state();
-        state.agent.running = true;
+        state.active_agent_mut().running = true;
         reduce(
             &mut state,
             AppEvent::AgentOutput(b"Thinking about the next step\n".to_vec()),
         );
-        assert_eq!(state.agent.status, AgentStatus::Thinking);
+        assert_eq!(state.active_agent().status, AgentStatus::Thinking);
     }
 
     #[test]
     fn agent_exited_zero_sets_success_status() {
         let mut state = test_state();
-        state.agent.running = true;
+        state.active_agent_mut().running = true;
         reduce(&mut state, AppEvent::AgentExited(0));
-        assert_eq!(state.agent.status, AgentStatus::Success);
-        assert_eq!(state.agent.exit_code, Some(0));
-        assert!(state.agent.restart_hint.is_some());
+        assert_eq!(state.active_agent().status, AgentStatus::Success);
+        assert_eq!(state.active_agent().exit_code, Some(0));
+        assert!(state.active_agent().restart_hint.is_some());
     }
 
     #[test]
@@ -3662,9 +3664,9 @@ mod tests {
     fn agent_exited_sets_restart_hint_with_code() {
         let mut state = test_state();
         reduce(&mut state, AppEvent::AgentExited(2));
-        assert_eq!(state.agent.exit_code, Some(2));
+        assert_eq!(state.active_agent().exit_code, Some(2));
         assert!(state
-            .agent
+            .active_agent()
             .restart_hint
             .as_deref()
             .is_some_and(|hint| hint.contains("code 2")));
@@ -3695,14 +3697,14 @@ mod tests {
         let mut state = test_state();
         for index in 0..40 {
             state
-                .agent
+                .active_agent_mut()
                 .scrollback
                 .append_bytes(format!("line {index}\n").as_bytes());
         }
 
         reduce(&mut state, AppEvent::Command(AppCommand::AgentScroll(-1)));
 
-        assert!(!state.agent.follow_tail);
+        assert!(!state.active_agent().follow_tail);
         assert!(state.dirty);
     }
 
@@ -4267,7 +4269,7 @@ mod tests {
     #[test]
     fn clipboard_paste_into_agent_emits_write_side_effect() {
         let mut state = test_state();
-        state.agent.running = true;
+        state.active_agent_mut().running = true;
         state
             .navigation
             .apply(NavCommand::SelectMainTab(MainTab::Agent));
@@ -4289,7 +4291,7 @@ mod tests {
     #[test]
     fn clipboard_paste_multiline_into_agent_uses_bracketed_paste() {
         let mut state = test_state();
-        state.agent.running = true;
+        state.active_agent_mut().running = true;
         state
             .navigation
             .apply(NavCommand::SelectMainTab(MainTab::Agent));

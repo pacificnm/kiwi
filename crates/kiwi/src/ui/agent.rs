@@ -25,16 +25,16 @@ pub fn render_agent_pane(
         theme,
         hint_style,
         ScrollbackPane {
-            scrollback: &state.agent.scrollback,
-            follow_tail: state.agent.follow_tail,
-            viewport_offset: state.agent.viewport_offset,
+            scrollback: &state.active_agent().scrollback,
+            follow_tail: state.active_agent().follow_tail,
+            viewport_offset: state.active_agent().viewport_offset,
             spawn_error: None,
             idle_hint: None,
-            footer: state.agent.restart_hint.as_deref(),
+            footer: state.active_agent().restart_hint.as_deref(),
             selection_pane: Some(SelectionPane::Agent),
             show_pty_cursor: focused
-                && state.agent.running
-                && state.agent.follow_tail
+                && state.active_agent().running
+                && state.active_agent().follow_tail
                 && state.pty_cursor_blink_on,
         },
         &state.text_selection,

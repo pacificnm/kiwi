@@ -185,14 +185,14 @@ impl App {
     }
 
     fn spawn_agent(&mut self) {
-        if self.state.agent.spawned {
+        if self.state.active_agent().spawned {
             return;
         }
 
         let (cols, rows) = agent_pty_size(&self.state.layout.rects);
         match AgentSession::spawn(&self.state.repo_root, &self.state.config.agent, cols, rows) {
             Ok(session) => {
-                self.state.agent.apply_spawn(
+                self.state.active_agent_mut().apply_spawn(
                     &session.spec.command,
                     &session.spec.agent_name,
                     session.pid(),
@@ -206,7 +206,7 @@ impl App {
                 self.agent = Some(session);
             }
             Err(err) => {
-                self.state.agent.apply_spawn_error(err.to_string());
+                self.state.active_agent_mut().apply_spawn_error(err.to_string());
             }
         }
         self.state.dirty = true;
@@ -224,12 +224,12 @@ impl App {
             agent.shutdown();
         }
 
-        self.state.agent.prepare_restart();
+        self.state.active_agent_mut().prepare_restart();
         self.spawn_agent();
     }
 
     fn poll_agent_exit(&mut self) {
-        if !self.state.agent.running {
+        if !self.state.active_agent().running {
             return;
         }
 
@@ -1557,7 +1557,7 @@ impl App {
     fn agent_input_active(&self) -> bool {
         self.state.navigation.focus == FocusTarget::Main
             && self.state.navigation.main_tab == MainTab::Agent
-            && self.state.agent.running
+            && self.state.active_agent().running
     }
 
     fn handle_agent_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
@@ -1646,9 +1646,9 @@ mod tests {
         {
             context.config.agent.command = "bash".to_string();
             let app = App::new(context);
-            assert!(app.state().agent.spawned);
-            assert!(app.state().agent.running);
-            assert!(app.state().agent.child_pid.is_some());
+            assert!(app.state().active_agent().spawned);
+            assert!(app.state().active_agent().running);
+            assert!(app.state().active_agent().child_pid.is_some());
         }
     }
 
@@ -1685,7 +1685,7 @@ mod tests {
 
         let mut app = App::new(test_context());
         app.state_mut().navigation.main_tab = MainTab::Agent;
-        app.state_mut().agent.running = true;
+        app.state_mut().active_agent_mut().running = true;
         app.event_sender()
             .send(AppEvent::Command(AppCommand::Navigation(
                 NavCommand::SetFocus(FocusTarget::Main),
@@ -1713,7 +1713,7 @@ mod tests {
 
         let mut app = App::new(test_context());
         app.state_mut().navigation.main_tab = MainTab::Agent;
-        app.state_mut().agent.running = true;
+        app.state_mut().active_agent_mut().running = true;
         app.event_sender()
             .send(AppEvent::Command(AppCommand::Navigation(
                 NavCommand::SetFocus(FocusTarget::Main),
@@ -1748,7 +1748,7 @@ mod tests {
 
         let mut app = App::new(test_context());
         app.state_mut().navigation.main_tab = MainTab::Agent;
-        app.state_mut().agent.running = true;
+        app.state_mut().active_agent_mut().running = true;
         app.event_sender()
             .send(AppEvent::Command(AppCommand::Navigation(
                 NavCommand::SetFocus(FocusTarget::Main),
@@ -1926,7 +1926,7 @@ mod tests {
 
         let mut app = App::new(test_context());
         app.state_mut().navigation.main_tab = MainTab::Agent;
-        app.state_mut().agent.running = true;
+        app.state_mut().active_agent_mut().running = true;
         app.event_sender()
             .send(AppEvent::Command(AppCommand::Navigation(
                 NavCommand::SetFocus(FocusTarget::Main),
@@ -2052,8 +2052,8 @@ mod tests {
         if std::path::Path::new("/bin/bash").exists()
             || std::path::Path::new("/usr/bin/bash").exists()
         {
-            assert!(app.state().agent.spawned);
-            assert!(app.state().agent.running);
+            assert!(app.state().active_agent().spawned);
+            assert!(app.state().active_agent().running);
         }
     }
 

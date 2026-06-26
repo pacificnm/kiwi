@@ -83,7 +83,7 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
         );
     }
     if state.navigation.main_tab == MainTab::Agent {
-        let agent_title = format!("Agent: {}", state.agent.agent_name);
+        let agent_title = format!("Agent: {}", state.agent_manager.active_session().label);
         render_agent_pane(
             frame,
             state.layout.rects.main_content,
@@ -330,7 +330,7 @@ mod tests {
             path: "src/lib.rs".to_string(),
             status: GitFileStatus::Modified,
         }];
-        state.agent.running = true;
+        state.active_agent_mut().running = true;
         state.github.selected_issue = Some(7);
 
         let backend = TestBackend::new(120, 40);
@@ -362,7 +362,7 @@ mod tests {
                 status: GitFileStatus::Modified,
             },
         ];
-        state.agent.running = true;
+        state.active_agent_mut().running = true;
         state.github.selected_issue = Some(99);
 
         let snapshot = compute_status_bar(&state);
@@ -523,9 +523,9 @@ mod tests {
         let mut state = test_state();
         state.navigation.focus = FocusTarget::Main;
         state.navigation.main_tab = MainTab::Agent;
-        state.agent.running = true;
+        state.active_agent_mut().running = true;
         state.pty_cursor_blink_on = true;
-        state.agent.scrollback.append_bytes(b"agent> ");
+        state.active_agent_mut().scrollback.append_bytes(b"agent> ");
 
         let rects = state.layout.rects;
         let backend = TestBackend::new(120, 40);
@@ -554,9 +554,9 @@ mod tests {
         let mut state = test_state();
         state.navigation.focus = FocusTarget::Main;
         state.navigation.main_tab = MainTab::Agent;
-        state.agent.running = true;
+        state.active_agent_mut().running = true;
         state.pty_cursor_blink_on = true;
-        state.agent.scrollback.append_bytes(b"\x1b[?25lagent> ");
+        state.active_agent_mut().scrollback.append_bytes(b"\x1b[?25lagent> ");
 
         let rects = state.layout.rects;
         let backend = TestBackend::new(120, 40);
@@ -615,7 +615,7 @@ mod tests {
     #[test]
     fn draw_frame_renders_agent_scrollback() {
         let mut state = test_state();
-        state.agent.scrollback.append_bytes(b"agent output\n");
+        state.active_agent_mut().scrollback.append_bytes(b"agent output\n");
 
         let backend = TestBackend::new(120, 40);
         let mut terminal = Terminal::new(backend).expect("terminal");

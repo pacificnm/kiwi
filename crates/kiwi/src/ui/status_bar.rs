@@ -34,8 +34,8 @@ pub fn compute_status_bar(state: &AppState) -> StatusBarSnapshot {
         agent_label: agent_label(state),
         git_label: git_label(state),
         issue_label: issue_label(state),
-        agent_status: state.agent.status,
-        agent_running: state.agent.running,
+        agent_status: state.active_agent().status,
+        agent_running: state.active_agent().running,
         git_modified,
     }
 }
@@ -65,11 +65,7 @@ fn branch_label(state: &AppState) -> String {
 }
 
 fn agent_label(state: &AppState) -> String {
-    state
-        .agent
-        .status
-        .status_bar_label(state.agent.running)
-        .to_string()
+    state.agent_manager.status_bar_label()
 }
 
 fn git_label(state: &AppState) -> String {
@@ -370,8 +366,8 @@ mod tests {
                 status: GitFileStatus::Untracked,
             },
         ];
-        state.agent.running = true;
-        state.agent.status = AgentStatus::Executing;
+        state.active_agent_mut().running = true;
+        state.active_agent_mut().status = AgentStatus::Executing;
         state.github.selected_issue = Some(42);
 
         let snapshot = compute_status_bar(&state);
@@ -502,8 +498,8 @@ mod tests {
                 status: GitFileStatus::Modified,
             },
         ];
-        state.agent.running = true;
-        state.agent.status = AgentStatus::Executing;
+        state.active_agent_mut().running = true;
+        state.active_agent_mut().status = AgentStatus::Executing;
         state.github.selected_issue = Some(99);
 
         let backend = TestBackend::new(80, 3);
