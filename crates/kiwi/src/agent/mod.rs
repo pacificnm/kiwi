@@ -1,15 +1,10 @@
-mod command;
-mod error;
-mod id;
-mod io;
-mod manager;
-mod runtime;
-mod session;
-mod status;
+//! TUI-facing agent API; domain logic lives in [`kiwi_core::agent`].
 
-pub use command::agent_launch_spec;
-pub use id::AgentId;
-pub use manager::AgentManager;
+mod runtime;
+
+#[allow(unused_imports)]
+pub use kiwi_core::agent::{
+    agent_launch_spec, AgentError, AgentId, AgentLaunchSpec, AgentManager, AgentOutputReader,
+    AgentSession, AgentStatus,
+};
 pub use runtime::AgentRuntime;
-pub use session::AgentSession;
-pub use status::AgentStatus;

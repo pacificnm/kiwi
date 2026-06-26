@@ -69,16 +69,16 @@ kiwi_core/src/
 ├── clipboard/
 ├── editor/
 ├── navigation/
-├── workspace/          # C4 — not yet migrated
-├── file_tree/          # partial (C5)
-├── git/                # partial (C6)
-├── watcher/            # partial (C6)
-├── github/             # partial (C7)
-├── search/             # partial (C8)
-├── preview/            # partial (C8)
-├── diff/               # partial (C8)
-├── shell/              # partial (C9)
-├── agent/              # partial (C9)
+├── workspace/          # C4
+├── file_tree/          # C5
+├── git/                # C6
+├── watcher/            # C6
+├── github/             # C7
+├── search/             # C8
+├── preview/            # C8
+├── diff/               # C8
+├── shell/              # C9
+├── agent/              # C9 (runtime orchestration stays in `kiwi::agent::runtime`)
 ├── settings/
 └── selection/
 ```
@@ -93,13 +93,13 @@ reducer dependencies require an earlier module.
 | C1 `config` | Done | `kiwi_core::config`; TUI loader/writer remain in `kiwi` |
 | C2 `theme` | Done | Core palette + loader; `kiwi::theme` wraps ratatui `Style` |
 | C3 `events`, `state`, `reducer` | Done ([#177](https://github.com/pacificnm/kiwi/issues/177)) | `AppEvent`, `AppCommand`, domain `AppState`, `ReduceView`, and reducer in core; TUI adapter in `kiwi::state::reducer` + `reducer_tui` |
-| C4 `workspace` | Pending | Snapshot/persistence still in `kiwi::workspace` |
-| C5 `file_tree` | Partial | Core state/invalidation; TUI loader/io in `kiwi` |
-| C6 `git`, `watcher` | Partial | Core panel/selection/patch; TUI `git2` io + notify debounce in `kiwi` |
-| C7 `github` | Partial | Core browser/selection/types; `gh` subprocess io in `kiwi` |
-| C8 `search`, `preview`, `diff` | Partial | Core state/types; TUI io in `kiwi` |
-| C9 `shell`, `agent` | Partial | Core scrollback/session types; PTY runtime in `kiwi` |
-| C10 `editor`, `commands` | Partial | Registry + target resolution in core; TUI launch in `kiwi` |
+| C4 `workspace` | Done ([#178](https://github.com/pacificnm/kiwi/issues/178)) | Snapshot/persistence in `kiwi_core::workspace`; TUI save adapter in `kiwi` |
+| C5 `file_tree` | Done ([#179](https://github.com/pacificnm/kiwi/issues/179)) | Loader, ignore, classify, io in core; TUI re-export shim |
+| C6 `git`, `watcher` | Done ([#179](https://github.com/pacificnm/kiwi/issues/179)) | `git2` repository/branch ops + notify watcher in core |
+| C7 `github` | Done ([#179](https://github.com/pacificnm/kiwi/issues/179)) | Full `gh` subprocess layer in core |
+| C8 `search`, `preview`, `diff` | Done ([#179](https://github.com/pacificnm/kiwi/issues/179)) | Search io/content/file, preview loader, diff generate/io in core |
+| C9 `shell`, `agent` | Done ([#179](https://github.com/pacificnm/kiwi/issues/179)) | PTY session + output readers in core; `encode_key` + `AgentRuntime` in TUI |
+| C10 `editor`, `commands` | Done ([#179](https://github.com/pacificnm/kiwi/issues/179)) | Launch/resolve/classify in core; TUI target resolution + terminal suspend in `kiwi` |
 
 **C3 acceptance (issue #177):**
 

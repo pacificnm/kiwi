@@ -1,5 +1,3 @@
-mod debounce;
-mod io;
-mod paths;
+//! TUI-facing file watcher API; domain logic lives in [`kiwi_core::watcher`].
 
-pub use io::RepoWatcher;
+pub use kiwi_core::watcher::RepoWatcher;

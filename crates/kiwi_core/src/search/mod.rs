@@ -1,7 +1,16 @@
 use std::path::PathBuf;
 
+mod cancel;
+mod content;
+mod debounce;
+mod file;
+mod io;
 mod state;
 
+pub use cancel::SearchCancelHandle;
+pub use content::ContentSearchError;
+pub use debounce::DebounceTimer;
+pub use io::{spawn_search, SearchJob};
 pub use state::SearchState;
 
 pub const MAX_SEARCH_RESULTS: usize = 10_000;

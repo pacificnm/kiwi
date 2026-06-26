@@ -1,12 +1,10 @@
-mod command;
-mod error;
-mod io;
-mod keys;
-mod scrollback;
-mod session;
+//! TUI-facing shell API; domain logic lives in [`kiwi_core::shell`].
 
-pub use command::shell_launch_spec;
-pub use io::ShellOutputReader;
+mod keys;
+
 pub use keys::encode_key;
-pub use scrollback::ScrollbackBuffer;
-pub use session::ShellSession;
+#[allow(unused_imports)]
+pub use kiwi_core::shell::{
+    shell_launch_spec, ScrollbackBuffer, ShellError, ShellLaunchSpec, ShellOutputReader,
+    ShellSession,
+};

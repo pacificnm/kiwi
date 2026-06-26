@@ -1,13 +1,7 @@
-mod cancel;
-mod content;
-mod debounce;
-mod file;
-mod io;
-mod state;
-mod types;
+//! TUI-facing search API; domain logic lives in [`kiwi_core::search`].
 
-pub use cancel::SearchCancelHandle;
-pub use debounce::DebounceTimer;
-pub use io::{spawn_search, SearchJob};
-pub use state::SearchState;
-pub use types::{SearchMode, SearchResult};
+#[allow(unused_imports)]
+pub use kiwi_core::search::{
+    spawn_search, DebounceTimer, SearchCancelHandle, SearchJob, SearchMode, SearchResult,
+    SearchState, MAX_SEARCH_RESULTS,
+};

@@ -5,9 +5,7 @@ use std::io::Read;
 
 use crate::state::EventSender;
 
-use super::io::AgentOutputReader;
-use super::session::AgentSession;
-use super::AgentId;
+use kiwi_core::agent::{AgentId, AgentOutputReader, AgentSession};
 
 pub struct AgentRuntime {
     sessions: HashMap<AgentId, AgentSession>,
@@ -104,9 +102,9 @@ impl Default for AgentRuntime {
 mod tests {
     use std::path::Path;
 
-    use crate::agent::AgentSession;
-    use crate::config::AgentSettings;
     use crate::state::AgentState;
+    use kiwi_core::agent::AgentSession;
+    use kiwi_core::config::AgentSettings;
 
     use super::*;
 

@@ -1,6 +1,6 @@
-mod generate;
-mod io;
-mod types;
+//! TUI-facing diff API; domain logic lives in [`kiwi_core::diff`].
 
-pub use io::spawn_file_diff_load;
-pub use types::{DiffLine, DiffLineKind, DiffSource};
+#[allow(unused_imports)]
+pub use kiwi_core::diff::{
+    spawn_file_diff_load, DiffLine, DiffLineKind, DiffSource, FileDiffLoadResult,
+};

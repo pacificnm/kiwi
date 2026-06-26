@@ -1,6 +1,4 @@
-mod io;
-mod loader;
-mod state;
+//! TUI-facing preview API; domain logic lives in [`kiwi_core::preview`].
 
-pub use io::spawn_preview_load;
-pub use state::PreviewState;
+#[allow(unused_imports)]
+pub use kiwi_core::preview::{spawn_preview_load, PreviewLoadResult, PreviewState};

@@ -1,3 +1,4 @@
+#[allow(unused_imports)]
 pub use kiwi_core::commands::{best_fuzzy_score, CommandContext, COMMANDS, MAX_VISIBLE_MATCHES};
 
 use crate::editor::resolve_editor_target_readonly;

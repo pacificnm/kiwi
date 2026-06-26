@@ -85,6 +85,8 @@ pub fn page_scroll_issue_detail(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::navigation::{LeftNavTab, MainTab, NavCommand, NavigationState};
+    use crate::state::GitHubState;
 
     #[test]
     fn scroll_issue_detail_clamps_to_content() {
@@ -93,5 +95,41 @@ mod tests {
         assert_eq!(offset, 6);
         scroll_issue_detail(&mut offset, -100, 10, 4);
         assert_eq!(offset, 0);
+    }
+
+    #[test]
+    fn resolve_browser_target_returns_selected_issue() {
+        let mut navigation = NavigationState::default();
+        let mut github = GitHubState::default();
+        github.auth_ok = true;
+        github.selected_issue = Some(42);
+        navigation.apply(NavCommand::SelectMainTab(MainTab::Issues));
+
+        let target = resolve_browser_target(&navigation, &github).expect("target");
+        assert_eq!(target, GitHubBrowserTarget::Issue(42));
+    }
+
+    #[test]
+    fn resolve_browser_target_returns_selected_pr_on_prs_tab() {
+        let mut navigation = NavigationState::default();
+        let mut github = GitHubState::default();
+        github.auth_ok = true;
+        github.selected_pr = Some(17);
+        navigation.apply(NavCommand::SelectMainTab(MainTab::Prs));
+
+        let target = resolve_browser_target(&navigation, &github).expect("target");
+        assert_eq!(target, GitHubBrowserTarget::PullRequest(17));
+    }
+
+    #[test]
+    fn browser_target_kind_follows_gh_left_hub() {
+        let mut navigation = NavigationState::default();
+        let mut github = GitHubState::default();
+        github.left_pane = GitHubLeftPane::Prs;
+        navigation.apply(NavCommand::SelectLeftTab(LeftNavTab::Gh));
+        assert_eq!(
+            browser_target_kind(&navigation, &github),
+            GitHubBrowserKind::PullRequest
+        );
     }
 }
