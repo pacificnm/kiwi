@@ -737,6 +737,8 @@ dependencies = [
  "clap",
  "crossterm",
  "git2",
+ "kiwi_plugin_api",
+ "kiwi_plugin_loader",
  "notify",
  "portable-pty",
  "ratatui",
@@ -753,6 +755,14 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "toml",
+]
+
+[[package]]
+name = "kiwi_plugin_loader"
+version = "0.1.0"
+dependencies = [
+ "kiwi_plugin_api",
+ "libloading",
 ]
 
 [[package]]
@@ -799,6 +809,16 @@ dependencies = [
  "libz-sys",
  "openssl-sys",
  "pkg-config",
+]
+
+[[package]]
+name = "libloading"
+version = "0.8.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7c4b02199fee7c5d21a5ae7d8cfa79a6ef5bb2fc834d6e9058e89c825efdc55"
+dependencies = [
+ "cfg-if",
+ "windows-link",
 ]
 
 [[package]]

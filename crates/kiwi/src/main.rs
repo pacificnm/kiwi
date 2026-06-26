@@ -13,6 +13,7 @@ mod git;
 mod github;
 mod layout;
 mod navigation;
+mod plugins;
 mod preview;
 mod repo;
 mod search;

@@ -30,6 +30,7 @@ use crate::github::{
 };
 use crate::layout::{agent_pty_size, compute_layout, shell_pty_size, FocusTarget, Region};
 use crate::navigation::{map_key, LeftNavTab, MainTab, NavCommand};
+use crate::plugins;
 use crate::preview::spawn_preview_load;
 use crate::search::{spawn_search, DebounceTimer, SearchCancelHandle, SearchJob, SearchMode};
 use crate::selection::{hit_test_text, SelectionPane};
@@ -73,6 +74,7 @@ pub struct App {
     double_click: DoubleClickTracker,
     pty_cursor_blink_at: Instant,
     workspace_last_saved: Instant,
+    _plugin_host: kiwi_plugin_loader::PluginHost,
     _repo_watcher: Option<RepoWatcher>,
 }
 
@@ -90,6 +92,11 @@ impl App {
 
         let mut state =
             AppState::from_startup(repo_root.clone(), is_git_repo, config, theme, layout);
+        let plugin_outcome =
+            plugins::load_plugins(&state.config.plugins, env!("CARGO_PKG_VERSION"));
+        state.plugins = plugin_outcome.state;
+        let plugin_host = plugin_outcome.host;
+        let plugin_messages = plugin_outcome.messages;
         if state.config.workspace.persist {
             if let Some(snapshot) = try_load_workspace(&repo_root) {
                 snapshot.apply_to_app_state(&mut state);
@@ -150,8 +157,12 @@ impl App {
             double_click: DoubleClickTracker::default(),
             pty_cursor_blink_at: Instant::now(),
             workspace_last_saved: Instant::now(),
+            _plugin_host: plugin_host,
             _repo_watcher: repo_watcher,
         };
+        for message in plugin_messages {
+            app.state.logs.push_info(message);
+        }
         let spawn_effects = agent_spawn_effects_if_needed(&mut app.state);
         app.execute_effects(spawn_effects);
         let file_tree_effects = file_tree_startup_effects(&mut app.state);

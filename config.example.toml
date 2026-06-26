@@ -61,3 +61,7 @@ word_wrap = false
 
 [watcher]
 debounce_ms = 300
+
+[plugins]
+enabled = true
+# directory = "~/.config/kiwi/plugins"

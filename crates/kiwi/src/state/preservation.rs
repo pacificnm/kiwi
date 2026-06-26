@@ -11,8 +11,8 @@ mod tests {
     use crate::layout::FocusTarget;
     use crate::navigation::{LeftNavTab, MainTab, NavigationState};
     use crate::state::domains::{
-        AgentState, BranchState, CommandPaletteState, DiffState, GitHubState, GitState, ShellState,
-        StatusBarState, WorkspaceMeta,
+        AgentState, BranchState, CommandPaletteState, DiffState, GitHubState, GitState,
+        PluginsState, ShellState, StatusBarState, WorkspaceMeta,
     };
     use crate::state::{reduce, AppEvent, AppState, SideEffect};
     use crate::theme::capabilities::TerminalCapabilities;
@@ -40,6 +40,7 @@ mod tests {
             agent: AgentState::default(),
             shell: ShellState::default(),
             palette: CommandPaletteState::default(),
+            plugins: PluginsState::default(),
             logs: crate::state::domains::LogsState::default(),
             notifications: crate::state::domains::NotificationState::default(),
             status_bar: StatusBarState::default(),

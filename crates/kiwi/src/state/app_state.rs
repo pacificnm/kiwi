@@ -13,7 +13,7 @@ use crate::theme::ThemePalette;
 
 use super::domains::{
     AgentState, BranchState, CommandPaletteState, DiffState, GitHubState, GitState, LogsState,
-    NotificationState, ShellState, StatusBarState, WorkspaceMeta,
+    NotificationState, PluginsState, ShellState, StatusBarState, WorkspaceMeta,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,6 +34,7 @@ pub struct AppState {
     pub agent: AgentState,
     pub shell: ShellState,
     pub palette: CommandPaletteState,
+    pub plugins: PluginsState,
     pub logs: LogsState,
     pub notifications: NotificationState,
     pub status_bar: StatusBarState,
@@ -87,6 +88,7 @@ impl AppState {
                 ..ShellState::default()
             },
             palette: CommandPaletteState::default(),
+            plugins: PluginsState::default(),
             logs: LogsState::default(),
             notifications: NotificationState::default(),
             status_bar: StatusBarState { root_name },

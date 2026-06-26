@@ -20,6 +20,7 @@ pub struct RawConfig {
     pub preview: Option<PreviewSection>,
     pub diff: Option<DiffSection>,
     pub watcher: Option<WatcherSection>,
+    pub plugins: Option<PluginsSection>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
@@ -122,6 +123,13 @@ pub struct WatcherSection {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
 #[serde(default)]
+pub struct PluginsSection {
+    pub enabled: Option<bool>,
+    pub directory: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
+#[serde(default)]
 pub struct DiffSection {
     pub context_lines: Option<u32>,
     pub word_wrap: Option<bool>,
@@ -143,6 +151,7 @@ pub struct ResolvedConfig {
     pub preview: PreviewSettings,
     pub diff: DiffSettings,
     pub watcher: WatcherSettings,
+    pub plugins: PluginsSettings,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -230,6 +239,12 @@ pub struct WatcherSettings {
     pub debounce_ms: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginsSettings {
+    pub enabled: bool,
+    pub directory: PathBuf,
+}
+
 impl Default for ResolvedConfig {
     fn default() -> Self {
         Self {
@@ -278,8 +293,17 @@ impl Default for ResolvedConfig {
                 word_wrap: false,
             },
             watcher: WatcherSettings { debounce_ms: 300 },
+            plugins: PluginsSettings {
+                enabled: true,
+                directory: default_plugins_directory(None),
+            },
         }
     }
+}
+
+pub fn default_plugins_directory(home: Option<&Path>) -> PathBuf {
+    home.map(|dir| dir.join(".config/kiwi/plugins"))
+        .unwrap_or_else(|| PathBuf::from(".config/kiwi/plugins"))
 }
 
 fn default_shell_command() -> String {
@@ -405,6 +429,15 @@ impl RawConfig {
         if let Some(watcher) = &self.watcher {
             if let Some(debounce_ms) = watcher.debounce_ms {
                 resolved.watcher.debounce_ms = debounce_ms;
+            }
+        }
+
+        if let Some(plugins) = &self.plugins {
+            if let Some(enabled) = plugins.enabled {
+                resolved.plugins.enabled = enabled;
+            }
+            if let Some(directory) = &plugins.directory {
+                resolved.plugins.directory = expand_tilde(directory, home);
             }
         }
     }
