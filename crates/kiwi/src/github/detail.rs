@@ -5,29 +5,7 @@ use serde::Deserialize;
 
 use super::issue::{command_on_path, IssueState};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IssueComment {
-    pub author: String,
-    pub body: String,
-    pub created_at: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IssueDetail {
-    pub number: u32,
-    pub title: String,
-    pub state: IssueState,
-    pub author: String,
-    pub labels: Vec<String>,
-    pub assignees: Vec<String>,
-    pub display_lines: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IssueDetailLoadResult {
-    pub detail: Option<IssueDetail>,
-    pub error: Option<String>,
-}
+pub use kiwi_core::github::{IssueComment, IssueDetail, IssueDetailLoadResult};
 
 #[derive(Debug, Deserialize)]
 struct GhIssueDetail {
@@ -218,36 +196,6 @@ fn format_issue_detail_failure(stderr: &[u8], stdout: &[u8]) -> String {
     "gh issue view failed".to_string()
 }
 
-pub fn scroll_issue_detail(
-    scroll_offset: &mut usize,
-    delta: i32,
-    line_count: usize,
-    viewport_rows: usize,
-) {
-    if viewport_rows == 0 {
-        return;
-    }
-
-    let max_offset = line_count.saturating_sub(viewport_rows);
-    let current = *scroll_offset as i32;
-    let next = (current + delta).clamp(0, max_offset as i32);
-    *scroll_offset = usize::try_from(next).unwrap_or(0);
-}
-
-pub fn page_scroll_issue_detail(
-    scroll_offset: &mut usize,
-    delta: i32,
-    line_count: usize,
-    viewport_rows: usize,
-) {
-    if viewport_rows == 0 {
-        return;
-    }
-
-    let page = i32::try_from(viewport_rows.saturating_sub(1).max(1)).unwrap_or(1);
-    scroll_issue_detail(scroll_offset, delta * page, line_count, viewport_rows);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -299,14 +247,5 @@ mod tests {
     fn parse_issue_detail_json_rejects_invalid_payload() {
         let err = parse_issue_detail_json(b"{not json}").expect_err("invalid");
         assert!(err.contains("Invalid gh issue JSON"));
-    }
-
-    #[test]
-    fn scroll_issue_detail_clamps_to_content() {
-        let mut offset = 0;
-        scroll_issue_detail(&mut offset, 100, 10, 4);
-        assert_eq!(offset, 6);
-        scroll_issue_detail(&mut offset, -100, 10, 4);
-        assert_eq!(offset, 0);
     }
 }

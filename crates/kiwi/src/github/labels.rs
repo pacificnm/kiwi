@@ -5,70 +5,7 @@ use serde::Deserialize;
 
 use super::issue::command_on_path;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RepoLabel {
-    pub name: String,
-    pub description: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RepoLabelsLoadResult {
-    pub labels: Vec<RepoLabel>,
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LabelPickerState {
-    pub issue_number: u32,
-    pub existing_labels: Vec<String>,
-    pub labels: Vec<RepoLabel>,
-    pub cursor: usize,
-    pub selected: Vec<bool>,
-    pub loading: bool,
-    pub applying: bool,
-    pub error: Option<String>,
-}
-
-impl LabelPickerState {
-    pub fn new(issue_number: u32, existing_labels: Vec<String>) -> Self {
-        Self {
-            issue_number,
-            existing_labels,
-            labels: Vec::new(),
-            cursor: 0,
-            selected: Vec::new(),
-            loading: true,
-            applying: false,
-            error: None,
-        }
-    }
-
-    pub fn move_cursor(&mut self, delta: i32) {
-        if self.labels.is_empty() {
-            self.cursor = 0;
-            return;
-        }
-
-        let len = self.labels.len() as i32;
-        let next = (self.cursor as i32 + delta).rem_euclid(len);
-        self.cursor = usize::try_from(next).unwrap_or(0);
-    }
-
-    pub fn toggle_cursor(&mut self) {
-        if let Some(selected) = self.selected.get_mut(self.cursor) {
-            *selected = !*selected;
-        }
-    }
-
-    pub fn labels_to_add(&self) -> Vec<String> {
-        self.labels
-            .iter()
-            .zip(self.selected.iter())
-            .filter(|(label, selected)| **selected && !self.existing_labels.contains(&label.name))
-            .map(|(label, _)| label.name.clone())
-            .collect()
-    }
-}
+pub use kiwi_core::github::{RepoLabel, RepoLabelsLoadResult};
 
 pub fn load_repo_labels(repo_root: &Path, command: &str) -> RepoLabelsLoadResult {
     if !command_on_path(command) {
@@ -145,26 +82,10 @@ fn format_label_list_failure(stderr: &[u8], stdout: &[u8]) -> String {
     "gh label list failed".to_string()
 }
 
-pub fn apply_label_picker_load(
-    picker: &mut LabelPickerState,
-    result: RepoLabelsLoadResult,
-    existing_labels: &[String],
-) {
-    picker.loading = false;
-    picker.error = result.error;
-    picker.labels = result.labels;
-    picker.selected = picker
-        .labels
-        .iter()
-        .map(|label| existing_labels.contains(&label.name))
-        .collect();
-    if picker.cursor >= picker.labels.len() {
-        picker.cursor = picker.labels.len().saturating_sub(1);
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use kiwi_core::github::LabelPickerState;
+
     use super::*;
 
     #[test]
@@ -209,6 +130,8 @@ mod tests {
 
     #[test]
     fn apply_label_picker_load_marks_existing_labels() {
+        use kiwi_core::github::apply_label_picker_load;
+
         let mut picker = LabelPickerState::new(42, vec!["bug".to_string()]);
         apply_label_picker_load(
             &mut picker,

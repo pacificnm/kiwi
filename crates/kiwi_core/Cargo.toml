@@ -11,7 +11,10 @@ description = "Shared domain types and services for Kiwi frontends"
 workspace = true
 
 [dependencies]
+kiwi_plugin_api = { path = "../kiwi_plugin_api" }
+kiwi_plugin_loader = { path = "../kiwi_plugin_loader" }
 serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 toml.workspace = true
 
 [dev-dependencies]

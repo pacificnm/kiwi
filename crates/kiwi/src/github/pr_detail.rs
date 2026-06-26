@@ -5,53 +5,7 @@ use serde::Deserialize;
 
 use super::issue::command_on_path;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PrState {
-    Open,
-    Draft,
-    Merged,
-    Closed,
-}
-
-impl PrState {
-    #[must_use]
-    pub fn parse(raw: &str, is_draft: bool) -> Self {
-        if is_draft {
-            return Self::Draft;
-        }
-
-        match raw {
-            "MERGED" => Self::Merged,
-            "CLOSED" => Self::Closed,
-            _ => Self::Open,
-        }
-    }
-
-    #[must_use]
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Open => "open",
-            Self::Draft => "draft",
-            Self::Merged => "merged",
-            Self::Closed => "closed",
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PrDetail {
-    pub number: u32,
-    pub title: String,
-    pub state: PrState,
-    pub author: String,
-    pub display_lines: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PrDetailLoadResult {
-    pub detail: Option<PrDetail>,
-    pub error: Option<String>,
-}
+pub use kiwi_core::github::{PrDetail, PrDetailLoadResult, PrState};
 
 #[derive(Debug, Deserialize)]
 struct GhPrDetail {

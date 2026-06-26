@@ -1,57 +1,10 @@
 use std::path::Path;
 use std::process::Command;
 
-use crate::state::{GitHubPrCreatePrompt, GitHubPrCreateStep};
-
 use super::issue::command_on_path;
 use super::IssueActionResult;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PrCreateRequest {
-    pub title: String,
-    pub body: String,
-    pub base: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PrCreatePromptAdvance {
-    Continue(GitHubPrCreatePrompt),
-    Submit(PrCreateRequest),
-}
-
-pub fn advance_pr_create_prompt(
-    mut prompt: GitHubPrCreatePrompt,
-    input: &str,
-) -> Result<PrCreatePromptAdvance, &'static str> {
-    match prompt.step {
-        GitHubPrCreateStep::Title => {
-            let title = input.trim();
-            if title.is_empty() {
-                return Err("PR title cannot be empty");
-            }
-            prompt.title = title.to_string();
-            prompt.step = GitHubPrCreateStep::Body;
-            Ok(PrCreatePromptAdvance::Continue(prompt))
-        }
-        GitHubPrCreateStep::Body => {
-            prompt.body = input.to_string();
-            prompt.step = GitHubPrCreateStep::Base;
-            Ok(PrCreatePromptAdvance::Continue(prompt))
-        }
-        GitHubPrCreateStep::Base => {
-            let base = input.trim();
-            Ok(PrCreatePromptAdvance::Submit(PrCreateRequest {
-                title: prompt.title,
-                body: prompt.body,
-                base: if base.is_empty() {
-                    None
-                } else {
-                    Some(base.to_string())
-                },
-            }))
-        }
-    }
-}
+pub use kiwi_core::github::PrCreateRequest;
 
 pub fn create_pull_request(
     repo_root: &Path,
@@ -139,6 +92,8 @@ fn format_action_failure(command: &str, stderr: &[u8], stdout: &[u8]) -> String 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::{GitHubPrCreatePrompt, GitHubPrCreateStep};
+    use kiwi_core::github::{advance_pr_create_prompt, PrCreatePromptAdvance};
 
     #[test]
     fn advance_prompt_steps_through_title_body_base() {

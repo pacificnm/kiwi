@@ -14,21 +14,6 @@ use super::scrollbar::{render_vertical_scrollbar, split_for_scrollbar};
 const BRANCH_ROWS: u16 = 1;
 const STATUS_ROWS: u16 = 1;
 
-pub fn git_viewport_rows(area: Rect) -> usize {
-    pane_inner(area)
-        .map(|inner| {
-            inner
-                .height
-                .saturating_sub(BRANCH_ROWS)
-                .saturating_sub(if inner.height > BRANCH_ROWS {
-                    STATUS_ROWS
-                } else {
-                    0
-                }) as usize
-        })
-        .unwrap_or(0)
-}
-
 pub fn git_interaction_at(state: &AppState, area: Rect, column: u16, row: u16) -> Option<usize> {
     if area.width == 0 || area.height == 0 {
         return None;

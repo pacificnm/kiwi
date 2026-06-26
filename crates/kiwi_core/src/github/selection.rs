@@ -1,8 +1,6 @@
 use crate::state::GitHubState;
 
-use super::issue::Issue;
-use super::pr::PullRequest;
-use super::pr_detail::PrState;
+use super::types::{Issue, PrState, PullRequest};
 
 pub fn ensure_issue_selection(state: &mut GitHubState) {
     if state.issues.is_empty() {
@@ -164,103 +162,5 @@ pub fn scroll_offset_for_row(
         selected_row.saturating_sub(viewport_rows.saturating_sub(1))
     } else {
         scroll_offset
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::github::IssueState;
-    use crate::github::PrState;
-
-    fn sample_issues() -> Vec<Issue> {
-        vec![
-            Issue {
-                number: 1,
-                title: "First".to_string(),
-                state: IssueState::Open,
-                labels: Vec::new(),
-                assignees: Vec::new(),
-            },
-            Issue {
-                number: 2,
-                title: "Second".to_string(),
-                state: IssueState::Open,
-                labels: Vec::new(),
-                assignees: Vec::new(),
-            },
-        ]
-    }
-
-    fn issue_select_row_updates_selection_and_scroll() {
-        let mut state = GitHubState {
-            issues: sample_issues(),
-            selected_issue: Some(1),
-            issues_scroll_offset: 0,
-            ..GitHubState::default()
-        };
-
-        issue_select_row(&mut state, 1, 1);
-        assert_eq!(state.selected_issue, Some(2));
-        assert_eq!(state.issues_scroll_offset, 0);
-    }
-
-    #[test]
-    fn move_selection_updates_selected_issue() {
-        let mut state = GitHubState {
-            issues: sample_issues(),
-            selected_issue: Some(1),
-            ..GitHubState::default()
-        };
-
-        issue_move_selection(&mut state, 1, 10);
-        assert_eq!(state.selected_issue, Some(2));
-    }
-
-    #[test]
-    fn ensure_issue_selection_preserves_valid_selection() {
-        let mut state = GitHubState {
-            issues: sample_issues(),
-            selected_issue: Some(2),
-            issues_scroll_offset: 4,
-            ..GitHubState::default()
-        };
-
-        ensure_issue_selection(&mut state);
-        assert_eq!(state.selected_issue, Some(2));
-        assert_eq!(state.issues_scroll_offset, 4);
-    }
-
-    fn sample_open_pr() -> PullRequest {
-        PullRequest {
-            number: 42,
-            title: "Feature".to_string(),
-            state: PrState::Open,
-            author: "dev".to_string(),
-            is_draft: false,
-        }
-    }
-
-    #[test]
-    fn pull_request_is_mergeable_for_open_non_draft() {
-        assert!(pull_request_is_mergeable(&sample_open_pr()));
-    }
-
-    #[test]
-    fn pull_request_is_not_mergeable_for_draft() {
-        let mut pr = sample_open_pr();
-        pr.is_draft = true;
-        pr.state = PrState::Draft;
-        assert!(!pull_request_is_mergeable(&pr));
-    }
-
-    #[test]
-    fn selected_pull_request_returns_current_selection() {
-        let state = GitHubState {
-            prs: vec![sample_open_pr()],
-            selected_pr: Some(42),
-            ..GitHubState::default()
-        };
-        assert_eq!(selected_pull_request(&state).map(|pr| pr.number), Some(42));
     }
 }

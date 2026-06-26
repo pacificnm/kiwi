@@ -17,40 +17,18 @@ mod tests {
     };
     use crate::state::{reduce, AppEvent, AppState, SideEffect};
     use crate::theme::capabilities::TerminalCapabilities;
-    use crate::theme::loader::load_theme_with_capabilities;
+    use crate::theme::load_theme_with_capabilities;
 
     fn test_state() -> AppState {
-        AppState {
-            config: ResolvedConfig::default(),
-            navigation: NavigationState::default(),
-            layout: compute_layout(120, 40, 30).expect("layout"),
-            theme: load_theme_with_capabilities(
-                &ResolvedConfig::default().theme,
-                TerminalCapabilities::TrueColor,
-            )
-            .expect("theme"),
-            terminal_capabilities: TerminalCapabilities::TrueColor,
-            repo_root: PathBuf::from("/repo"),
-            dirty: false,
-            file_tree: FileTreeState::at_root(PathBuf::from("/repo")),
-            preview: crate::preview::PreviewState::default(),
-            search: crate::search::SearchState::default(),
-            git: GitState::default(),
-            branches: BranchState::default(),
-            diff: DiffState::default(),
-            github: GitHubState::default(),
-            agent_manager: AgentManager::with_initial_agent(AgentState::default()),
-            shell: ShellState::default(),
-            palette: CommandPaletteState::default(),
-            plugins: PluginsState::default(),
-            logs: crate::state::domains::LogsState::default(),
-            settings: crate::state::domains::SettingsState::default(),
-            notifications: crate::state::domains::NotificationState::default(),
-            status_bar: StatusBarState::default(),
-            workspace_meta: WorkspaceMeta::default(),
-            text_selection: crate::selection::TextSelection::default(),
-            pty_cursor_blink_on: true,
-        }
+        let layout = compute_layout(120, 40, 30).expect("layout");
+        let config = ResolvedConfig::default();
+        let caps = TerminalCapabilities::TrueColor;
+        let theme = load_theme_with_capabilities(&config.theme, caps).expect("theme");
+        let mut state =
+            AppState::from_startup(PathBuf::from("/repo"), false, config, theme, layout);
+        state.repo_root = PathBuf::from("/repo");
+        state.file_tree = FileTreeState::at_root(PathBuf::from("/repo"));
+        state
     }
 
     fn modified_entries(prefix: &str, count: usize) -> Vec<GitFileEntry> {

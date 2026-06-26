@@ -755,7 +755,10 @@ name = "kiwi_core"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "kiwi_plugin_api",
+ "kiwi_plugin_loader",
  "serde",
+ "serde_json",
  "toml",
 ]
 

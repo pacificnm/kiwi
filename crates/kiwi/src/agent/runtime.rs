@@ -6,8 +6,8 @@ use std::io::Read;
 use crate::state::EventSender;
 
 use super::io::AgentOutputReader;
-use super::manager::AgentId;
 use super::session::AgentSession;
+use super::AgentId;
 
 pub struct AgentRuntime {
     sessions: HashMap<AgentId, AgentSession>,

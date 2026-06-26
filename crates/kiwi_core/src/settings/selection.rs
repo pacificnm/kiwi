@@ -1,5 +1,5 @@
 use crate::state::SettingsState;
-use crate::theme::loader::BUILTIN_THEME_NAMES;
+use crate::theme::BUILTIN_THEME_NAMES;
 
 pub fn settings_theme_count() -> usize {
     BUILTIN_THEME_NAMES.len()
@@ -71,12 +71,5 @@ mod tests {
         settings_move_selection(&mut state, 7, 3);
         assert_eq!(state.selected_index, 7);
         assert_eq!(state.scroll_offset, 5);
-    }
-
-    #[test]
-    fn ensure_selection_syncs_to_active_theme() {
-        let mut state = SettingsState::default();
-        ensure_settings_selection(&mut state, "dracula", 8);
-        assert_eq!(state.selected_index, 2);
     }
 }

@@ -1,10 +1,13 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(test)]
+use std::path::PathBuf;
 
 use super::ignore::is_default_ignored;
 use super::node::DirectoryEntry;
 
-pub const MAX_EXPAND_DEPTH: usize = 40;
+#[cfg(test)]
+const MAX_EXPAND_DEPTH: usize = 40;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirectoryLoadResult {
@@ -62,7 +65,8 @@ pub fn sort_directory_entries(children: &mut [DirectoryEntry]) {
     });
 }
 
-pub fn detect_symlink_loop(root: &Path, target: &Path) -> Option<String> {
+#[cfg(test)]
+fn detect_symlink_loop(root: &Path, target: &Path) -> Option<String> {
     let mut seen = Vec::<PathBuf>::new();
     let mut current = Some(target);
     let mut depth = 0usize;

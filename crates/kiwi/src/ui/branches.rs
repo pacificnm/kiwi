@@ -13,12 +13,6 @@ use super::scrollbar::{render_vertical_scrollbar, split_for_scrollbar};
 
 const STATUS_ROWS: u16 = 1;
 
-pub fn branches_viewport_rows(area: Rect) -> usize {
-    pane_inner(area)
-        .map(|inner| inner.height.saturating_sub(STATUS_ROWS) as usize)
-        .unwrap_or(0)
-}
-
 pub fn branch_interaction_at(state: &AppState, area: Rect, column: u16, row: u16) -> Option<usize> {
     if area.width == 0 || area.height == 0 {
         return None;

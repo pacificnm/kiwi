@@ -1,7 +1,6 @@
 mod keys;
-mod state;
-mod tabs;
 
 pub use keys::map_key;
-pub use state::{NavCommand, NavigationState};
-pub use tabs::{LeftNavTab, MainTab, LEFT_TAB_LABELS, MAIN_TAB_LABELS};
+pub use kiwi_core::navigation::{
+    LeftNavTab, MainTab, NavCommand, NavigationState, LEFT_TAB_LABELS, MAIN_TAB_LABELS,
+};
