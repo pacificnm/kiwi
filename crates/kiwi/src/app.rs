@@ -1530,7 +1530,7 @@ impl App {
     }
 
     fn dispatch_open_editor(&mut self) -> bool {
-        let Some(target) = resolve_editor_target(&self.state) else {
+        let Some(target) = resolve_editor_target(&mut self.state) else {
             return false;
         };
         self.dispatch(AppEvent::Command(AppCommand::OpenEditor {

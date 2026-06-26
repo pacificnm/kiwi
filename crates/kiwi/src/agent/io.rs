@@ -3,7 +3,7 @@ use std::thread::{self, JoinHandle};
 
 use crate::state::{AppEvent, EventSender};
 
-use super::manager::AgentId;
+use super::AgentId;
 
 pub struct AgentOutputReader {
     handle: Option<JoinHandle<()>>,

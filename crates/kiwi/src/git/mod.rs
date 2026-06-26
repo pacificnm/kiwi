@@ -1,24 +1,14 @@
-mod branch_selection;
+#[cfg(test)]
+pub use kiwi_core::git::GitFileStatus;
+pub use kiwi_core::git::{
+    branch_row_at_viewport, branch_selected_row_index, build_panel_rows, git_row_at_viewport,
+    git_selected_row_index, BranchEntry, GitFileEntry, GitPanelRow,
+};
+
 mod branches;
 mod io;
-mod panel;
 mod patch;
 mod repository;
-mod selection;
 mod status;
 
-pub use branch_selection::{
-    branch_move_selection, branch_row_at_viewport, branch_select_row, branch_selected_name,
-    branch_selected_row_index, ensure_branch_selection,
-};
-pub use branches::BranchEntry;
 pub use io::{spawn_branch_checkout, spawn_branch_list, spawn_git_refresh};
-pub use panel::{
-    adjacent_changed_file, build_panel_rows, changed_file_paths, row_for_path, GitPanelRow,
-};
-pub use patch::{patch_git_file_entries, GitFileStatusPatch};
-pub use selection::{
-    ensure_git_selection, git_move_selection, git_row_at_viewport, git_select_row,
-    git_selected_row_index,
-};
-pub use status::{GitFileEntry, GitFileStatus};

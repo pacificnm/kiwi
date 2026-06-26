@@ -3,8 +3,27 @@
 //! See [SPEC-024](https://github.com/pacificnm/kiwi/blob/main/docs/specs/SPEC-024-core-library-extraction.md).
 //! UI frameworks (`ratatui`, `crossterm`, `egui`, `eframe`) must not appear in this crate.
 
+pub mod agent;
+pub mod ansi;
+pub mod clipboard;
+pub mod commands;
 pub mod config;
+pub mod diff;
+pub mod editor;
+pub mod events;
+pub mod file_tree;
+pub mod git;
+pub mod github;
+pub mod navigation;
+pub mod preview;
+pub mod reducer;
+pub mod search;
+pub mod selection;
+pub mod settings;
+pub mod shell;
+pub mod state;
 pub mod theme;
+pub mod watcher;
 
 /// Crate version string for smoke tests and diagnostics.
 pub const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");

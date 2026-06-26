@@ -30,7 +30,8 @@ impl ThemePalette {
         self.roles.get(&role).copied().unwrap_or_default()
     }
 
-    fn from_core(core: CoreThemePalette) -> Self {
+    #[must_use]
+    pub fn from_core(core: CoreThemePalette) -> Self {
         let roles = SemanticRole::ALL
             .into_iter()
             .map(|role| (role, core_role_to_style(core.get(role))))

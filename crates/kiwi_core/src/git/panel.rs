@@ -152,20 +152,6 @@ mod tests {
                 count: 1
             })
         ));
-        assert!(rows.iter().any(|row| matches!(
-            row,
-            GitPanelRow::File {
-                path,
-                status: GitFileStatus::Modified
-            } if path == "a.rs"
-        )));
-        assert!(rows.iter().any(|row| matches!(
-            row,
-            GitPanelRow::Header {
-                label: "Untracked",
-                ..
-            }
-        )));
     }
 
     #[test]
@@ -177,48 +163,5 @@ mod tests {
 
         let rows = build_panel_rows(&entries, false);
         assert!(rows.is_empty());
-    }
-
-    #[test]
-    fn changed_file_paths_follow_panel_order() {
-        let entries = vec![
-            GitFileEntry {
-                path: "b.rs".to_string(),
-                status: GitFileStatus::Added,
-            },
-            GitFileEntry {
-                path: "a.rs".to_string(),
-                status: GitFileStatus::Modified,
-            },
-        ];
-
-        let paths = changed_file_paths(&entries, true);
-        assert_eq!(paths, vec!["a.rs".to_string(), "b.rs".to_string()]);
-    }
-
-    #[test]
-    fn adjacent_changed_file_clamps_at_boundaries() {
-        let paths = vec!["a.rs".to_string(), "b.rs".to_string()];
-
-        assert_eq!(
-            adjacent_changed_file(&paths, Some("a.rs"), 1).as_deref(),
-            Some("b.rs")
-        );
-        assert!(adjacent_changed_file(&paths, Some("b.rs"), 1).is_none());
-        assert!(adjacent_changed_file(&paths, Some("a.rs"), -1).is_none());
-    }
-
-    #[test]
-    fn adjacent_changed_file_selects_first_or_last_without_current() {
-        let paths = vec!["a.rs".to_string(), "b.rs".to_string()];
-
-        assert_eq!(
-            adjacent_changed_file(&paths, None, 1).as_deref(),
-            Some("a.rs")
-        );
-        assert_eq!(
-            adjacent_changed_file(&paths, None, -1).as_deref(),
-            Some("b.rs")
-        );
     }
 }

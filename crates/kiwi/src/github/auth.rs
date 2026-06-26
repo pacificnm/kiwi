@@ -4,19 +4,7 @@ use std::process::Command;
 pub const INSTALL_URL: &str = "https://cli.github.com/";
 pub const AUTH_LOGIN_URL: &str = "https://cli.github.com/manual/gh_auth_login";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GitHubAuthErrorKind {
-    NotInstalled,
-    NotAuthenticated,
-    CommandFailed,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GitHubAuthCheckResult {
-    pub auth_ok: bool,
-    pub error_kind: Option<GitHubAuthErrorKind>,
-    pub message: String,
-}
+pub use kiwi_core::github::{GitHubAuthCheckResult, GitHubAuthErrorKind};
 
 pub fn check_github_auth(command: &str) -> GitHubAuthCheckResult {
     if !command_on_path(command) {

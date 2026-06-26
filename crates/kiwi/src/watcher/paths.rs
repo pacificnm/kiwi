@@ -1,4 +1,6 @@
-use std::path::{Component, Path, PathBuf};
+#[cfg(test)]
+use std::path::PathBuf;
+use std::path::{Component, Path};
 
 use notify::EventKind;
 
@@ -35,7 +37,8 @@ pub fn should_ignore_watch_path(path: &Path) -> bool {
         .any(|component| matches!(component, Component::Normal(name) if name == ".git"))
 }
 
-pub fn path_matches_file(changed: &Path, target: &Path) -> bool {
+#[cfg(test)]
+fn path_matches_file(changed: &Path, target: &Path) -> bool {
     if changed == target {
         return true;
     }
@@ -46,7 +49,8 @@ pub fn path_matches_file(changed: &Path, target: &Path) -> bool {
     }
 }
 
-pub fn preview_reload_paths(changed_paths: &[PathBuf], preview_path: &Path) -> bool {
+#[cfg(test)]
+fn preview_reload_paths(changed_paths: &[PathBuf], preview_path: &Path) -> bool {
     changed_paths
         .iter()
         .any(|changed| path_matches_file(changed, preview_path))

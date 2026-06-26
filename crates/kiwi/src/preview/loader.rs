@@ -3,34 +3,9 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::time::SystemTime;
 
+pub use kiwi_core::preview::PreviewLoadResult;
+
 pub const BINARY_SAMPLE_BYTES: usize = 8_192;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PreviewLoadResult {
-    pub lines: Vec<String>,
-    pub truncated: bool,
-    pub oversize: bool,
-    pub binary: bool,
-    pub lossy_utf8: bool,
-    pub file_size: u64,
-    pub modified_at: Option<SystemTime>,
-    pub error: Option<String>,
-}
-
-impl PreviewLoadResult {
-    fn error(message: String) -> Self {
-        Self {
-            lines: Vec::new(),
-            truncated: false,
-            oversize: false,
-            binary: false,
-            lossy_utf8: false,
-            file_size: 0,
-            modified_at: None,
-            error: Some(message),
-        }
-    }
-}
 
 pub fn load_preview_file(path: &Path, max_size_bytes: u64) -> PreviewLoadResult {
     let metadata = match std::fs::metadata(path) {

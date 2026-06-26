@@ -20,30 +20,6 @@ const GH_HUB_ROWS: u16 = 1;
 const ISSUES_STATUS_ROWS: u16 = 1;
 const ISSUE_DETAIL_STATUS_ROWS: u16 = 1;
 
-pub fn issues_viewport_rows(area: Rect) -> usize {
-    pane_inner(area)
-        .map(|inner| {
-            inner
-                .height
-                .saturating_sub(ISSUES_STATUS_ROWS + GH_HUB_ROWS) as usize
-        })
-        .unwrap_or(0)
-}
-
-pub fn issue_detail_viewport_rows(area: Rect) -> usize {
-    pane_inner(area)
-        .map(|inner| inner.height.saturating_sub(ISSUE_DETAIL_STATUS_ROWS) as usize)
-        .unwrap_or(0)
-}
-
-pub fn pr_detail_viewport_rows(area: Rect) -> usize {
-    issue_detail_viewport_rows(area)
-}
-
-pub fn prs_viewport_rows(area: Rect) -> usize {
-    issues_viewport_rows(area)
-}
-
 pub fn github_pr_interaction_at(
     state: &AppState,
     area: Rect,

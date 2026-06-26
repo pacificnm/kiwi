@@ -3,47 +3,9 @@ use std::process::Command;
 
 use serde::Deserialize;
 
-pub const ISSUE_LIST_CACHE_SECS: u64 = 60;
+pub use kiwi_core::github::{Issue, IssueListLoadResult, IssueState};
+
 pub const ISSUE_LIST_LIMIT: &str = "100";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IssueState {
-    Open,
-    Closed,
-}
-
-impl IssueState {
-    #[must_use]
-    pub fn parse(raw: &str) -> Self {
-        match raw {
-            "CLOSED" => Self::Closed,
-            _ => Self::Open,
-        }
-    }
-
-    #[must_use]
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Open => "open",
-            Self::Closed => "closed",
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Issue {
-    pub number: u32,
-    pub title: String,
-    pub state: IssueState,
-    pub labels: Vec<String>,
-    pub assignees: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IssueListLoadResult {
-    pub issues: Vec<Issue>,
-    pub error: Option<String>,
-}
 
 #[derive(Debug, Deserialize)]
 struct GhIssue {

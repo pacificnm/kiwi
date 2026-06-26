@@ -5,11 +5,7 @@ use git2::{BranchType, Repository};
 
 use super::repository::GitError;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BranchEntry {
-    pub name: String,
-    pub is_current: bool,
-}
+pub use kiwi_core::git::BranchEntry;
 
 pub fn list_local_branches(repo_root: &Path) -> Result<Vec<BranchEntry>, GitError> {
     let repo = Repository::open(repo_root).map_err(|err| GitError::Open(err.to_string()))?;

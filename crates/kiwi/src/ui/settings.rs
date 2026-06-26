@@ -14,12 +14,6 @@ use super::scrollbar::{render_vertical_scrollbar, split_for_scrollbar};
 const STATUS_ROWS: u16 = 1;
 const HEADER_ROWS: u16 = 1;
 
-pub fn settings_viewport_rows(area: Rect) -> usize {
-    settings_list_area(area)
-        .map(|inner| inner.height as usize)
-        .unwrap_or(0)
-}
-
 pub fn settings_interaction_at(
     state: &AppState,
     area: Rect,

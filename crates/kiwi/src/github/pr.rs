@@ -6,23 +6,9 @@ use serde::Deserialize;
 use super::issue::command_on_path;
 use super::pr_detail::PrState;
 
-pub const PR_LIST_CACHE_SECS: u64 = 60;
+pub use kiwi_core::github::{PrListLoadResult, PullRequest};
+
 pub const PR_LIST_LIMIT: &str = "100";
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PullRequest {
-    pub number: u32,
-    pub title: String,
-    pub state: PrState,
-    pub author: String,
-    pub is_draft: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PrListLoadResult {
-    pub prs: Vec<PullRequest>,
-    pub error: Option<String>,
-}
 
 #[derive(Debug, Deserialize)]
 struct GhPullRequest {

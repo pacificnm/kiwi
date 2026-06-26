@@ -3,12 +3,7 @@ use std::process::Command;
 
 use super::issue::command_on_path;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IssueActionResult {
-    pub success: bool,
-    pub error: Option<String>,
-    pub detail: Option<String>,
-}
+pub use kiwi_core::github::IssueActionResult;
 
 pub fn post_issue_comment(
     repo_root: &Path,

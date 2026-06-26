@@ -1,11 +1,4 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SelectionPane {
-    Preview,
-    IssueDetail,
-    PrDetail,
-    Agent,
-    Shell,
-}
+pub use kiwi_core::selection::SelectionPane;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct TextPosition {

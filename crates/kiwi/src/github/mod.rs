@@ -11,18 +11,10 @@ mod pr;
 mod pr_create;
 mod pr_detail;
 mod pr_merge;
-mod selection;
 
 pub use actions::IssueActionResult;
-pub use auth::{GitHubAuthCheckResult, GitHubAuthErrorKind};
-pub use browser::{missing_browser_target_message, resolve_browser_target, GitHubBrowserTarget};
-pub use context_menu::{
-    format_issue_agent_prompt, format_pr_agent_prompt, GhContextMenuAction, GhContextMenuState,
-    GhContextTarget,
-};
-pub use detail::{
-    page_scroll_issue_detail, scroll_issue_detail, IssueDetail, IssueDetailLoadResult,
-};
+pub use auth::GitHubAuthErrorKind;
+pub use context_menu::{GhContextMenuState, GhContextTarget};
 pub use hub::GitHubLeftPane;
 pub use io::{
     spawn_github_auth_check, spawn_github_issue_comment, spawn_github_issue_create_branch,
@@ -30,13 +22,14 @@ pub use io::{
     spawn_github_open_browser, spawn_github_pr_create, spawn_github_pr_detail_load,
     spawn_github_pr_list_load, spawn_github_pr_merge, spawn_github_repo_labels_load,
 };
-pub use issue::{Issue, IssueListLoadResult, IssueState, ISSUE_LIST_CACHE_SECS};
-pub use labels::{apply_label_picker_load, LabelPickerState, RepoLabelsLoadResult};
-pub use pr::{PrListLoadResult, PullRequest, PR_LIST_CACHE_SECS};
-pub use pr_create::{advance_pr_create_prompt, PrCreatePromptAdvance, PrCreateRequest};
-pub use pr_detail::{PrDetail, PrDetailLoadResult, PrState};
-pub use selection::{
-    ensure_issue_selection, ensure_pr_selection, issue_at_viewport, issue_move_selection,
-    issue_select_row, issue_selected_row_index, pr_at_viewport, pr_move_selection, pr_select_row,
-    pr_selected_row_index, pull_request_is_mergeable, selected_pull_request,
+pub use issue::{Issue, IssueState};
+#[cfg(test)]
+pub use kiwi_core::github::{
+    apply_label_picker_load, browser_target_kind, resolve_browser_target, IssueDetail,
+    LabelPickerState, PrDetail, RepoLabelsLoadResult,
 };
+pub use kiwi_core::github::{
+    issue_at_viewport, issue_selected_row_index, pr_at_viewport, pr_selected_row_index,
+};
+pub use pr::PullRequest;
+pub use pr_detail::PrState;

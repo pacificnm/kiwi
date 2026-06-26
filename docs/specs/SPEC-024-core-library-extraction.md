@@ -43,7 +43,7 @@ Define what moves from the `kiwi` binary crate into `kiwi_core` so TUI and GUI f
    | C9 | `shell`, `agent` (session + IO) | `kiwi::shell`, `kiwi::agent` |
    | C10 | `editor`, `commands` registry | `kiwi::editor`, `kiwi::commands` |
 
-4. **Remain in `kiwi` after extraction:** `ui/`, `layout/`, `navigation/`, `terminal/`, `selection/`, `clipboard/` (TUI integration), `app.rs` TUI loop.
+4. **Remain in `kiwi` after extraction:** `ui/`, `layout/`, `navigation/` (TUI key routing), `terminal/`, `selection/` (TUI hit-testing), `clipboard/` (TUI I/O integration), `app.rs` TUI loop. Domain logic for `navigation`, `editor`, and `commands` lives in `kiwi_core`; `kiwi` keeps thin adapters.
 5. **`kiwi` depends on `kiwi_core`:** `kiwi` re-exports nothing publicly; binary-only.
 6. **`kiwi_gui` depends on `kiwi_core` only** for domain + state; no dependency on `kiwi`.
 7. **Tests:** Domain unit tests move with modules; `kiwi` integration tests remain for TUI.
@@ -64,18 +64,49 @@ kiwi_core/src/
 ├── theme/
 ├── events/
 ├── state/
-├── workspace/
-├── file_tree/
-├── git/
-├── github/
-├── search/
-├── preview/
-├── diff/
-├── shell/
-├── agent/
+├── reducer/
+├── commands/
+├── clipboard/
 ├── editor/
-└── commands/
+├── navigation/
+├── workspace/          # C4 — not yet migrated
+├── file_tree/          # partial (C5)
+├── git/                # partial (C6)
+├── watcher/            # partial (C6)
+├── github/             # partial (C7)
+├── search/             # partial (C8)
+├── preview/            # partial (C8)
+├── diff/               # partial (C8)
+├── shell/              # partial (C9)
+├── agent/              # partial (C9)
+├── settings/
+└── selection/
 ```
+
+## Migration status
+
+Track completion in extraction PRs. Phases may land out of strict table order when shared
+reducer dependencies require an earlier module.
+
+| Phase | Status | Notes |
+|-------|--------|-------|
+| C1 `config` | Done | `kiwi_core::config`; TUI loader/writer remain in `kiwi` |
+| C2 `theme` | Done | Core palette + loader; `kiwi::theme` wraps ratatui `Style` |
+| C3 `events`, `state`, `reducer` | Done ([#177](https://github.com/pacificnm/kiwi/issues/177)) | `AppEvent`, `AppCommand`, domain `AppState`, `ReduceView`, and reducer in core; TUI adapter in `kiwi::state::reducer` + `reducer_tui` |
+| C4 `workspace` | Pending | Snapshot/persistence still in `kiwi::workspace` |
+| C5 `file_tree` | Partial | Core state/invalidation; TUI loader/io in `kiwi` |
+| C6 `git`, `watcher` | Partial | Core panel/selection/patch; TUI `git2` io + notify debounce in `kiwi` |
+| C7 `github` | Partial | Core browser/selection/types; `gh` subprocess io in `kiwi` |
+| C8 `search`, `preview`, `diff` | Partial | Core state/types; TUI io in `kiwi` |
+| C9 `shell`, `agent` | Partial | Core scrollback/session types; PTY runtime in `kiwi` |
+| C10 `editor`, `commands` | Partial | Registry + target resolution in core; TUI launch in `kiwi` |
+
+**C3 acceptance (issue #177):**
+
+- [x] `kiwi_core` publishes `AppEvent`, `AppCommand`, domain `AppState`, and `reduce`
+- [x] TUI `kiwi::state::reducer` delegates to core via `ReduceView`; TUI-only paths (resize, clipboard, selection, theme sync) stay in `reducer_tui`
+- [x] `kiwi_core` clipboard/editor/commands use `ViewportMetrics` / `ReduceView` (no layout rects)
+- [x] `cargo test --workspace` green; `cargo clippy -p kiwi_core -p kiwi -- -D warnings` green
 
 ## Dependency Graph (post-extraction)
 
@@ -91,11 +122,11 @@ kiwi_core → tokio, serde, git2, notify, portable-pty, …
 
 ## Acceptance Criteria
 
-- [ ] `kiwi_core` crate exists and publishes stable `AppState`, `AppEvent`, `AppCommand`
-- [ ] `kiwi` binary behavior unchanged (regression: existing integration tests pass)
+- [x] `kiwi_core` crate exists and publishes stable `AppState`, `AppEvent`, `AppCommand`
+- [x] `kiwi` binary behavior unchanged (regression: existing integration tests pass)
 - [ ] `kiwi_gui` can import config, state, and spawn git service without `kiwi` dependency
-- [ ] `cargo clippy -p kiwi_core` passes with no UI crate in dependency tree
-- [ ] Each phase C1–C10 complete or explicitly deferred with issue link
+- [x] `cargo clippy -p kiwi_core` passes with no UI crate in dependency tree
+- [ ] Each phase C1–C10 complete or explicitly deferred with issue link (see **Migration status**)
 
 ## Notes
 

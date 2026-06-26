@@ -6,9 +6,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::layout::FocusTarget;
-
-use super::state::NavCommand;
-use super::tabs::{LeftNavTab, MainTab};
+use crate::navigation::{LeftNavTab, MainTab, NavCommand};
 
 pub fn map_key(event: KeyEvent, focus: FocusTarget) -> Option<NavCommand> {
     if focus == FocusTarget::Shell {

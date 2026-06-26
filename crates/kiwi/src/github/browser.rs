@@ -1,78 +1,10 @@
 use std::path::Path;
 use std::process::Command;
 
-use crate::navigation::{LeftNavTab, MainTab};
-use crate::state::AppState;
-
-use super::hub::GitHubLeftPane;
 use super::issue::command_on_path;
 use super::IssueActionResult;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GitHubBrowserTarget {
-    Issue(u32),
-    PullRequest(u32),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GitHubBrowserKind {
-    Issue,
-    PullRequest,
-}
-
-impl GitHubBrowserTarget {
-    #[must_use]
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Issue(_) => "issue",
-            Self::PullRequest(_) => "pull request",
-        }
-    }
-
-    #[must_use]
-    pub const fn number(self) -> u32 {
-        match self {
-            Self::Issue(number) | Self::PullRequest(number) => number,
-        }
-    }
-}
-
-pub fn browser_target_kind(state: &AppState) -> GitHubBrowserKind {
-    if state.navigation.main_tab == MainTab::Prs
-        || (state.navigation.left_tab == LeftNavTab::Gh
-            && state.github.left_pane == GitHubLeftPane::Prs)
-    {
-        GitHubBrowserKind::PullRequest
-    } else {
-        GitHubBrowserKind::Issue
-    }
-}
-
-pub fn resolve_browser_target(state: &AppState) -> Option<GitHubBrowserTarget> {
-    if !state.github.auth_ok {
-        return None;
-    }
-
-    match browser_target_kind(state) {
-        GitHubBrowserKind::PullRequest => state
-            .github
-            .selected_pr
-            .and_then(|number| u32::try_from(number).ok())
-            .map(GitHubBrowserTarget::PullRequest),
-        GitHubBrowserKind::Issue => state
-            .github
-            .selected_issue
-            .and_then(|number| u32::try_from(number).ok())
-            .map(GitHubBrowserTarget::Issue),
-    }
-}
-
-pub fn missing_browser_target_message(state: &AppState) -> &'static str {
-    match browser_target_kind(state) {
-        GitHubBrowserKind::PullRequest => "Select a pull request in the GH left list first",
-        GitHubBrowserKind::Issue => "Select an issue in the GH left list first",
-    }
-}
+pub use kiwi_core::github::GitHubBrowserTarget;
 
 pub fn open_in_browser(
     repo_root: &Path,
@@ -144,6 +76,8 @@ mod tests {
     use crate::theme::capabilities::TerminalCapabilities;
     use crate::theme::loader::load_theme_with_capabilities;
 
+    use kiwi_core::github::{browser_target_kind, resolve_browser_target, GitHubBrowserKind};
+
     use super::*;
 
     fn test_state() -> AppState {
@@ -169,7 +103,7 @@ mod tests {
             .navigation
             .apply(NavCommand::SelectMainTab(MainTab::Issues));
 
-        let target = resolve_browser_target(&state).expect("target");
+        let target = resolve_browser_target(&state.navigation, &state.github).expect("target");
         assert_eq!(target, GitHubBrowserTarget::Issue(42));
     }
 
@@ -182,7 +116,7 @@ mod tests {
             .navigation
             .apply(NavCommand::SelectMainTab(MainTab::Prs));
 
-        let target = resolve_browser_target(&state).expect("target");
+        let target = resolve_browser_target(&state.navigation, &state.github).expect("target");
         assert_eq!(target, GitHubBrowserTarget::PullRequest(17));
     }
 
@@ -193,7 +127,10 @@ mod tests {
         state
             .navigation
             .apply(NavCommand::SelectLeftTab(LeftNavTab::Gh));
-        assert_eq!(browser_target_kind(&state), GitHubBrowserKind::PullRequest);
+        assert_eq!(
+            browser_target_kind(&state.navigation, &state.github),
+            GitHubBrowserKind::PullRequest
+        );
     }
 
     #[test]
