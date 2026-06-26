@@ -3,23 +3,21 @@ pub enum LeftNavTab {
     #[default]
     Files,
     Git,
-    Diff,
     Gh,
     Search,
 }
 
 impl LeftNavTab {
     #[cfg_attr(not(test), allow(dead_code))]
-    pub const ALL: [Self; 5] = [Self::Files, Self::Git, Self::Diff, Self::Gh, Self::Search];
+    pub const ALL: [Self; 4] = [Self::Files, Self::Git, Self::Gh, Self::Search];
 
     #[must_use]
     pub const fn index(self) -> usize {
         match self {
             Self::Files => 0,
             Self::Git => 1,
-            Self::Diff => 2,
-            Self::Gh => 3,
-            Self::Search => 4,
+            Self::Gh => 2,
+            Self::Search => 3,
         }
     }
 
@@ -28,7 +26,6 @@ impl LeftNavTab {
         match self {
             Self::Files => "Files",
             Self::Git => "Git",
-            Self::Diff => "Diff",
             Self::Gh => "GH",
             Self::Search => "Search",
         }
@@ -39,9 +36,8 @@ impl LeftNavTab {
         match index {
             0 => Some(Self::Files),
             1 => Some(Self::Git),
-            2 => Some(Self::Diff),
-            3 => Some(Self::Gh),
-            4 => Some(Self::Search),
+            2 => Some(Self::Gh),
+            3 => Some(Self::Search),
             _ => None,
         }
     }
@@ -112,10 +108,9 @@ impl MainTab {
     }
 }
 
-pub const LEFT_TAB_LABELS: [&str; 5] = [
+pub const LEFT_TAB_LABELS: [&str; 4] = [
     LeftNavTab::Files.label(),
     LeftNavTab::Git.label(),
-    LeftNavTab::Diff.label(),
     LeftNavTab::Gh.label(),
     LeftNavTab::Search.label(),
 ];
@@ -137,7 +132,7 @@ mod tests {
     #[test]
     fn left_tabs_match_spec_order() {
         assert_eq!(LeftNavTab::Files.label(), "Files");
-        assert_eq!(LeftNavTab::Search.index(), 4);
+        assert_eq!(LeftNavTab::Search.index(), 3);
     }
 
     #[test]

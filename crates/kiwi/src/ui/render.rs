@@ -81,16 +81,6 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
             &state.theme,
             state,
         );
-    } else {
-        render_pane(
-            frame,
-            state.layout.rects.left_content,
-            state.navigation.left_tab.label(),
-            state.navigation.focus.is_focused(Region::LeftContent),
-            &state.theme,
-            chrome,
-            Some(left_pane_line(state)),
-        );
     }
     if state.navigation.main_tab == MainTab::Agent {
         let agent_title = format!("Agent: {}", state.agent.agent_name);
@@ -186,15 +176,6 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
 
     render_status_bar(frame, state.layout.rects.status_bar, state);
     render_notifications(frame, state.layout.rects.status_bar, state);
-}
-
-fn left_pane_line(state: &AppState) -> Line<'_> {
-    let slot = state.navigation.left_slot();
-    Line::from(format!(
-        "{} view (selection: {})",
-        state.navigation.left_tab.label(),
-        slot.selected_index
-    ))
 }
 
 fn main_pane_line(state: &AppState) -> Line<'_> {

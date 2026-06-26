@@ -22,10 +22,9 @@ Manage left navigation tabs, main workspace tabs, focus routing, and keyboard/mo
 ### Left navigation tabs (order fixed)
 
 1. Files — file tree
-2. Git — git status list
-3. Diff — diff file list
-4. GH — GitHub issue list (navigate; `Enter` opens main Issues detail)
-5. Search — search UI
+2. Git — git status list (changed files; `Enter` opens main Diff tab)
+3. GH — GitHub issue list (navigate; `Enter` opens main Issues detail)
+4. Search — search UI
 
 ### Main workspace tabs (order fixed)
 
@@ -45,7 +44,7 @@ Manage left navigation tabs, main workspace tabs, focus routing, and keyboard/mo
 
 | Key | Action |
 |-----|--------|
-| `Alt+1`–`Alt+5` | Left nav tab |
+| `Alt+1`–`Alt+4` | Left nav tab |
 | `1`–`7` (main focused) | Main tab |
 | `Tab` | Cycle focus: Left → Main → Palette → Shell |
 | `Shift+Tab` | Reverse cycle |
@@ -61,7 +60,7 @@ Mouse: click tab label to activate (SPEC-014).
 ## Data Structures
 
 ```rust
-enum LeftNavTab { Files, Git, Diff, Gh, Search }
+enum LeftNavTab { Files, Git, Gh, Search }
 enum MainTab { Agent, Issues, Branches, Prs, Diff, Preview, Logs }
 enum FocusTarget { Left, Main, CommandPalette, Shell }
 

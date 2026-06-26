@@ -41,7 +41,6 @@ fn left_tab_from_digit(code: KeyCode) -> Option<NavCommand> {
         KeyCode::Char('2') => 1,
         KeyCode::Char('3') => 2,
         KeyCode::Char('4') => 3,
-        KeyCode::Char('5') => 4,
         _ => return None,
     };
     LeftNavTab::from_index(index).map(NavCommand::SelectLeftTab)
@@ -82,7 +81,7 @@ mod tests {
             press_with_modifiers(KeyCode::Char('3'), KeyModifiers::ALT),
             FocusTarget::Main,
         );
-        assert_eq!(cmd, Some(NavCommand::SelectLeftTab(LeftNavTab::Diff)));
+        assert_eq!(cmd, Some(NavCommand::SelectLeftTab(LeftNavTab::Gh)));
     }
 
     #[test]
@@ -90,9 +89,8 @@ mod tests {
         let expected = [
             (KeyCode::Char('1'), LeftNavTab::Files),
             (KeyCode::Char('2'), LeftNavTab::Git),
-            (KeyCode::Char('3'), LeftNavTab::Diff),
-            (KeyCode::Char('4'), LeftNavTab::Gh),
-            (KeyCode::Char('5'), LeftNavTab::Search),
+            (KeyCode::Char('3'), LeftNavTab::Gh),
+            (KeyCode::Char('4'), LeftNavTab::Search),
         ];
 
         for (digit, tab) in expected {

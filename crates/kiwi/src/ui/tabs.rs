@@ -85,7 +85,7 @@ mod tests {
     #[test]
     fn left_tab_labels_match_design() {
         assert_eq!(LEFT_TAB_LABELS[0], LeftNavTab::Files.label());
-        assert_eq!(LEFT_TAB_LABELS[4], LeftNavTab::Search.label());
+        assert_eq!(LEFT_TAB_LABELS[3], LeftNavTab::Search.label());
     }
 
     #[test]

@@ -13,7 +13,7 @@ pub struct NavigationState {
     pub left_tab: LeftNavTab,
     pub main_tab: MainTab,
     pub focus: FocusTarget,
-    left_slots: [TabSlotState; 5],
+    left_slots: [TabSlotState; 4],
     main_slots: [TabSlotState; 7],
 }
 
@@ -23,13 +23,14 @@ impl Default for NavigationState {
             left_tab: LeftNavTab::Files,
             main_tab: MainTab::Agent,
             focus: FocusTarget::Main,
-            left_slots: [TabSlotState::default(); 5],
+            left_slots: [TabSlotState::default(); 4],
             main_slots: [TabSlotState::default(); 7],
         }
     }
 }
 
 impl NavigationState {
+    #[cfg_attr(not(test), allow(dead_code))]
     #[must_use]
     pub fn left_slot(&self) -> &TabSlotState {
         &self.left_slots[self.left_tab.index()]

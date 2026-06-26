@@ -28,7 +28,7 @@ Minimum terminal: **80×24**. Below minimum, show warning; collapse bottom panel
 
 ### Tab bar
 
-Horizontal tabs: **Files | Git | Diff | GH | Search**
+Horizontal tabs: **Files | Git | GH | Search**
 
 - Active tab: accent underline + bold label
 - Inactive: muted foreground
@@ -41,8 +41,7 @@ Scrollable list or tree depending on tab:
 | Tab | Widget |
 |-----|--------|
 | Files | Tree view with indent guides |
-| Git | Flat list grouped by status |
-| Diff | Changed files list |
+| Git | Flat list grouped by status (select → main Diff tab) |
 | GH | Issues/PRs hub + list (Issues now; PR list #59) |
 | Search | Input + results list |
 

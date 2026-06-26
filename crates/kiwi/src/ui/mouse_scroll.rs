@@ -139,7 +139,6 @@ fn left_pane_scrollable(state: &AppState) -> bool {
             state.github.left_pane,
             GitHubLeftPane::Issues | GitHubLeftPane::Prs
         ),
-        LeftNavTab::Diff => false,
     }
 }
 
@@ -173,7 +172,6 @@ fn left_wheel_command(state: &AppState, delta: i32) -> Option<AppCommand> {
             GitHubLeftPane::Issues => Some(AppCommand::GitHubMoveIssueSelection(delta)),
             GitHubLeftPane::Prs => Some(AppCommand::GitHubMovePrSelection(delta)),
         },
-        LeftNavTab::Diff => None,
     }
 }
 
