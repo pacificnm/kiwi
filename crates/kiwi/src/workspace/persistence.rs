@@ -268,6 +268,67 @@ mod tests {
     }
 
     #[test]
+    fn two_repos_have_isolated_palette_history() {
+        let _dir = TempStateDir::new("two-repos");
+        let repo_a = Path::new("/tmp/kiwi-workspace-repo-a");
+        let repo_b = Path::new("/tmp/kiwi-workspace-repo-b");
+        save_palette_history(repo_a, &["git.refresh".to_string()]).expect("save a");
+        save_palette_history(repo_b, &["quit".to_string()]).expect("save b");
+
+        assert_ne!(workspace_file_path(repo_a), workspace_file_path(repo_b));
+        assert_eq!(
+            load_palette_history(repo_a),
+            Some(vec!["git.refresh".to_string()])
+        );
+        assert_eq!(load_palette_history(repo_b), Some(vec!["quit".to_string()]));
+    }
+
+    #[test]
+    fn palette_history_round_trips_through_workspace_restore() {
+        use crate::config::ResolvedConfig;
+        use crate::layout::compute_layout;
+        use crate::state::AppState;
+        use crate::theme::capabilities::TerminalCapabilities;
+        use crate::theme::loader::load_theme_with_capabilities;
+
+        let _dir = TempStateDir::new("palette-restore");
+        let repo = Path::new("/tmp/kiwi-workspace-palette-restore");
+        let mut state = AppState::from_startup(
+            repo.to_path_buf(),
+            false,
+            ResolvedConfig::default(),
+            load_theme_with_capabilities(
+                &ResolvedConfig::default().theme,
+                TerminalCapabilities::TrueColor,
+            )
+            .expect("theme"),
+            compute_layout(120, 40, 30).expect("layout"),
+        );
+        state.palette.history = vec!["git.refresh".to_string(), "quit".to_string()];
+
+        save_workspace_from_state(&state).expect("save");
+
+        let mut restored = AppState::from_startup(
+            repo.to_path_buf(),
+            false,
+            ResolvedConfig::default(),
+            load_theme_with_capabilities(
+                &ResolvedConfig::default().theme,
+                TerminalCapabilities::TrueColor,
+            )
+            .expect("theme"),
+            compute_layout(120, 40, 30).expect("layout"),
+        );
+        let snapshot = try_load_workspace(repo).expect("load snapshot");
+        snapshot.apply_to_app_state(&mut restored);
+
+        assert_eq!(
+            restored.palette.history,
+            vec!["git.refresh".to_string(), "quit".to_string()]
+        );
+    }
+
+    #[test]
     fn load_snapshot_returns_none_for_incompatible_schema() {
         let _dir = TempStateDir::new("incompatible");
         let repo = Path::new("/tmp/kiwi-workspace-incompatible");
