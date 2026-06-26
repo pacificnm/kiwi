@@ -17,6 +17,7 @@ pub mod github;
 pub mod navigation;
 pub mod preview;
 pub mod reducer;
+pub mod repo;
 pub mod search;
 pub mod selection;
 pub mod settings;

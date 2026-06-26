@@ -14,9 +14,14 @@ cargo build --release
 # Run the application (once a repo path is supported)
 cargo run -p kiwi
 
-# Build the desktop GUI (SPEC-021 G0; requires a graphical session to run)
+# Build the desktop GUI (SPEC-021; requires a graphical session to run)
 cargo build -p kiwi_gui
+
+# Open GUI for current directory (loads ~/.config/kiwi/config.toml, .kiwi.toml, --theme/--config)
 cargo run -p kiwi_gui -- .
+
+# Example with theme override (same merge order as the TUI; SPEC-018)
+cargo run -p kiwi_gui -- --theme dracula /path/to/repo
 
 # Run all workspace tests
 cargo test --workspace
