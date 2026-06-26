@@ -7,6 +7,7 @@ use crate::layout::{FocusTarget, LayoutRects};
 use crate::navigation::{LeftNavTab, MainTab, NavCommand, LEFT_TAB_LABELS, MAIN_TAB_LABELS};
 use crate::state::AppState;
 
+use super::agent::agent_scrollback_area;
 use super::tabs::tab_index_at_x;
 
 pub fn map_mouse_click(state: &AppState, column: u16, row: u16) -> Vec<NavCommand> {
@@ -14,12 +15,19 @@ pub fn map_mouse_click(state: &AppState, column: u16, row: u16) -> Vec<NavComman
         return Vec::new();
     }
 
-    map_mouse_click_in_layout(&state.layout.rects, state.navigation.main_tab, column, row)
+    map_mouse_click_in_layout(
+        &state.layout.rects,
+        state.navigation.main_tab,
+        agent_scrollback_area(state),
+        column,
+        row,
+    )
 }
 
 pub fn map_mouse_click_in_layout(
     rects: &LayoutRects,
     main_tab: MainTab,
+    agent_scrollback: Rect,
     column: u16,
     row: u16,
 ) -> Vec<NavCommand> {
@@ -32,8 +40,14 @@ pub fn map_mouse_click_in_layout(
         return vec![command, NavCommand::SetFocus(focus)];
     }
 
+    let main_pane = if main_tab == MainTab::Agent {
+        agent_scrollback
+    } else {
+        rects.main_content
+    };
+
     if matches!(main_tab, MainTab::Agent | MainTab::Diff | MainTab::Preview)
-        && point_in_rect(column, row, rects.main_content)
+        && point_in_rect(column, row, main_pane)
     {
         return vec![NavCommand::SetFocus(FocusTarget::Main)];
     }
@@ -151,10 +165,28 @@ mod tests {
     fn click_on_agent_pane_focuses_main() {
         let mut state = test_state();
         state.navigation.main_tab = MainTab::Agent;
-        let rects = state.layout.rects;
+        let pane = agent_scrollback_area(&state);
         assert_eq!(
-            map_mouse_click(&state, rects.main_content.x + 2, rects.main_content.y + 2),
+            map_mouse_click(&state, pane.x + 2, pane.y + 2),
             vec![NavCommand::SetFocus(FocusTarget::Main)]
+        );
+    }
+
+    #[test]
+    fn click_on_agent_subtab_row_does_not_focus_main() {
+        let mut state = test_state();
+        state.navigation.main_tab = MainTab::Agent;
+        state
+            .agent_manager
+            .create_agent(Some("second".to_string()), None)
+            .expect("create");
+        let layout = super::super::agent::split_agent_main_content(
+            state.layout.rects.main_content,
+            true,
+        );
+        assert_eq!(
+            map_mouse_click(&state, layout.subtabs.x + 2, layout.subtabs.y),
+            Vec::<NavCommand>::new()
         );
     }
 

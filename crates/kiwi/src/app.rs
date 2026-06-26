@@ -42,7 +42,8 @@ use crate::state::{
 };
 use crate::ui::{
     branch_interaction_at, draw_frame, file_tree_interaction_at, git_interaction_at,
-    github_issue_interaction_at, github_pr_interaction_at, map_mouse_click, map_mouse_wheel,
+    github_issue_interaction_at, github_pr_interaction_at, map_agent_session_click,
+    map_mouse_click, map_mouse_wheel,
     mouse_interactions_enabled, palette_match_at, search_interaction_at, DoubleClickTarget,
     DoubleClickTracker, FileTreeMouseAction, WheelDirection,
 };
@@ -927,6 +928,10 @@ impl App {
             }
         }
 
+        if let Some(command) = map_agent_session_click(&self.state, mouse.column, mouse.row) {
+            return self.dispatch(AppEvent::Command(command));
+        }
+
         for command in map_mouse_click(&self.state, mouse.column, mouse.row) {
             if self.dispatch(AppEvent::Command(AppCommand::Navigation(command))) {
                 return true;
@@ -979,6 +984,10 @@ impl App {
 
         if self.is_agent_new_key(key) {
             return self.dispatch(AppEvent::Command(AppCommand::AgentNew));
+        }
+
+        if self.is_agent_cycle_prev_key(key) {
+            return self.dispatch(AppEvent::Command(AppCommand::AgentCyclePrev));
         }
 
         if self.is_agent_cycle_key(key) {
@@ -1545,6 +1554,13 @@ impl App {
         self.state.navigation.main_tab == MainTab::Agent
             && key.modifiers.contains(KeyModifiers::CONTROL)
             && !key.modifiers.contains(KeyModifiers::SHIFT)
+            && matches!(key.code, KeyCode::Tab)
+    }
+
+    fn is_agent_cycle_prev_key(&self, key: crossterm::event::KeyEvent) -> bool {
+        self.state.navigation.main_tab == MainTab::Agent
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && key.modifiers.contains(KeyModifiers::SHIFT)
             && matches!(key.code, KeyCode::Tab)
     }
 
