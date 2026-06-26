@@ -26,6 +26,10 @@ Specifications define behavioral contracts for Kiwi components. Each SPEC is imp
 | [SPEC-018](./SPEC-018-configuration-loader.md) | Configuration Loader | M1 | ADR-005 |
 | [SPEC-019](./SPEC-019-status-bar.md) | Status Bar | M1 | ADR-003 |
 | [SPEC-020](./SPEC-020-plugin-framework.md) | Plugin Framework | M7 | ADR-018 |
+| [SPEC-021](./SPEC-021-gui-application-lifecycle.md) | GUI Application Lifecycle | M8 | ADR-020, ADR-021 |
+| [SPEC-022](./SPEC-022-gui-dock-layout-engine.md) | GUI Dock Layout Engine | M8 | ADR-022 |
+| [SPEC-023](./SPEC-023-gui-theme-bridge.md) | GUI Theme Bridge | M8 | ADR-004, ADR-021 |
+| [SPEC-024](./SPEC-024-core-library-extraction.md) | Core Library Extraction | M8 (prereq) | ADR-020 |
 
 ## Specification Template
 
@@ -57,6 +61,8 @@ SPEC-018 Config → SPEC-001 Startup → SPEC-016 State
                        SPEC-009 GitHub
                               ↓
                   SPEC-017 Persistence, SPEC-020 Plugins
+                              ↓
+              SPEC-024 Core Extraction → SPEC-021–023 GUI
 ```
 
 ## Verification

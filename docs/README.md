@@ -1,6 +1,6 @@
 # Kiwi Documentation
 
-Kiwi is a Rust-based, terminal-native AI development workspace. It orchestrates AI agents, shells, Git, GitHub, file navigation, search, diff review, and external editors from a single TUI—without replacing the user's editor of choice.
+Kiwi is a Rust-based development workspace available as a **terminal TUI** and a **desktop GUI**. It orchestrates AI agents, shells, Git, GitHub, file navigation, search, diff review, and external editors—without replacing the user's editor of choice.
 
 This documentation package expands the [project initiation plan](../plan.md) into actionable artifacts for implementation.
 
@@ -18,17 +18,19 @@ This documentation package expands the [project initiation plan](../plan.md) int
 ## Core Principles
 
 1. **Orchestrator first, editor second** — Kiwi coordinates tools; it does not replace editors.
-2. **Terminal-native** — Full development workflows stay inside the terminal.
-3. **Incremental, flicker-free updates** — Internal state updates preserve scroll, selection, and focus.
-4. **Event-driven Git** — File watcher + debounce; no polling for repository status.
-5. **Editor-agnostic** — Launch external editors via config, `$VISUAL`, `$EDITOR`, or `nano` fallback.
-6. **GitHub via `gh`** — Initial integration uses the GitHub CLI; GraphQL evaluation is deferred.
+2. **Terminal-native TUI** — Full development workflows stay inside the terminal via `kiwi`.
+3. **Optional desktop GUI** — IDE-like dockable panels via `kiwi-gui` (ADR-020).
+4. **Incremental, flicker-free updates** — Internal state updates preserve scroll, selection, and focus.
+5. **Event-driven Git** — File watcher + debounce; no polling for repository status.
+6. **Editor-agnostic** — Launch external editors via config, `$VISUAL`, `$EDITOR`, or `nano` fallback.
+7. **GitHub via `gh`** — Initial integration uses the GitHub CLI; GraphQL evaluation is deferred.
 
 ## Recommended Technology Stack
 
 | Layer | Crates |
 |-------|--------|
 | TUI | `ratatui`, `crossterm` |
+| Desktop GUI | `egui`, `eframe`, `egui_dock` |
 | Async runtime | `tokio` |
 | PTY | `portable-pty` |
 | File watching | `notify` |

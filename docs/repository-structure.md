@@ -16,8 +16,9 @@ kiwi/
 ├── assets/
 │   └── themes/                # Bundled theme TOML files
 ├── crates/
-│   ├── kiwi/                  # Main application binary
-│   ├── kiwi_core/             # Shared types, events, config
+│   ├── kiwi/                  # TUI application binary
+│   ├── kiwi_core/             # Shared types, events, config, services
+│   ├── kiwi_gui/              # Desktop GUI binary (egui/eframe)
 │   ├── kiwi_plugin_api/       # Stable plugin interface (M7)
 │   └── kiwi_tui/              # Widgets and layout (optional split)
 ├── tests/
@@ -32,7 +33,7 @@ kiwi/
 
 ### `kiwi` (binary)
 
-Main entry point and application loop.
+TUI entry point and ratatui application loop. Default `kiwi` command.
 
 ```text
 crates/kiwi/
@@ -46,7 +47,7 @@ crates/kiwi/
 
 ### `kiwi_core` (library)
 
-Domain-agnostic types shared across UI and services.
+Domain-agnostic types and services shared by TUI and GUI. **No ratatui, crossterm, egui, or eframe dependencies.** See SPEC-024.
 
 ```text
 crates/kiwi_core/
@@ -71,6 +72,40 @@ crates/kiwi_core/
         ├── mod.rs
         ├── palette.rs         # SPEC-003
         └── roles.rs
+```
+
+### `kiwi_gui` (binary)
+
+Desktop GUI entry point using eframe and egui_dock. See SPEC-021–023 and ADR-020–022.
+
+```text
+crates/kiwi_gui/
+├── Cargo.toml
+└── src/
+    ├── main.rs                # CLI, eframe bootstrap
+    ├── app.rs                 # KiwiApp: update loop, event drain
+    ├── bootstrap.rs           # Config, services, persistence
+    ├── dock/
+    │   ├── mod.rs
+    │   ├── state.rs           # KiwiTab, DockState
+    │   └── registry.rs        # PanelRegistry
+    ├── panels/
+    │   ├── mod.rs
+    │   ├── explorer.rs
+    │   ├── git_status.rs
+    │   ├── diff.rs
+    │   ├── github.rs
+    │   ├── terminal.rs
+    │   ├── agent.rs
+    │   ├── preview.rs
+    │   ├── search.rs
+    │   └── logs.rs
+    ├── chrome/
+    │   ├── menu_bar.rs
+    │   ├── status_bar.rs
+    │   └── command_palette.rs
+    └── theme/
+        └── bridge.rs          # SPEC-023
 ```
 
 ### `kiwi_tui` (library, optional for M1)
@@ -210,8 +245,9 @@ PTY integration tests may use `portable-pty` with scripted child or mock PTY for
 ## Dependency Graph (Crates)
 
 ```text
-kiwi → kiwi_core, kiwi_tui (optional)
-kiwi_tui → kiwi_core, ratatui, crossterm
+kiwi      → kiwi_core, ratatui, crossterm
+kiwi_gui  → kiwi_core, egui, eframe, egui_dock
+kiwi_tui  → kiwi_core, ratatui, crossterm
 kiwi_plugin_api → (minimal, no kiwi dep)
 plugins → kiwi_plugin_api
 ```
@@ -223,6 +259,8 @@ plugins → kiwi_plugin_api
 3. `kiwi_core::config` + `events` + `state`
 4. Add `kiwi_tui` or `kiwi/ui` when widgets multiply
 5. `kiwi_plugin_api` stub in M1 (empty trait); implement M7
+6. `kiwi_core` extraction from `kiwi` per SPEC-024 (M8 prerequisite)
+7. `kiwi_gui` scaffold per SPEC-021 (M8)
 
 ## Related
 

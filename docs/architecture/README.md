@@ -1,12 +1,14 @@
 # Architecture
 
-Kiwi is a single-process Rust application with an event-driven core, a ratatui rendering loop, and async service tasks for I/O-bound work (PTY, file watching, Git, GitHub CLI).
+Kiwi is a single-process Rust application with an event-driven core, async service tasks for I/O-bound work (PTY, file watching, Git, GitHub CLI), and **two presentation frontends**: a ratatui TUI (`kiwi`) and an egui/eframe desktop GUI (`kiwi-gui`). See ADR-020.
 
 ## System Overview
 
+### TUI process (`kiwi`)
+
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
-│                         Kiwi Process                             │
+│                         Kiwi Process (TUI)                       │
 ├─────────────────────────────────────────────────────────────────┤
 │  App (main loop)                                                 │
 │    ├── Event Bus / Message Router                                │
@@ -32,11 +34,30 @@ Kiwi is a single-process Rust application with an event-driven core, a ratatui r
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+### Desktop GUI process (`kiwi-gui`)
+
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│                      Kiwi Process (GUI)                          │
+├─────────────────────────────────────────────────────────────────┤
+│  eframe App::update (main thread)                                │
+│    ├── Drain AppEvent channel                                    │
+│    ├── Reducers → AppState                                       │
+│    ├── Menu bar + egui_dock (KiwiTab panels)                     │
+│    └── Status bar                                                │
+├─────────────────────────────────────────────────────────────────┤
+│  kiwi_core services (same as TUI)                                │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+Target crate split: `kiwi_core` holds shared services and state; `kiwi` and `kiwi_gui` are thin frontends (SPEC-024).
+
 ## Architectural Layers
 
 | Layer | Responsibility | Key ADRs |
 |-------|----------------|----------|
-| Presentation | TUI layout, themes, mouse, keyboard, clipboard | ADR-002, ADR-003, ADR-004, ADR-015, ADR-019 |
+| Presentation (TUI) | ratatui layout, crossterm input, TUI mouse/clipboard | ADR-002, ADR-003, ADR-015, ADR-019 |
+| Presentation (GUI) | eframe shell, egui_dock, GUI panels, theme bridge | ADR-020, ADR-021, ADR-022 |
 | Application | Navigation, command palette, state | ADR-007, ADR-014, ADR-016 |
 | Domain services | Git, GitHub, files, search, agents | ADR-008–ADR-012, ADR-017 |
 | Infrastructure | Config, PTY, file watcher, plugins | ADR-005, ADR-006, ADR-011, ADR-018 |
@@ -79,3 +100,5 @@ Behavioral contracts live in [../specs/](../specs/README.md). Each SPEC maps to 
 | Single vs multi-threaded render thread | Deferred; start with main-thread render | M1 |
 | `gh` JSON schema versioning | Pin to minimum `gh` version in docs | M5 |
 | Plugin sandbox model | Documented in ADR-018; implementation in M7 | M7 |
+| `kiwi_core` extraction timeline | SPEC-024 phases C1–C10; blocks GUI service wiring | M8 |
+| GUI PTY surface crate | Spike in M8.3; wezterm-term vs custom ANSI | M8 |

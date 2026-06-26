@@ -13,6 +13,7 @@ Seven milestones from project initiation through advanced features. MVP = Milest
 | M5 | GitHub Integration | Issues, PRs, branch workflows | M1, M4 |
 | M6 | Workspace Features | Persistence, sessions, theme packs | M1, M3 |
 | M7 | Advanced Features | Multi-agent, plugins, performance | MVP |
+| M8 | Desktop GUI | egui/eframe frontend with dockable panels | M1, SPEC-024 C1–C4 |
 
 ---
 
@@ -224,6 +225,41 @@ SPEC-020 Phase 1; multi-agent manual test checklist.
 
 ---
 
+## Milestone 8: Desktop GUI
+
+**Goal:** Ship `kiwi-gui` as a second frontend with dockable IDE-like panels, sharing `kiwi_core` with the TUI.
+
+### Epics
+
+1. **Core extraction** — SPEC-024 (prerequisite)
+2. **GUI scaffold** — SPEC-021 lifecycle, eframe window
+3. **Dock shell** — SPEC-022 egui_dock, `KiwiTab` panels
+4. **Theme bridge** — SPEC-023 semantic roles → egui
+5. **Panel parity** — Wire Explorer, Git, Terminal, Agent, GitHub, Search
+6. **GUI persistence** — Dock layout + window geometry in workspace JSON
+
+### User Stories
+
+- As a developer, I run `kiwi-gui .` and get a native window with Explorer, Agent, and Terminal panels.
+- As a developer, I drag tabs to rearrange my layout and Kiwi restores it on next launch.
+- As a developer, I use the same config and themes as the TUI.
+- As a developer, I keep using `kiwi` in the terminal unchanged.
+
+### Deliverables
+
+- `kiwi_gui` workspace crate and `kiwi-gui` binary
+- `kiwi_core` library with shared services
+- Default egui_dock layout per [gui-layout.md](../design/gui-layout.md)
+- Implementation plan: [gui-implementation-plan.md](../design/gui-implementation-plan.md)
+
+### Acceptance
+
+SPEC-021, SPEC-022, SPEC-023 acceptance criteria; M5 feature parity achievable through GUI panels (incremental per SPEC-022 panel order).
+
+**Note:** M8 can start scaffolding (G0–G2) once SPEC-024 phases C1–C4 land; full service wiring follows core extraction.
+
+---
+
 ## MVP Definition
 
 **Minimum Viable Product** = Milestones 1–5.
@@ -248,3 +284,4 @@ All without leaving Kiwi.
 - LSP preview / syntax highlighting
 - jj (Jujutsu) support via plugin
 - Team sync for workspace state
+- GUI floating panels; `kiwi --gui` dispatch from TUI binary

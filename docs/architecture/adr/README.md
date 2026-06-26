@@ -25,6 +25,9 @@ Architecture Decision Records (ADRs) document significant technical and product 
 | [ADR-017](./ADR-017-multi-agent-future-design.md) | Multi-Agent Future Design | Accepted |
 | [ADR-018](./ADR-018-plugin-architecture.md) | Plugin Architecture | Accepted |
 | [ADR-019](./ADR-019-system-clipboard-integration.md) | System Clipboard Integration | Accepted |
+| [ADR-020](./ADR-020-dual-frontend-architecture.md) | Dual Frontend Architecture | Accepted |
+| [ADR-021](./ADR-021-desktop-gui-framework-selection.md) | Desktop GUI Framework Selection | Accepted |
+| [ADR-022](./ADR-022-gui-dock-layout-architecture.md) | GUI Dock Layout Architecture | Accepted |
 
 ## ADR Template
 
@@ -45,3 +48,4 @@ Each ADR follows this structure:
 3. ADR-005, ADR-007 — Config and state
 4. ADR-006 — PTY for shell and agent
 5. Domain ADRs (008–016, 019) as needed for your milestone
+6. ADR-020–022 — Desktop GUI (post-MVP)
