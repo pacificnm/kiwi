@@ -758,6 +758,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "kiwi_plugin_hello"
+version = "0.1.0"
+dependencies = [
+ "kiwi_plugin_api",
+]
+
+[[package]]
 name = "kiwi_plugin_loader"
 version = "0.1.0"
 dependencies = [

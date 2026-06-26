@@ -126,8 +126,8 @@ Helpers: [`api_version_compatible`], [`kiwi_version_compatible`].
 ## Host integration (Kiwi core)
 
 Kiwi implements [`PluginRegistrar`] to collect [`PluginCommand`] values during load.
-Discovery, dynamic loading, and palette wiring are implemented in follow-up issues
-(#69, #70).
+Discovery, dynamic loading, and palette wiring live in the main `kiwi` crate. See the
+reference plugin at `plugins/kiwi_plugin_hello/`.
 
 [`KiwiPlugin`]: https://docs.rs/kiwi_plugin_api/latest/kiwi_plugin_api/trait.KiwiPlugin.html
 [`kiwi_plugin_init`]: https://docs.rs/kiwi_plugin_api/latest/kiwi_plugin_api/constant.PLUGIN_INIT_SYMBOL.html

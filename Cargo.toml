@@ -1,6 +1,11 @@
 [workspace]
 resolver = "2"
-members = ["crates/kiwi", "crates/kiwi_plugin_api", "crates/kiwi_plugin_loader"]
+members = [
+    "crates/kiwi",
+    "crates/kiwi_plugin_api",
+    "crates/kiwi_plugin_loader",
+    "plugins/kiwi_plugin_hello",
+]
 
 [workspace.package]
 version = "0.1.0"
