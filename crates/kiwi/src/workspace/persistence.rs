@@ -7,13 +7,46 @@ use std::path::{Path, PathBuf};
 use super::snapshot::{trim_history, WorkspaceSnapshot, WORKSPACE_SCHEMA_VERSION};
 
 pub fn load_snapshot(repo_root: &Path) -> Option<WorkspaceSnapshot> {
+    load_workspace_snapshot(repo_root, false)
+}
+
+/// Load workspace snapshot for startup (SPEC-017). Logs warnings on corrupt or incompatible files.
+pub fn try_load_workspace(repo_root: &Path) -> Option<WorkspaceSnapshot> {
+    load_workspace_snapshot(repo_root, true)
+}
+
+fn load_workspace_snapshot(repo_root: &Path, log_errors: bool) -> Option<WorkspaceSnapshot> {
     let path = workspace_file_path(repo_root);
-    let contents = fs::read_to_string(path).ok()?;
-    let snapshot: WorkspaceSnapshot = serde_json::from_str(&contents).ok()?;
-    if !snapshot.is_compatible() {
-        return None;
+    let contents = match fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(err) => {
+            if log_errors {
+                eprintln!("workspace: failed to read {}: {err}", path.display());
+            }
+            return None;
+        }
+    };
+
+    match serde_json::from_str::<WorkspaceSnapshot>(&contents) {
+        Ok(snapshot) if snapshot.is_compatible() => Some(snapshot),
+        Ok(snapshot) => {
+            if log_errors {
+                eprintln!(
+                    "workspace: unsupported schema version {} in {}",
+                    snapshot.schema_version,
+                    path.display()
+                );
+            }
+            None
+        }
+        Err(err) => {
+            if log_errors {
+                eprintln!("workspace: corrupt snapshot at {}: {err}", path.display());
+            }
+            None
+        }
     }
-    Some(snapshot)
 }
 
 pub fn save_snapshot(repo_root: &Path, snapshot: &WorkspaceSnapshot) -> std::io::Result<()> {

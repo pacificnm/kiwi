@@ -28,7 +28,7 @@ use crate::github::{
     spawn_github_open_browser, spawn_github_pr_create, spawn_github_pr_detail_load,
     spawn_github_pr_list_load, spawn_github_repo_labels_load,
 };
-use crate::layout::{agent_pty_size, shell_pty_size, FocusTarget, Region};
+use crate::layout::{agent_pty_size, compute_layout, shell_pty_size, FocusTarget, Region};
 use crate::navigation::{map_key, LeftNavTab, MainTab, NavCommand};
 use crate::preview::spawn_preview_load;
 use crate::search::{spawn_search, DebounceTimer, SearchCancelHandle, SearchJob, SearchMode};
@@ -36,8 +36,8 @@ use crate::selection::{hit_test_text, SelectionPane};
 use crate::shell::{encode_key, ShellOutputReader, ShellSession};
 use crate::shutdown;
 use crate::state::{
-    agent_spawn_effects_if_needed, file_tree_startup_effects, reduce, AppCommand, AppEvent,
-    AppState, EventChannel, SideEffect,
+    agent_spawn_effects_if_needed, file_tree_startup_effects, reduce, workspace_restore_effects,
+    AppCommand, AppEvent, AppState, EventChannel, SideEffect,
 };
 use crate::ui::{
     branch_interaction_at, draw_frame, file_tree_interaction_at, git_interaction_at,
@@ -46,7 +46,7 @@ use crate::ui::{
     DoubleClickTracker, FileTreeMouseAction, WheelDirection,
 };
 use crate::watcher::RepoWatcher;
-use crate::workspace::{load_palette_history, save_palette_history};
+use crate::workspace::{save_palette_history, try_load_workspace};
 
 const SHELL_FORCE_QUIT_WINDOW: Duration = Duration::from_millis(500);
 const PTY_CURSOR_BLINK_INTERVAL: Duration = Duration::from_millis(530);
@@ -90,8 +90,12 @@ impl App {
         let mut state =
             AppState::from_startup(repo_root.clone(), is_git_repo, config, theme, layout);
         if state.config.workspace.persist {
-            if let Some(history) = load_palette_history(&repo_root) {
-                state.palette.history = history;
+            if let Some(snapshot) = try_load_workspace(&repo_root) {
+                snapshot.apply_to_app_state(&mut state);
+                let (width, height) = state.layout.terminal_size;
+                if let Ok(updated) = compute_layout(width, height, state.config.app.left_width) {
+                    state.layout = updated;
+                }
             }
         }
         let events = EventChannel::new();
@@ -150,6 +154,8 @@ impl App {
         app.execute_effects(spawn_effects);
         let file_tree_effects = file_tree_startup_effects(&mut app.state);
         app.execute_effects(file_tree_effects);
+        let workspace_effects = workspace_restore_effects(&mut app.state);
+        app.execute_effects(workspace_effects);
         if let Some(err) = watcher_error {
             app.state.logs.push_info(format!(
                 "File watcher disabled: {err}. Use Git: Refresh Status or R in the Git tab."
