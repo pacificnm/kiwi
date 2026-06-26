@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-pub use kiwi_core::config::{load_config as load_config_with_options};
+pub use kiwi_core::config::load_config as load_config_with_options;
 pub use kiwi_core::config::{
     persist_user_theme, project_has_theme_override, AgentSettings, ConfigError, ConfigLoadOptions,
     EditorSettings, MouseMode, MouseSettings, PluginsSettings, ResolvedConfig, ShellSettings,

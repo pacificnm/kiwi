@@ -9,12 +9,12 @@ Integrate GitHub Issues and Pull Requests via `gh` CLI for list, view, and commo
 ### In scope
 
 - Issue list/view/search/comment/label/assign/create branch
-- PR list/view/create/review/open browser
+- PR list/view/create/merge/review/open browser
 - JSON parsing from `gh`
 
 ### Out of scope
 
-- Merge via UI (use shell `gh pr merge`)
+- Merge method picker (squash/rebase vs merge commit) in v1
 - GitHub Enterprise custom hosts (document `GH_HOST` env passthrough)
 
 ## Functional Requirements
@@ -34,8 +34,11 @@ Integrate GitHub Issues and Pull Requests via `gh` CLI for list, view, and commo
 1. List PRs: number, title, state (open/draft/merged/closed), author.
 2. View PR: description, commits summary, checks status if available.
 3. Create PR: guided prompts → `gh pr create`.
-4. Review: comment via `gh pr review --comment`.
-5. Open in browser: `gh pr view --web` / `gh issue view --web`.
+4. Merge PR: `gh pr merge <n> --merge` on selected open, non-draft PR via command palette (`github.pr.merge`) or PR context menu (**Merge into main**).
+5. Review: comment via `gh pr review --comment`.
+6. Open in browser: `gh pr view --web` / `gh issue view --web`.
+
+Merge failures (branch protection, failing checks, conflicts) surface `gh` stderr in a toast/status message. Successful merge refreshes the PR list.
 
 ### Auth
 
@@ -85,6 +88,7 @@ AppCommand::GitHubRefreshPrs
 AppCommand::GitHubComment { issue: u32, body: String }
 AppCommand::GitHubCreateBranch(u32)
 AppCommand::GitHubCreatePr { title, body, base }
+AppCommand::GitHubMergePr(u32)
 AppCommand::GitHubOpenBrowser { target }
 ```
 
@@ -103,6 +107,7 @@ command = "gh"
 | Not authenticated | Auth setup panel |
 | API rate limit | Show message; backoff |
 | Not a github remote | Warn when detecting origin |
+| Merge blocked | Toast with `gh` error message |
 
 ## Acceptance Criteria
 
@@ -110,5 +115,7 @@ command = "gh"
 - [ ] Issue detail shows body
 - [ ] PR list shows open PRs with state colors
 - [ ] Create branch from issue works
+- [ ] Merge PR command and context menu merge selected open PR via `gh`
+- [ ] Merge unavailable for draft/merged/closed PRs
 - [ ] Browser open command works
 - [ ] Colors match theme PR/issue roles

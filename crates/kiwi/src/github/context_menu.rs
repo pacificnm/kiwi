@@ -4,6 +4,7 @@ pub enum GhContextMenuAction {
     CreateBranch,
     Comment,
     AddLabels,
+    Merge,
     OpenInBrowser,
     SendToAgent,
 }
@@ -16,6 +17,7 @@ impl GhContextMenuAction {
             Self::CreateBranch => "Create Branch",
             Self::Comment => "Comment",
             Self::AddLabels => "Add Labels",
+            Self::Merge => "Merge into main",
             Self::OpenInBrowser => "Open in Browser",
             Self::SendToAgent => "Send To Agent",
         }
@@ -39,7 +41,12 @@ pub struct GhContextMenuState {
 
 impl GhContextMenuState {
     #[must_use]
-    pub fn new(target: GhContextTarget, anchor_x: u16, anchor_y: u16) -> Self {
+    pub fn new(
+        target: GhContextTarget,
+        anchor_x: u16,
+        anchor_y: u16,
+        merge_available: bool,
+    ) -> Self {
         let items = match target {
             GhContextTarget::Issue { .. } => vec![
                 GhContextMenuAction::View,
@@ -49,11 +56,15 @@ impl GhContextMenuState {
                 GhContextMenuAction::OpenInBrowser,
                 GhContextMenuAction::SendToAgent,
             ],
-            GhContextTarget::PullRequest { .. } => vec![
-                GhContextMenuAction::View,
-                GhContextMenuAction::OpenInBrowser,
-                GhContextMenuAction::SendToAgent,
-            ],
+            GhContextTarget::PullRequest { .. } => {
+                let mut items = vec![GhContextMenuAction::View];
+                if merge_available {
+                    items.push(GhContextMenuAction::Merge);
+                }
+                items.push(GhContextMenuAction::OpenInBrowser);
+                items.push(GhContextMenuAction::SendToAgent);
+                items
+            }
         };
 
         Self {
@@ -122,7 +133,7 @@ mod tests {
 
     #[test]
     fn issue_menu_includes_github_actions() {
-        let menu = GhContextMenuState::new(GhContextTarget::Issue { list_index: 0 }, 10, 5);
+        let menu = GhContextMenuState::new(GhContextTarget::Issue { list_index: 0 }, 10, 5, false);
         assert_eq!(menu.items.len(), 6);
         assert!(menu.items.contains(&GhContextMenuAction::CreateBranch));
         assert!(menu.items.contains(&GhContextMenuAction::Comment));
@@ -131,9 +142,20 @@ mod tests {
     }
 
     #[test]
-    fn pr_menu_includes_open_in_browser_only() {
-        let menu = GhContextMenuState::new(GhContextTarget::PullRequest { list_index: 0 }, 10, 5);
+    fn pr_menu_includes_merge_when_available() {
+        let menu =
+            GhContextMenuState::new(GhContextTarget::PullRequest { list_index: 0 }, 10, 5, true);
+        assert_eq!(menu.items.len(), 4);
+        assert!(menu.items.contains(&GhContextMenuAction::Merge));
+        assert!(menu.items.contains(&GhContextMenuAction::OpenInBrowser));
+    }
+
+    #[test]
+    fn pr_menu_omits_merge_when_unavailable() {
+        let menu =
+            GhContextMenuState::new(GhContextTarget::PullRequest { list_index: 0 }, 10, 5, false);
         assert_eq!(menu.items.len(), 3);
+        assert!(!menu.items.contains(&GhContextMenuAction::Merge));
         assert!(!menu.items.contains(&GhContextMenuAction::CreateBranch));
         assert!(!menu.items.contains(&GhContextMenuAction::Comment));
         assert!(menu.items.contains(&GhContextMenuAction::OpenInBrowser));

@@ -103,6 +103,13 @@ pub const COMMANDS: &[CommandDef] = &[
         action: PaletteAction::GitHubPrCreatePrompt,
     },
     CommandDef {
+        id: "github.pr.merge",
+        title: "GitHub: Merge Pull Request",
+        shortcut: None,
+        context: CommandContext::RequiresGitRepo,
+        action: PaletteAction::GitHubPrMerge,
+    },
+    CommandDef {
         id: "agent.restart",
         title: "Agent: Restart",
         shortcut: Some("Ctrl+Shift+R"),
@@ -391,6 +398,7 @@ mod tests {
             "github.issue.branch",
             "github.open.browser",
             "github.pr.create",
+            "github.pr.merge",
             "editor.open",
             "agent.restart",
             "focus.left",

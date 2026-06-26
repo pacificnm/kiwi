@@ -16,10 +16,10 @@ use crate::github::{
     advance_pr_create_prompt, apply_label_picker_load, ensure_issue_selection, ensure_pr_selection,
     format_issue_agent_prompt, format_pr_agent_prompt, issue_move_selection, issue_select_row,
     missing_browser_target_message, page_scroll_issue_detail, pr_move_selection, pr_select_row,
-    resolve_browser_target, scroll_issue_detail, GhContextMenuAction, GhContextMenuState,
-    GhContextTarget, GitHubLeftPane, IssueDetailLoadResult, IssueListLoadResult, LabelPickerState,
-    PrCreatePromptAdvance, PrDetailLoadResult, PrListLoadResult, ISSUE_LIST_CACHE_SECS,
-    PR_LIST_CACHE_SECS,
+    pull_request_is_mergeable, resolve_browser_target, scroll_issue_detail, selected_pull_request,
+    GhContextMenuAction, GhContextMenuState, GhContextTarget, GitHubLeftPane,
+    IssueDetailLoadResult, IssueListLoadResult, LabelPickerState, PrCreatePromptAdvance,
+    PrDetailLoadResult, PrListLoadResult, ISSUE_LIST_CACHE_SECS, PR_LIST_CACHE_SECS,
 };
 use crate::layout::{agent_pty_size, compute_layout, shell_pty_size, FocusTarget};
 use crate::navigation::{LeftNavTab, MainTab, NavCommand};
@@ -105,6 +105,9 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
         }
         AppEvent::GitHubPrCreateCompleted { result } => {
             reduce_github_pr_create_completed(state, result)
+        }
+        AppEvent::GitHubPrMergeCompleted { number, result } => {
+            reduce_github_pr_merge_completed(state, number, result)
         }
         AppEvent::BranchListLoaded { entries, error } => {
             reduce_branch_list_loaded(state, entries, error)
@@ -1125,7 +1128,17 @@ fn reduce_github_context_menu_open(
         }
     };
 
-    state.github.context_menu = Some(GhContextMenuState::new(target, anchor_x, anchor_y));
+    state.github.context_menu = Some(GhContextMenuState::new(
+        target,
+        anchor_x,
+        anchor_y,
+        match target {
+            GhContextTarget::PullRequest { .. } => {
+                selected_pull_request(&state.github).is_some_and(pull_request_is_mergeable)
+            }
+            GhContextTarget::Issue { .. } => false,
+        },
+    ));
     state.dirty = true;
     effects
 }
@@ -1176,6 +1189,7 @@ fn reduce_github_context_menu_execute(state: &mut AppState) -> Vec<SideEffect> {
         }
         GhContextMenuAction::Comment => github_issue_comment_prompt_effects(state),
         GhContextMenuAction::AddLabels => github_issue_label_picker_effects(state),
+        GhContextMenuAction::Merge => github_pr_merge_effects(state),
         GhContextMenuAction::OpenInBrowser => github_open_in_browser_effects(state),
         GhContextMenuAction::SendToAgent => match menu.target {
             GhContextTarget::Issue { list_index } => {
@@ -1293,6 +1307,37 @@ fn github_open_in_browser_effects(state: &mut AppState) -> Vec<SideEffect> {
 
     state.dirty = true;
     vec![SideEffect::SpawnGitHubOpenBrowser { target }]
+}
+
+fn github_pr_merge_effects(state: &mut AppState) -> Vec<SideEffect> {
+    if !state.github.auth_ok {
+        state
+            .notifications
+            .show_toast("GitHub authentication required");
+        state.dirty = true;
+        return Vec::new();
+    }
+
+    let Some(number) = selected_pr_number(&state.github) else {
+        state
+            .notifications
+            .show_toast("Select a PR in the GH left list first");
+        state.dirty = true;
+        return Vec::new();
+    };
+
+    let mergeable = selected_pull_request(&state.github).is_some_and(pull_request_is_mergeable);
+    if !mergeable {
+        state
+            .notifications
+            .show_toast("Only open, non-draft pull requests can be merged");
+        state.dirty = true;
+        return Vec::new();
+    }
+
+    state.github.issue_action_message = Some(format!("Merging pull request #{number}..."));
+    state.dirty = true;
+    vec![SideEffect::SpawnGitHubPrMerge { number }]
 }
 
 fn issue_labels_for_number(github: &crate::state::GitHubState, number: u32) -> Vec<String> {
@@ -1448,6 +1493,30 @@ fn reduce_github_pr_create_completed(
     if let Some(error) = result.error {
         state.github.issue_action_message = Some(error);
     }
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_github_pr_merge_completed(
+    state: &mut AppState,
+    number: u32,
+    result: crate::github::IssueActionResult,
+) -> Vec<SideEffect> {
+    if state.github.selected_pr != Some(u64::from(number)) {
+        return Vec::new();
+    }
+
+    if result.success {
+        state.github.issue_action_message = result
+            .detail
+            .or_else(|| Some(format!("Merged pull request #{number}")));
+        state.github.prs_loaded_at = None;
+        clear_pr_detail_cache(&mut state.github);
+        state.dirty = true;
+        return github_pr_list_effects(state, true);
+    }
+
+    state.github.issue_action_message = result.error;
     state.dirty = true;
     Vec::new()
 }
@@ -3833,6 +3902,74 @@ mod tests {
     }
 
     #[test]
+    fn github_context_menu_open_includes_merge_for_mergeable_pr() {
+        use crate::github::{GhContextMenuAction, GhContextTarget, PrState, PullRequest};
+
+        let mut state = test_state();
+        state.github.auth_ok = true;
+        state.github.prs = vec![PullRequest {
+            number: 17,
+            title: "Ready".to_string(),
+            state: PrState::Open,
+            author: "dev".to_string(),
+            is_draft: false,
+        }];
+
+        reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::GitHubContextMenuOpen {
+                anchor_x: 4,
+                anchor_y: 6,
+                target: GhContextTarget::PullRequest { list_index: 0 },
+            }),
+        );
+
+        assert_eq!(state.github.selected_pr, Some(17));
+        let menu = state.github.context_menu.as_ref().expect("menu open");
+        assert!(menu.items.contains(&GhContextMenuAction::Merge));
+    }
+
+    #[test]
+    fn github_context_menu_merge_spawns_merge_side_effect() {
+        use crate::github::{
+            GhContextMenuAction, GhContextMenuState, GhContextTarget, PrState, PullRequest,
+        };
+
+        let mut state = test_state();
+        state.github.auth_ok = true;
+        state.github.prs = vec![PullRequest {
+            number: 17,
+            title: "Ready".to_string(),
+            state: PrState::Open,
+            author: "dev".to_string(),
+            is_draft: false,
+        }];
+        state.github.selected_pr = Some(17);
+        state.github.context_menu = Some(GhContextMenuState {
+            target: GhContextTarget::PullRequest { list_index: 0 },
+            anchor_x: 1,
+            anchor_y: 2,
+            items: vec![
+                GhContextMenuAction::View,
+                GhContextMenuAction::Merge,
+                GhContextMenuAction::OpenInBrowser,
+                GhContextMenuAction::SendToAgent,
+            ],
+            cursor: 1,
+        });
+
+        let effects = reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::GitHubContextMenuExecute),
+        );
+
+        assert!(state.github.context_menu.is_none());
+        assert!(effects
+            .iter()
+            .any(|effect| matches!(effect, SideEffect::SpawnGitHubPrMerge { number: 17 })));
+    }
+
+    #[test]
     fn github_context_menu_send_to_agent_writes_prompt() {
         use crate::github::{
             GhContextMenuAction, GhContextMenuState, GhContextTarget, Issue, IssueState,
@@ -4102,6 +4239,33 @@ mod tests {
             state.github.issue_action_message.as_deref(),
             Some("https://github.com/org/repo/pull/99")
         );
+    }
+
+    #[test]
+    fn github_pr_merge_completed_refreshes_pr_list() {
+        use crate::github::IssueActionResult;
+
+        let mut state = test_state();
+        state.github.auth_ok = true;
+        state.navigation.main_tab = MainTab::Prs;
+        state.github.selected_pr = Some(17);
+        let effects = reduce(
+            &mut state,
+            AppEvent::GitHubPrMergeCompleted {
+                number: 17,
+                result: IssueActionResult {
+                    success: true,
+                    error: None,
+                    detail: Some("Merged pull request #17".to_string()),
+                },
+            },
+        );
+
+        assert_eq!(
+            state.github.issue_action_message.as_deref(),
+            Some("Merged pull request #17")
+        );
+        assert!(effects.contains(&SideEffect::SpawnGitHubPrList));
     }
 
     #[test]

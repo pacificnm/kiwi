@@ -11,6 +11,7 @@ use super::labels::load_repo_labels;
 use super::pr::load_pr_list;
 use super::pr_create::{create_pull_request, PrCreateRequest};
 use super::pr_detail::load_pr_detail;
+use super::pr_merge::merge_pull_request;
 
 pub fn spawn_github_auth_check(command: String, sender: EventSender) {
     std::thread::spawn(move || {
@@ -123,5 +124,17 @@ pub fn spawn_github_pr_create(
     std::thread::spawn(move || {
         let result = create_pull_request(&repo_root, &command, &request);
         let _ = sender.send(AppEvent::GitHubPrCreateCompleted { result });
+    });
+}
+
+pub fn spawn_github_pr_merge(
+    repo_root: PathBuf,
+    command: String,
+    number: u32,
+    sender: EventSender,
+) {
+    std::thread::spawn(move || {
+        let result = merge_pull_request(&repo_root, &command, number);
+        let _ = sender.send(AppEvent::GitHubPrMergeCompleted { number, result });
     });
 }

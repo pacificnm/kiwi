@@ -26,7 +26,8 @@ use crate::github::{
     spawn_github_auth_check, spawn_github_issue_comment, spawn_github_issue_create_branch,
     spawn_github_issue_detail_load, spawn_github_issue_label_apply, spawn_github_issue_list_load,
     spawn_github_open_browser, spawn_github_pr_create, spawn_github_pr_detail_load,
-    spawn_github_pr_list_load, spawn_github_repo_labels_load, GhContextTarget, GitHubLeftPane,
+    spawn_github_pr_list_load, spawn_github_pr_merge, spawn_github_repo_labels_load,
+    GhContextTarget, GitHubLeftPane,
 };
 use crate::layout::{agent_pty_size, compute_layout, shell_pty_size, FocusTarget, Region};
 use crate::navigation::{map_key, LeftNavTab, MainTab, NavCommand};
@@ -573,6 +574,14 @@ impl App {
                         self.state.repo_root.clone(),
                         self.state.config.github.command.clone(),
                         request,
+                        self.events.sender(),
+                    );
+                }
+                SideEffect::SpawnGitHubPrMerge { number } => {
+                    spawn_github_pr_merge(
+                        self.state.repo_root.clone(),
+                        self.state.config.github.command.clone(),
+                        number,
                         self.events.sender(),
                     );
                 }
