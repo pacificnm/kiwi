@@ -1,18 +1,27 @@
 mod app;
+mod bootstrap;
 mod cli;
 
+use bootstrap::{init, window_title, GuiBootstrapContext};
 use cli::Cli;
 
 fn main() {
     let cli = Cli::parse_args();
-    if let Err(err) = run(&cli) {
+    let context = match init(&cli) {
+        Ok(context) => context,
+        Err(err) => {
+            eprintln!("error: {err}");
+            std::process::exit(1);
+        }
+    };
+    if let Err(err) = run_gui(context) {
         eprintln!("error: {err}");
         std::process::exit(1);
     }
 }
 
-fn run(cli: &Cli) -> eframe::Result<()> {
-    let title = window_title(&cli.path);
+fn run_gui(context: GuiBootstrapContext) -> eframe::Result<()> {
+    let title = window_title(&context.repo_root);
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(title)
@@ -25,28 +34,19 @@ fn run(cli: &Cli) -> eframe::Result<()> {
     eframe::run_native(
         "kiwi-gui",
         native_options,
-        Box::new(|cc| Ok(Box::new(app::KiwiApp::new(cc)))),
+        Box::new(move |cc| Ok(Box::new(app::KiwiApp::new(cc, context)))),
     )
-}
-
-fn window_title(path: &std::path::Path) -> String {
-    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or(".");
-    format!("Kiwi — {name}")
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use super::window_title;
+    use crate::bootstrap::BootstrapError;
 
     #[test]
-    fn window_title_uses_directory_name() {
-        assert_eq!(window_title(Path::new("/tmp/my-repo")), "Kiwi — my-repo");
-    }
+    fn bootstrap_error_display_includes_repo_message() {
+        use kiwi_core::repo::RepoError;
 
-    #[test]
-    fn window_title_falls_back_for_dot_path() {
-        assert_eq!(window_title(Path::new(".")), "Kiwi — .");
+        let err = BootstrapError::Repo(RepoError::NotFound(std::path::PathBuf::from("/missing")));
+        assert!(err.to_string().contains("/missing"));
     }
 }

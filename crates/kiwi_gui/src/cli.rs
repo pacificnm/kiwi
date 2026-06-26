@@ -26,6 +26,16 @@ impl Cli {
     }
 }
 
+impl From<&Cli> for kiwi_core::config::ConfigLoadOptions {
+    fn from(cli: &Cli) -> Self {
+        Self {
+            config_path: cli.config.clone(),
+            theme: cli.theme.clone(),
+            left_width: None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;

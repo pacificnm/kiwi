@@ -6,9 +6,9 @@ use crossterm::terminal;
 use crate::cli::Cli;
 use crate::config::{load_config, ConfigError, ResolvedConfig};
 use crate::layout::{compute_layout, LayoutError, LayoutState};
-use crate::repo::{resolve_repo_root, warn_if_not_git_repo, RepoError};
 use crate::terminal::{TerminalError, TerminalGuard};
 use crate::theme::{load_theme, ThemeError, ThemePalette};
+use kiwi_core::repo::{resolve_repo_root, warn_if_not_git_repo, RepoError};
 
 pub struct StartupContext {
     #[allow(dead_code)]
