@@ -146,8 +146,10 @@ fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> 
         AppCommand::GitHubOpenInBrowser => reduce_github_open_in_browser(state),
         AppCommand::ShellWrite(data) => vec![SideEffect::WriteShell(data)],
         AppCommand::ShellScroll(delta) => reduce_shell_scroll(state, delta),
+        AppCommand::ShellScrollLines(lines) => reduce_shell_scroll_lines(state, lines),
         AppCommand::AgentWrite(data) => vec![SideEffect::WriteAgent(data)],
         AppCommand::AgentScroll(delta) => reduce_agent_scroll(state, delta),
+        AppCommand::AgentScrollLines(lines) => reduce_agent_scroll_lines(state, lines),
         AppCommand::AgentRestart => reduce_agent_restart(state),
         AppCommand::PaletteOpen => reduce_palette_open(state),
         AppCommand::PaletteClose => reduce_palette_close(state),
@@ -1269,6 +1271,17 @@ fn reduce_shell_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
     Vec::new()
 }
 
+fn reduce_shell_scroll_lines(state: &mut AppState, lines: i32) -> Vec<SideEffect> {
+    if lines == 0 {
+        return Vec::new();
+    }
+
+    let (_, page_size) = shell_pty_size(&state.layout.rects);
+    state.shell.scroll_by_lines(lines, page_size);
+    state.dirty = true;
+    Vec::new()
+}
+
 fn reduce_agent_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
     if delta == 0 {
         return Vec::new();
@@ -1276,6 +1289,17 @@ fn reduce_agent_scroll(state: &mut AppState, delta: i32) -> Vec<SideEffect> {
 
     let (_, page_size) = agent_pty_size(&state.layout.rects);
     state.agent.scroll_by(delta, page_size);
+    state.dirty = true;
+    Vec::new()
+}
+
+fn reduce_agent_scroll_lines(state: &mut AppState, lines: i32) -> Vec<SideEffect> {
+    if lines == 0 {
+        return Vec::new();
+    }
+
+    let (_, page_size) = agent_pty_size(&state.layout.rects);
+    state.agent.scroll_by_lines(lines, page_size);
     state.dirty = true;
     Vec::new()
 }

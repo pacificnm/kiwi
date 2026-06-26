@@ -9,6 +9,8 @@ use crate::state::AppState;
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
 
+use super::scrollbar::{render_vertical_scrollbar, split_for_scrollbar};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileTreeMouseAction {
     Select(std::path::PathBuf),
@@ -52,18 +54,35 @@ pub fn render_file_tree_pane(
         return;
     }
 
-    let viewport_rows = inner.height as usize;
+    let (content, scrollbar) = split_for_scrollbar(inner);
+    let viewport_rows = content.height as usize;
+    let total_rows = state.file_tree.visible_rows().len();
     let mut lines = Vec::new();
     for viewport_index in 0..viewport_rows {
-        let Some(line) =
-            render_row_line(state, theme, viewport_index, inner.width as usize, focused)
-        else {
+        let Some(line) = render_row_line(
+            state,
+            theme,
+            viewport_index,
+            content.width as usize,
+            focused,
+        ) else {
             break;
         };
         lines.push(line);
     }
 
-    frame.render_widget(Paragraph::new(lines), inner);
+    frame.render_widget(Paragraph::new(lines), content);
+    if let Some(scrollbar_area) = scrollbar {
+        render_vertical_scrollbar(
+            frame,
+            scrollbar_area,
+            state.file_tree.scroll_offset,
+            total_rows,
+            viewport_rows,
+            focused,
+            theme,
+        );
+    }
 }
 
 pub fn file_tree_interaction_at(

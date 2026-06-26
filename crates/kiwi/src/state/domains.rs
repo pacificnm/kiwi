@@ -282,18 +282,25 @@ impl AgentState {
     }
 
     pub fn scroll_by(&mut self, delta: i32, page_size: u16) {
-        let page = usize::from(page_size.max(1));
-        let visible_height = page;
+        let scroll_lines = delta.signum() * i32::from(page_size.max(1));
+        self.scroll_by_lines(scroll_lines, page_size);
+    }
+
+    pub fn scroll_by_lines(&mut self, line_delta: i32, visible_height: u16) {
+        if line_delta == 0 {
+            return;
+        }
+
+        let visible = usize::from(visible_height.max(1));
         let line_count = self.scrollback.line_count();
-        let max_start = line_count.saturating_sub(visible_height);
+        let max_start = line_count.saturating_sub(visible);
         let current = if self.follow_tail {
             max_start
         } else {
             self.viewport_offset.min(max_start)
         };
 
-        let scroll_lines = delta.signum() * i32::from(page_size.max(1));
-        let new_offset = (current as i32 + scroll_lines).clamp(0, max_start as i32) as usize;
+        let new_offset = (current as i32 + line_delta).clamp(0, max_start as i32) as usize;
 
         if new_offset >= max_start {
             self.follow_tail = true;
@@ -370,18 +377,25 @@ impl ShellState {
     }
 
     pub fn scroll_by(&mut self, delta: i32, page_size: u16) {
-        let page = usize::from(page_size.max(1));
-        let visible_height = page;
+        let scroll_lines = delta.signum() * i32::from(page_size.max(1));
+        self.scroll_by_lines(scroll_lines, page_size);
+    }
+
+    pub fn scroll_by_lines(&mut self, line_delta: i32, visible_height: u16) {
+        if line_delta == 0 {
+            return;
+        }
+
+        let visible = usize::from(visible_height.max(1));
         let line_count = self.scrollback.line_count();
-        let max_start = line_count.saturating_sub(visible_height);
+        let max_start = line_count.saturating_sub(visible);
         let current = if self.follow_tail {
             max_start
         } else {
             self.viewport_offset.min(max_start)
         };
 
-        let scroll_lines = delta.signum() * i32::from(page_size.max(1));
-        let new_offset = (current as i32 + scroll_lines).clamp(0, max_start as i32) as usize;
+        let new_offset = (current as i32 + line_delta).clamp(0, max_start as i32) as usize;
 
         if new_offset >= max_start {
             self.follow_tail = true;

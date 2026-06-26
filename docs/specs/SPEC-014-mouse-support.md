@@ -26,7 +26,7 @@ Implement configurable mouse interactions per ADR-015 without breaking terminal-
 2. `mode = "hybrid"`: handle clicks and scroll in Kiwi regions; shift+selection handled by terminal.
 3. `mode = "disabled"`: no mouse capture.
 4. Map click coordinates to widget via layout rects: tabs, lists, panes.
-5. Wheel scroll: adjust scroll offset of focused scrollable under cursor (or focused pane if not hit) — partial implementation.
+5. Wheel scroll: adjust scroll offset of the scrollable content in the pane under the cursor (3 lines per tick); fall back to the focused pane when the cursor is not over a scrollable region.
 6. **Single click** on file tree or search row: select row.
 7. **Double click** (500ms, same target) on file tree file or search result: open Preview tab (`Enter` / `p` keyboard equivalents); double-click directory expands.
 8. **Left drag** in Preview, Agent, or Shell: text selection for clipboard copy (ADR-019).
@@ -90,6 +90,6 @@ mode = "hybrid"
 - [x] Double-click search result opens Preview at line (content hits)
 - [x] Left drag highlights text in Preview, Agent, Shell
 - [x] Shift+drag not captured by Kiwi (terminal selection)
-- [ ] Wheel scrolls file tree when over left panel
+- [x] Wheel scrolls file tree when over left panel
 - [x] Mouse disabled via config
 - [ ] Terminal shift+drag selection still copies text from PTY (manual terminal check)

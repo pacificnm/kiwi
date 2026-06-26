@@ -13,6 +13,7 @@ use crate::state::AppState;
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
 
+use super::scrollbar::{render_vertical_scrollbar, split_for_scrollbar};
 use super::tabs::separator_span;
 
 const GH_HUB_ROWS: u16 = 1;
@@ -342,7 +343,7 @@ pub fn render_issue_detail_pane(
     };
 
     if content_area.height > 0 && content_area.width > 0 {
-        render_issue_detail_content(frame, content_area, theme, state);
+        render_issue_detail_content(frame, content_area, focused, theme, state);
     }
 
     if status_area.height > 0 {
@@ -423,7 +424,7 @@ pub fn render_pr_detail_pane(
     };
 
     if content_area.height > 0 && content_area.width > 0 {
-        render_pr_detail_content(frame, content_area, theme, state);
+        render_pr_detail_content(frame, content_area, focused, theme, state);
     }
 
     if status_area.height > 0 {
@@ -499,8 +500,10 @@ fn render_pr_list(
     theme: &ThemePalette,
     state: &AppState,
 ) {
-    let viewport_rows = area.height as usize;
-    let max_width = area.width as usize;
+    let (content, scrollbar) = split_for_scrollbar(area);
+    let viewport_rows = content.height as usize;
+    let max_width = content.width as usize;
+    let total_rows = state.github.prs.len();
     let selected_row = pr_selected_row_index(&state.github);
     let mut lines = Vec::new();
 
@@ -533,7 +536,18 @@ fn render_pr_list(
         )));
     }
 
-    frame.render_widget(Paragraph::new(lines), area);
+    frame.render_widget(Paragraph::new(lines), content);
+    if let Some(scrollbar_area) = scrollbar {
+        render_vertical_scrollbar(
+            frame,
+            scrollbar_area,
+            state.github.prs_scroll_offset,
+            total_rows,
+            viewport_rows,
+            focused,
+            theme,
+        );
+    }
 }
 
 fn render_pr_line(
@@ -616,16 +630,18 @@ fn pr_detail_title(state: &AppState) -> String {
 fn render_pr_detail_content(
     frame: &mut Frame<'_>,
     area: Rect,
+    focused: bool,
     theme: &ThemePalette,
     state: &AppState,
 ) {
-    let viewport_rows = area.height as usize;
-    let max_width = area.width as usize;
+    let (content, scrollbar) = split_for_scrollbar(area);
+    let viewport_rows = content.height as usize;
+    let max_width = content.width as usize;
 
     if state.github.selected_pr.is_none() {
         render_issue_detail_message(
             frame,
-            area,
+            content,
             theme,
             &[
                 "No pull request selected",
@@ -637,19 +653,19 @@ fn render_pr_detail_content(
     }
 
     if state.github.pr_detail_loading && state.github.pr_detail.is_none() {
-        render_issue_detail_message(frame, area, theme, &["Loading pull request detail…"]);
+        render_issue_detail_message(frame, content, theme, &["Loading pull request detail…"]);
         return;
     }
 
     if let Some(error) = &state.github.pr_detail_error {
-        render_issue_detail_message(frame, area, theme, &[error.as_str()]);
+        render_issue_detail_message(frame, content, theme, &[error.as_str()]);
         return;
     }
 
     let Some(detail) = &state.github.pr_detail else {
         render_issue_detail_message(
             frame,
-            area,
+            content,
             theme,
             &[
                 "Pull request detail not loaded",
@@ -684,13 +700,25 @@ fn render_pr_detail_content(
         );
 
         let row_area = Rect {
-            x: area.x,
-            y: area.y.saturating_add(row as u16),
-            width: area.width,
+            x: content.x,
+            y: content.y.saturating_add(row as u16),
+            width: content.width,
             height: 1,
         };
         frame.render_widget(Clear, row_area);
         frame.render_widget(Paragraph::new(line), row_area);
+    }
+
+    if let Some(scrollbar_area) = scrollbar {
+        render_vertical_scrollbar(
+            frame,
+            scrollbar_area,
+            start,
+            detail.display_lines.len(),
+            viewport_rows,
+            focused,
+            theme,
+        );
     }
 }
 
@@ -742,16 +770,18 @@ fn issue_detail_title(state: &AppState) -> String {
 fn render_issue_detail_content(
     frame: &mut Frame<'_>,
     area: Rect,
+    focused: bool,
     theme: &ThemePalette,
     state: &AppState,
 ) {
-    let viewport_rows = area.height as usize;
-    let max_width = area.width as usize;
+    let (content, scrollbar) = split_for_scrollbar(area);
+    let viewport_rows = content.height as usize;
+    let max_width = content.width as usize;
 
     if state.github.selected_issue.is_none() {
         render_issue_detail_message(
             frame,
-            area,
+            content,
             theme,
             &[
                 "No issue selected",
@@ -763,19 +793,19 @@ fn render_issue_detail_content(
     }
 
     if state.github.issue_detail_loading && state.github.issue_detail.is_none() {
-        render_issue_detail_message(frame, area, theme, &["Loading issue detail…"]);
+        render_issue_detail_message(frame, content, theme, &["Loading issue detail…"]);
         return;
     }
 
     if let Some(error) = &state.github.issue_detail_error {
-        render_issue_detail_message(frame, area, theme, &[error.as_str()]);
+        render_issue_detail_message(frame, content, theme, &[error.as_str()]);
         return;
     }
 
     let Some(detail) = &state.github.issue_detail else {
         render_issue_detail_message(
             frame,
-            area,
+            content,
             theme,
             &[
                 "Issue detail not loaded",
@@ -808,13 +838,25 @@ fn render_issue_detail_content(
         );
 
         let row_area = Rect {
-            x: area.x,
-            y: area.y.saturating_add(row as u16),
-            width: area.width,
+            x: content.x,
+            y: content.y.saturating_add(row as u16),
+            width: content.width,
             height: 1,
         };
         frame.render_widget(Clear, row_area);
         frame.render_widget(Paragraph::new(line), row_area);
+    }
+
+    if let Some(scrollbar_area) = scrollbar {
+        render_vertical_scrollbar(
+            frame,
+            scrollbar_area,
+            start,
+            detail.display_lines.len(),
+            viewport_rows,
+            focused,
+            theme,
+        );
     }
 }
 
@@ -870,8 +912,10 @@ fn render_issue_list(
     theme: &ThemePalette,
     state: &AppState,
 ) {
-    let viewport_rows = area.height as usize;
-    let max_width = area.width as usize;
+    let (content, scrollbar) = split_for_scrollbar(area);
+    let viewport_rows = content.height as usize;
+    let max_width = content.width as usize;
+    let total_rows = state.github.issues.len();
     let selected_row = issue_selected_row_index(&state.github);
     let mut lines = Vec::new();
 
@@ -904,7 +948,18 @@ fn render_issue_list(
         )));
     }
 
-    frame.render_widget(Paragraph::new(lines), area);
+    frame.render_widget(Paragraph::new(lines), content);
+    if let Some(scrollbar_area) = scrollbar {
+        render_vertical_scrollbar(
+            frame,
+            scrollbar_area,
+            state.github.issues_scroll_offset,
+            total_rows,
+            viewport_rows,
+            focused,
+            theme,
+        );
+    }
 }
 
 fn render_issue_line(

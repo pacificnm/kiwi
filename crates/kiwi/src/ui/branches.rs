@@ -9,6 +9,8 @@ use crate::state::AppState;
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
 
+use super::scrollbar::{render_vertical_scrollbar, split_for_scrollbar};
+
 const STATUS_ROWS: u16 = 1;
 
 pub fn branches_viewport_rows(area: Rect) -> usize {
@@ -140,8 +142,10 @@ fn render_branch_list(
         return;
     }
 
-    let viewport_rows = area.height as usize;
-    let max_width = area.width as usize;
+    let (content, scrollbar) = split_for_scrollbar(area);
+    let viewport_rows = content.height as usize;
+    let max_width = content.width as usize;
+    let total_rows = state.branches.entries.len();
     let selected_row = branch_selected_row_index(&state.branches);
     let mut lines = Vec::new();
 
@@ -154,7 +158,18 @@ fn render_branch_list(
         lines.push(render_branch_line(entry, selected, max_width, theme));
     }
 
-    frame.render_widget(Paragraph::new(lines), area);
+    frame.render_widget(Paragraph::new(lines), content);
+    if let Some(scrollbar_area) = scrollbar {
+        render_vertical_scrollbar(
+            frame,
+            scrollbar_area,
+            state.branches.scroll_offset,
+            total_rows,
+            viewport_rows,
+            focused,
+            theme,
+        );
+    }
 }
 
 fn render_branch_line(
