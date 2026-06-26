@@ -163,7 +163,7 @@ pub fn add_issue_labels(
     }
 }
 
-fn format_action_failure(command: &str, stderr: &[u8], stdout: &[u8]) -> String {
+pub(crate) fn format_action_failure(command: &str, stderr: &[u8], stdout: &[u8]) -> String {
     let stderr = String::from_utf8_lossy(stderr).trim().to_string();
     let stdout = String::from_utf8_lossy(stdout).trim().to_string();
 

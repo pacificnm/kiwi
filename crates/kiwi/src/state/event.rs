@@ -106,6 +106,10 @@ pub enum AppEvent {
     GitHubPrCreateCompleted {
         result: crate::github::IssueActionResult,
     },
+    GitHubPrMergeCompleted {
+        number: u32,
+        result: crate::github::IssueActionResult,
+    },
     BranchListLoaded {
         entries: Vec<crate::git::BranchEntry>,
         error: Option<String>,
@@ -302,6 +306,9 @@ pub enum SideEffect {
     },
     SpawnGitHubPrCreate {
         request: crate::github::PrCreateRequest,
+    },
+    SpawnGitHubPrMerge {
+        number: u32,
     },
     PersistUserTheme {
         name: String,

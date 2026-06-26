@@ -2,6 +2,7 @@ use crate::state::GitHubState;
 
 use super::issue::Issue;
 use super::pr::PullRequest;
+use super::pr_detail::PrState;
 
 pub fn ensure_issue_selection(state: &mut GitHubState) {
     if state.issues.is_empty() {
@@ -137,6 +138,17 @@ pub fn pr_selected_row_index(state: &GitHubState) -> Option<usize> {
         .position(|pr| u64::from(pr.number) == number)
 }
 
+#[must_use]
+pub fn selected_pull_request(state: &GitHubState) -> Option<&PullRequest> {
+    let number = u32::try_from(state.selected_pr?).ok()?;
+    state.prs.iter().find(|pr| pr.number == number)
+}
+
+#[must_use]
+pub fn pull_request_is_mergeable(pr: &PullRequest) -> bool {
+    pr.state == PrState::Open && !pr.is_draft
+}
+
 pub fn scroll_offset_for_row(
     selected_row: usize,
     scroll_offset: usize,
@@ -159,6 +171,7 @@ pub fn scroll_offset_for_row(
 mod tests {
     use super::*;
     use crate::github::IssueState;
+    use crate::github::PrState;
 
     fn sample_issues() -> Vec<Issue> {
         vec![
@@ -216,5 +229,38 @@ mod tests {
         ensure_issue_selection(&mut state);
         assert_eq!(state.selected_issue, Some(2));
         assert_eq!(state.issues_scroll_offset, 4);
+    }
+
+    fn sample_open_pr() -> PullRequest {
+        PullRequest {
+            number: 42,
+            title: "Feature".to_string(),
+            state: PrState::Open,
+            author: "dev".to_string(),
+            is_draft: false,
+        }
+    }
+
+    #[test]
+    fn pull_request_is_mergeable_for_open_non_draft() {
+        assert!(pull_request_is_mergeable(&sample_open_pr()));
+    }
+
+    #[test]
+    fn pull_request_is_not_mergeable_for_draft() {
+        let mut pr = sample_open_pr();
+        pr.is_draft = true;
+        pr.state = PrState::Draft;
+        assert!(!pull_request_is_mergeable(&pr));
+    }
+
+    #[test]
+    fn selected_pull_request_returns_current_selection() {
+        let state = GitHubState {
+            prs: vec![sample_open_pr()],
+            selected_pr: Some(42),
+            ..GitHubState::default()
+        };
+        assert_eq!(selected_pull_request(&state).map(|pr| pr.number), Some(42));
     }
 }

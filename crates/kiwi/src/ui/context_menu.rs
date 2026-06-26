@@ -140,7 +140,7 @@ mod tests {
 
     #[test]
     fn render_github_context_menu_draws_without_panic() {
-        let menu = GhContextMenuState::new(GhContextTarget::Issue { list_index: 0 }, 10, 5);
+        let menu = GhContextMenuState::new(GhContextTarget::Issue { list_index: 0 }, 10, 5, false);
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
         terminal
             .draw(|frame| {
@@ -160,7 +160,7 @@ mod tests {
 
     #[test]
     fn github_context_menu_item_at_maps_row_to_action() {
-        let menu = GhContextMenuState::new(GhContextTarget::Issue { list_index: 0 }, 10, 5);
+        let menu = GhContextMenuState::new(GhContextTarget::Issue { list_index: 0 }, 10, 5, false);
         let bounds = Rect::new(0, 0, 80, 24);
         let area = github_context_menu_rect(bounds, &menu);
         let inner = Block::default().borders(Borders::ALL).inner(area);

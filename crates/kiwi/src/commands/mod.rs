@@ -51,6 +51,7 @@ pub enum PaletteAction {
     GitHubIssueCreateBranch,
     GitHubOpenInBrowser,
     GitHubPrCreatePrompt,
+    GitHubPrMerge,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -181,7 +182,12 @@ fn prioritize_github_issue_commands(state: &AppState, matches: &mut Vec<usize>) 
             && state.github.left_pane == crate::github::GitHubLeftPane::Issues);
 
     let command_ids: &[&str] = if pr_surface {
-        &["github.pr.create", "github.open.browser", "github.refresh"]
+        &[
+            "github.pr.create",
+            "github.pr.merge",
+            "github.open.browser",
+            "github.refresh",
+        ]
     } else if issue_surface {
         &[
             "github.open.browser",
@@ -302,6 +308,7 @@ fn execute_builtin_command(state: &mut AppState, registry_index: usize) -> Vec<S
         PaletteAction::GitHubIssueCreateBranch => github_issue_create_branch_effects(state),
         PaletteAction::GitHubOpenInBrowser => github_open_in_browser_effects(state),
         PaletteAction::GitHubPrCreatePrompt => github_pr_create_prompt_effects(state),
+        PaletteAction::GitHubPrMerge => github_pr_merge_effects(state),
     };
 
     if state.config.workspace.persist {
@@ -512,6 +519,42 @@ fn github_pr_create_prompt_effects(state: &mut AppState) -> Vec<SideEffect> {
     state.navigation.focus = FocusTarget::CommandPalette;
     state.dirty = true;
     Vec::new()
+}
+
+fn github_pr_merge_effects(state: &mut AppState) -> Vec<SideEffect> {
+    if !state.github.auth_ok {
+        state
+            .notifications
+            .show_toast("GitHub authentication required");
+        state.dirty = true;
+        return Vec::new();
+    }
+
+    let Some(number) = state
+        .github
+        .selected_pr
+        .and_then(|value| u32::try_from(value).ok())
+    else {
+        state
+            .notifications
+            .show_toast("Select a PR in the GH left list first");
+        state.dirty = true;
+        return Vec::new();
+    };
+
+    let mergeable = crate::github::selected_pull_request(&state.github)
+        .is_some_and(crate::github::pull_request_is_mergeable);
+    if !mergeable {
+        state
+            .notifications
+            .show_toast("Only open, non-draft pull requests can be merged");
+        state.dirty = true;
+        return Vec::new();
+    }
+
+    state.github.issue_action_message = Some(format!("Merging pull request #{number}..."));
+    state.dirty = true;
+    vec![SideEffect::SpawnGitHubPrMerge { number }]
 }
 
 fn selected_issue_number(state: &AppState) -> Option<u32> {
@@ -789,6 +832,59 @@ mod tests {
     }
 
     #[test]
+    fn execute_pr_merge_spawns_side_effect_for_open_pr() {
+        use crate::github::{PrState, PullRequest};
+
+        let mut state = test_state();
+        state.github.auth_ok = true;
+        state.github.prs = vec![PullRequest {
+            number: 17,
+            title: "Merge me".to_string(),
+            state: PrState::Open,
+            author: "dev".to_string(),
+            is_draft: false,
+        }];
+        state.github.selected_pr = Some(17);
+        let index = COMMANDS
+            .iter()
+            .position(|command| command.id == "github.pr.merge")
+            .expect("github pr merge");
+        let effects = execute_command(&mut state, index);
+        assert!(effects
+            .iter()
+            .any(|effect| matches!(effect, SideEffect::SpawnGitHubPrMerge { number: 17 })));
+        assert!(state
+            .github
+            .issue_action_message
+            .as_ref()
+            .is_some_and(|message| message.contains("Merging pull request #17")));
+    }
+
+    #[test]
+    fn execute_pr_merge_rejects_draft_without_spawn() {
+        use crate::github::{PrState, PullRequest};
+
+        let mut state = test_state();
+        state.github.auth_ok = true;
+        state.github.prs = vec![PullRequest {
+            number: 17,
+            title: "Draft".to_string(),
+            state: PrState::Draft,
+            author: "dev".to_string(),
+            is_draft: true,
+        }];
+        state.github.selected_pr = Some(17);
+        let index = COMMANDS
+            .iter()
+            .position(|command| command.id == "github.pr.merge")
+            .expect("github pr merge");
+        let effects = execute_command(&mut state, index);
+        assert!(!effects
+            .iter()
+            .any(|effect| matches!(effect, SideEffect::SpawnGitHubPrMerge { .. })));
+    }
+
+    #[test]
     fn execute_pr_create_prompt_opens_palette_prompt() {
         let mut state = test_state();
         state.github.auth_ok = true;
@@ -819,6 +915,7 @@ mod tests {
             .map(|index| COMMANDS[*index].id)
             .collect();
         assert!(ids.contains(&"github.pr.create"));
+        assert!(ids.contains(&"github.pr.merge"));
         assert!(ids.contains(&"github.open.browser"));
     }
 

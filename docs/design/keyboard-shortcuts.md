@@ -169,6 +169,7 @@ Pair **GH** left (`Alt+3`) with **Issues** main (`2`) or **PRs** main (`4`). Use
 | Command palette | **GitHub: Add Labels to Issue** — multi-select overlay (`Space` toggle, `Enter` apply, `Esc` cancel) |
 | Command palette | **GitHub: Open in Browser** — opens selected issue or PR via `gh view --web` |
 | Command palette | **GitHub: Create Pull Request** — guided title → body → base prompts (`gh pr create`) |
+| Command palette | **GitHub: Merge Pull Request** — merge selected open PR via `gh pr merge --merge` |
 | `o` | Open selected issue or PR in browser |
 | `R` | Refresh list |
 
