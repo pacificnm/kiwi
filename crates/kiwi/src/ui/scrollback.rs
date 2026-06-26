@@ -10,6 +10,8 @@ use crate::shell::ScrollbackBuffer;
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
 
+use super::scrollbar::{render_vertical_scrollbar, split_for_scrollbar};
+
 pub struct ScrollbackPane<'a> {
     pub scrollback: &'a ScrollbackBuffer,
     pub follow_tail: bool,
@@ -55,12 +57,14 @@ pub fn render_scrollback_pane(
         return;
     }
 
-    fill_pty_background(frame, inner);
+    let (content, scrollbar) = split_for_scrollbar(inner);
+    fill_pty_background(frame, content);
 
     let footer_rows = usize::from(pane.footer.is_some());
-    let visible_height = inner.height.saturating_sub(footer_rows as u16) as usize;
-    let max_width = inner.width as usize;
+    let visible_height = content.height.saturating_sub(footer_rows as u16) as usize;
+    let max_width = content.width as usize;
     let include_pending = pane.follow_tail;
+    let line_count = pane.scrollback.line_count();
     let start =
         pane.scrollback
             .viewport_start(visible_height, pane.follow_tail, pane.viewport_offset);
@@ -85,15 +89,15 @@ pub fn render_scrollback_pane(
 
     if lines.is_empty() {
         if let Some(footer) = pane.footer {
-            render_hint_line(frame, inner, 0, footer, hint_style);
+            render_hint_line(frame, content, 0, footer, hint_style);
             return;
         }
         if let Some(error) = pane.spawn_error {
-            render_hint_line(frame, inner, 0, error, hint_style);
+            render_hint_line(frame, content, 0, error, hint_style);
             return;
         }
         if let Some(hint) = pane.idle_hint {
-            render_hint_line(frame, inner, 0, hint, hint_style);
+            render_hint_line(frame, content, 0, hint, hint_style);
         }
         return;
     }
@@ -111,7 +115,7 @@ pub fn render_scrollback_pane(
             );
         render_pty_line(
             frame,
-            inner,
+            content,
             row,
             line,
             max_width,
@@ -125,10 +129,26 @@ pub fn render_scrollback_pane(
     if let Some(footer) = pane.footer {
         render_hint_line(
             frame,
-            inner,
-            inner.height.saturating_sub(1) as usize,
+            content,
+            content.height.saturating_sub(1) as usize,
             footer,
             hint_style,
+        );
+    }
+
+    if let Some(scrollbar_area) = scrollbar {
+        let scroll_track = Rect {
+            height: visible_height as u16,
+            ..scrollbar_area
+        };
+        render_vertical_scrollbar(
+            frame,
+            scroll_track,
+            start,
+            line_count,
+            visible_height,
+            focused,
+            theme,
         );
     }
 }

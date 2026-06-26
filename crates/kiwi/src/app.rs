@@ -40,9 +40,9 @@ use crate::state::{
 };
 use crate::ui::{
     branch_interaction_at, draw_frame, file_tree_interaction_at, git_interaction_at,
-    github_issue_interaction_at, github_pr_interaction_at, map_mouse_click,
+    github_issue_interaction_at, github_pr_interaction_at, map_mouse_click, map_mouse_wheel,
     mouse_interactions_enabled, palette_match_at, search_interaction_at, DoubleClickTarget,
-    DoubleClickTracker, FileTreeMouseAction,
+    DoubleClickTracker, FileTreeMouseAction, WheelDirection,
 };
 use crate::watcher::RepoWatcher;
 use crate::workspace::{load_palette_history, save_palette_history};
@@ -686,8 +686,19 @@ impl App {
             MouseEventKind::Up(MouseButton::Left) => {
                 self.dispatch(AppEvent::Command(AppCommand::SelectionEnd))
             }
+            MouseEventKind::ScrollUp => self.handle_mouse_wheel(mouse, WheelDirection::Up),
+            MouseEventKind::ScrollDown => self.handle_mouse_wheel(mouse, WheelDirection::Down),
+            MouseEventKind::ScrollLeft => self.handle_mouse_wheel(mouse, WheelDirection::Left),
+            MouseEventKind::ScrollRight => self.handle_mouse_wheel(mouse, WheelDirection::Right),
             _ => false,
         }
+    }
+
+    fn handle_mouse_wheel(&mut self, mouse: MouseEvent, direction: WheelDirection) -> bool {
+        let Some(command) = map_mouse_wheel(&self.state, mouse.column, mouse.row, direction) else {
+            return false;
+        };
+        self.dispatch(AppEvent::Command(command))
     }
 
     fn handle_mouse_left_down(&mut self, mouse: MouseEvent) -> bool {
@@ -1805,6 +1816,22 @@ mod tests {
         };
         assert!(!app.dispatch_key(ctrl_c));
         assert!(app.dispatch_key(ctrl_c));
+    }
+
+    #[test]
+    fn mouse_wheel_over_file_tree_marks_dirty() {
+        use crossterm::event::{KeyModifiers, MouseEvent, MouseEventKind};
+
+        let mut app = App::new(test_context());
+        let left = app.state().layout.rects.left_content;
+        let mouse = MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: left.x + 1,
+            row: left.y + 1,
+            modifiers: KeyModifiers::empty(),
+        };
+        assert!(!app.dispatch_mouse(mouse));
+        assert!(app.state().dirty);
     }
 
     #[test]

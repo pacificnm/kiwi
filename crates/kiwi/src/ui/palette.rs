@@ -9,6 +9,8 @@ use crate::state::AppState;
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
 
+use super::scrollbar::{render_vertical_scrollbar, split_for_scrollbar};
+
 pub fn render_palette_pane(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -45,6 +47,7 @@ pub fn render_palette_pane(
         return;
     }
 
+    let (content, scrollbar) = split_for_scrollbar(inner);
     let mut lines = Vec::new();
     let prompt = if state.palette.open {
         format!("> {}", state.palette.input)
@@ -52,23 +55,25 @@ pub fn render_palette_pane(
         "Ctrl+P for commands".to_string()
     };
     lines.push(Line::from(Span::styled(
-        truncate_line(&prompt, inner.width as usize),
+        truncate_line(&prompt, content.width as usize),
         theme.get(SemanticRole::Fg),
     )));
 
+    let mut match_visible_rows = 0usize;
     if state.palette.open {
         if let Some(prompt) = &state.palette.prompt {
             lines.push(Line::from(Span::styled(
-                truncate_line(prompt.hint(), inner.width as usize),
+                truncate_line(prompt.hint(), content.width as usize),
                 theme.get(SemanticRole::Muted),
             )));
         } else {
-            let visible_rows = inner
+            match_visible_rows = content
                 .height
                 .saturating_sub(1)
                 .min(MAX_VISIBLE_MATCHES as u16) as usize;
-            for match_index in 0..visible_rows {
-                let Some(line) = render_match_line(state, theme, match_index, inner.width as usize)
+            for match_index in 0..match_visible_rows {
+                let Some(line) =
+                    render_match_line(state, theme, match_index, content.width as usize)
                 else {
                     break;
                 };
@@ -77,7 +82,21 @@ pub fn render_palette_pane(
         }
     }
 
-    frame.render_widget(Paragraph::new(lines), inner);
+    frame.render_widget(Paragraph::new(lines), content);
+    if let Some(scrollbar_area) = scrollbar {
+        if state.palette.open && state.palette.prompt.is_none() && !state.palette.matches.is_empty()
+        {
+            render_vertical_scrollbar(
+                frame,
+                scrollbar_area,
+                state.palette.selected,
+                state.palette.matches.len(),
+                match_visible_rows.max(1),
+                focused,
+                theme,
+            );
+        }
+    }
 }
 
 fn render_match_line(

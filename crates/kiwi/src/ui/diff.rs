@@ -9,6 +9,8 @@ use crate::state::AppState;
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
 
+use super::scrollbar::{render_vertical_scrollbar, split_for_scrollbar};
+
 pub fn render_diff_pane(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -63,10 +65,13 @@ pub fn render_diff_pane(
         height: footer_row,
     };
 
+    let (scroll_content, scrollbar) = split_for_scrollbar(content_area);
+    let scroll_visible_rows = scroll_content.height as usize;
+
     if state.diff.selected_path.is_none() {
         render_message(
             frame,
-            content_area,
+            scroll_content,
             "Select a changed file from the Git panel",
             theme.get(SemanticRole::Muted),
         );
@@ -76,7 +81,7 @@ pub fn render_diff_pane(
     if state.diff.loading && state.diff.lines.is_empty() {
         render_message(
             frame,
-            content_area,
+            scroll_content,
             "Loading…",
             theme.get(SemanticRole::Muted),
         );
@@ -86,7 +91,7 @@ pub fn render_diff_pane(
     if let Some(error) = state.diff.error.as_deref() {
         render_message(
             frame,
-            content_area,
+            scroll_content,
             error,
             theme.get(SemanticRole::AgentError),
         );
@@ -96,7 +101,7 @@ pub fn render_diff_pane(
     if state.diff.is_binary {
         render_message(
             frame,
-            content_area,
+            scroll_content,
             "Binary diff not supported",
             theme.get(SemanticRole::Muted),
         );
@@ -106,14 +111,25 @@ pub fn render_diff_pane(
     if state.diff.lines.is_empty() {
         render_message(
             frame,
-            content_area,
+            scroll_content,
             empty_diff_message(state.diff.source),
             theme.get(SemanticRole::Muted),
         );
         return;
     }
 
-    render_virtualized_lines(frame, content_area, state, theme, content_height);
+    render_virtualized_lines(frame, scroll_content, state, theme, scroll_visible_rows);
+    if let Some(scrollbar_area) = scrollbar {
+        render_vertical_scrollbar(
+            frame,
+            scrollbar_area,
+            state.diff.scroll_offset,
+            state.diff.lines.len(),
+            scroll_visible_rows,
+            focused,
+            theme,
+        );
+    }
 }
 
 fn empty_diff_message(source: DiffSource) -> &'static str {

@@ -9,6 +9,8 @@ use crate::state::AppState;
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
 
+use super::scrollbar::{render_vertical_scrollbar, split_for_scrollbar};
+
 pub fn render_preview_pane(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -64,10 +66,13 @@ pub fn render_preview_pane(
         height: footer_row,
     };
 
+    let (scroll_content, scrollbar) = split_for_scrollbar(content_area);
+    let scroll_visible_rows = scroll_content.height as usize;
+
     if state.preview.loading && state.preview.lines.is_empty() {
         render_message(
             frame,
-            content_area,
+            scroll_content,
             "Loading…",
             theme.get(SemanticRole::Muted),
         );
@@ -77,7 +82,7 @@ pub fn render_preview_pane(
     if let Some(error) = state.preview.load_error.as_deref() {
         render_message(
             frame,
-            content_area,
+            scroll_content,
             error,
             theme.get(SemanticRole::AgentError),
         );
@@ -88,7 +93,7 @@ pub fn render_preview_pane(
         let message = format!("Binary file ({} bytes)", state.preview.file_size);
         render_message(
             frame,
-            content_area,
+            scroll_content,
             &message,
             theme.get(SemanticRole::Muted),
         );
@@ -102,7 +107,7 @@ pub fn render_preview_pane(
         );
         render_message(
             frame,
-            content_area,
+            scroll_content,
             &message,
             theme.get(SemanticRole::Muted),
         );
@@ -112,14 +117,25 @@ pub fn render_preview_pane(
     if state.preview.lines.is_empty() {
         render_message(
             frame,
-            content_area,
+            scroll_content,
             "Empty file",
             theme.get(SemanticRole::Muted),
         );
         return;
     }
 
-    render_virtualized_lines(frame, content_area, state, theme, content_height);
+    render_virtualized_lines(frame, scroll_content, state, theme, scroll_visible_rows);
+    if let Some(scrollbar_area) = scrollbar {
+        render_vertical_scrollbar(
+            frame,
+            scrollbar_area,
+            state.preview.scroll_offset,
+            state.preview.line_count(),
+            scroll_visible_rows,
+            focused,
+            theme,
+        );
+    }
 }
 
 fn render_virtualized_lines(
