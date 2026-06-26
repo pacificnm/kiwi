@@ -1,8 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use crate::git::GitFileEntry;
+use crate::git::{BranchEntry, GitFileEntry};
 use crate::state::{AppEvent, EventSender};
 
+use super::branches::{checkout_local_branch, list_local_branches};
 use super::repository::{load_repo_snapshot, GitError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,7 +38,60 @@ pub fn load_git_snapshot(repo_root: &Path, show_untracked: bool) -> GitRefreshSn
             file_entries: Vec::new(),
             error: Some(message),
         },
+        Err(GitError::Branches(message) | GitError::Checkout(message)) => GitRefreshSnapshot {
+            branch: None,
+            ahead: 0,
+            behind: 0,
+            file_entries: Vec::new(),
+            error: Some(message),
+        },
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BranchListSnapshot {
+    pub entries: Vec<BranchEntry>,
+    pub error: Option<String>,
+}
+
+pub fn load_branch_list_snapshot(repo_root: &Path) -> BranchListSnapshot {
+    match list_local_branches(repo_root) {
+        Ok(entries) => BranchListSnapshot {
+            entries,
+            error: None,
+        },
+        Err(GitError::Open(message)) => BranchListSnapshot {
+            entries: Vec::new(),
+            error: Some(message),
+        },
+        Err(GitError::Branches(message)) => BranchListSnapshot {
+            entries: Vec::new(),
+            error: Some(message),
+        },
+        Err(err) => BranchListSnapshot {
+            entries: Vec::new(),
+            error: Some(err.to_string()),
+        },
+    }
+}
+
+pub fn spawn_branch_list(repo_root: PathBuf, sender: EventSender) {
+    std::thread::spawn(move || {
+        let snapshot = load_branch_list_snapshot(&repo_root);
+        let _ = sender.send(AppEvent::BranchListLoaded {
+            entries: snapshot.entries,
+            error: snapshot.error,
+        });
+    });
+}
+
+pub fn spawn_branch_checkout(repo_root: PathBuf, branch_name: String, sender: EventSender) {
+    std::thread::spawn(move || {
+        let error = checkout_local_branch(&repo_root, &branch_name)
+            .err()
+            .map(|err| err.to_string());
+        let _ = sender.send(AppEvent::BranchCheckoutCompleted { branch_name, error });
+    });
 }
 
 pub fn spawn_git_refresh(repo_root: PathBuf, show_untracked: bool, sender: EventSender) {

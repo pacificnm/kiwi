@@ -14,7 +14,7 @@ pub struct NavigationState {
     pub main_tab: MainTab,
     pub focus: FocusTarget,
     left_slots: [TabSlotState; 5],
-    main_slots: [TabSlotState; 6],
+    main_slots: [TabSlotState; 7],
 }
 
 impl Default for NavigationState {
@@ -24,7 +24,7 @@ impl Default for NavigationState {
             main_tab: MainTab::Agent,
             focus: FocusTarget::Main,
             left_slots: [TabSlotState::default(); 5],
-            main_slots: [TabSlotState::default(); 6],
+            main_slots: [TabSlotState::default(); 7],
         }
     }
 }

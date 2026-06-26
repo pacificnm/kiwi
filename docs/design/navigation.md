@@ -70,6 +70,14 @@ Example combinations:
 - `Enter` on GH left list focuses main and opens detail
 - Actions via palette: **Comment on Issue** (palette prompt), **Add Labels to Issue** (multi-select overlay), create branch (future)
 
+### Branches
+
+- Local branch list (current branch first, then alphabetical)
+- Current branch marked with `*` and accent color
+- `j`/`k` navigate; single-click select; double-click or `Enter` checks out branch
+- `R` refresh; checkout errors shown in footer
+- Disabled with inline message when not in a git repo
+
 ### PRs
 
 - List with state badges (open/draft/merged/closed)

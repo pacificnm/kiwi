@@ -61,11 +61,7 @@ pub fn post_issue_comment(
     }
 }
 
-pub fn create_branch_from_issue(
-    repo_root: &Path,
-    command: &str,
-    number: u32,
-) -> IssueActionResult {
+pub fn create_branch_from_issue(repo_root: &Path, command: &str, number: u32) -> IssueActionResult {
     if !command_on_path(command) {
         return IssueActionResult {
             success: false,

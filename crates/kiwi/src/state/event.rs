@@ -99,6 +99,14 @@ pub enum AppEvent {
     GitHubPrCreateCompleted {
         result: crate::github::IssueActionResult,
     },
+    BranchListLoaded {
+        entries: Vec<crate::git::BranchEntry>,
+        error: Option<String>,
+    },
+    BranchCheckoutCompleted {
+        branch_name: String,
+        error: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -150,6 +158,10 @@ pub enum AppCommand {
     GitSelect(usize),
     GitOpenSelected,
     GitRefresh,
+    BranchMoveSelection(i32),
+    BranchSelect(usize),
+    BranchCheckoutSelected,
+    BranchRefresh,
     PreviewFile {
         path: PathBuf,
         line: Option<u32>,
@@ -203,6 +215,10 @@ pub enum AppCommand {
 pub enum SideEffect {
     Quit,
     SpawnGitRefresh,
+    SpawnBranchList,
+    SpawnBranchCheckout {
+        name: String,
+    },
     #[cfg_attr(not(test), allow(dead_code))]
     SpawnGitHubRefresh,
     SpawnAgent,

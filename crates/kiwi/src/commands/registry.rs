@@ -180,9 +180,19 @@ pub const COMMANDS: &[CommandDef] = &[
         ]),
     },
     CommandDef {
+        id: "goto.branches",
+        title: "Go to Branches",
+        shortcut: Some("3"),
+        context: CommandContext::Always,
+        action: PaletteAction::NavigationChain(&[
+            NavCommand::SelectMainTab(MainTab::Branches),
+            NavCommand::SetFocus(FocusTarget::Main),
+        ]),
+    },
+    CommandDef {
         id: "goto.prs",
         title: "Go to GitHub PRs",
-        shortcut: Some("3"),
+        shortcut: Some("4"),
         context: CommandContext::Always,
         action: PaletteAction::NavigationChain(&[
             NavCommand::SelectLeftTab(LeftNavTab::Gh),
@@ -193,7 +203,7 @@ pub const COMMANDS: &[CommandDef] = &[
     CommandDef {
         id: "goto.preview",
         title: "Go to Preview",
-        shortcut: Some("5"),
+        shortcut: Some("6"),
         context: CommandContext::Always,
         action: PaletteAction::NavigationChain(&[
             NavCommand::SelectMainTab(MainTab::Preview),
@@ -203,7 +213,7 @@ pub const COMMANDS: &[CommandDef] = &[
     CommandDef {
         id: "goto.logs",
         title: "Go to Logs",
-        shortcut: Some("6"),
+        shortcut: Some("7"),
         context: CommandContext::Always,
         action: PaletteAction::NavigationChain(&[
             NavCommand::SelectMainTab(MainTab::Logs),
@@ -273,6 +283,13 @@ pub const COMMANDS: &[CommandDef] = &[
         shortcut: None,
         context: CommandContext::Always,
         action: PaletteAction::Navigation(NavCommand::SelectMainTab(MainTab::Issues)),
+    },
+    CommandDef {
+        id: "main.branches",
+        title: "Main Tab: Branches",
+        shortcut: None,
+        context: CommandContext::Always,
+        action: PaletteAction::Navigation(NavCommand::SelectMainTab(MainTab::Branches)),
     },
     CommandDef {
         id: "main.prs",

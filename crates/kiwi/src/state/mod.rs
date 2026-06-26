@@ -11,6 +11,7 @@ pub use app_state::AppState;
 pub use channel::EventChannel;
 #[allow(unused_imports)]
 pub use channel::EventSender;
+pub use domains::BranchState;
 #[cfg(test)]
 pub use domains::DiffState;
 pub use domains::GitHubState;

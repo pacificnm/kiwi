@@ -10,6 +10,7 @@ pub enum DoubleClickTarget {
     GitFile(usize),
     GitHubIssue(usize),
     GitHubPr(usize),
+    Branch(usize),
 }
 
 #[derive(Debug, Default)]

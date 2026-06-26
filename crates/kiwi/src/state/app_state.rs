@@ -12,7 +12,7 @@ use crate::shell::shell_launch_spec;
 use crate::theme::ThemePalette;
 
 use super::domains::{
-    AgentState, CommandPaletteState, DiffState, GitHubState, GitState, LogsState,
+    AgentState, BranchState, CommandPaletteState, DiffState, GitHubState, GitState, LogsState,
     NotificationState, ShellState, StatusBarState, WorkspaceMeta,
 };
 
@@ -28,6 +28,7 @@ pub struct AppState {
     pub preview: PreviewState,
     pub search: SearchState,
     pub git: GitState,
+    pub branches: BranchState,
     pub diff: DiffState,
     pub github: GitHubState,
     pub agent: AgentState,
@@ -71,6 +72,7 @@ impl AppState {
             preview: PreviewState::default(),
             search: SearchState::default(),
             git: GitState::default(),
+            branches: BranchState::default(),
             diff: DiffState::default(),
             github: GitHubState::default(),
             agent: AgentState {

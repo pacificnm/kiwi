@@ -91,7 +91,7 @@ mod tests {
     #[test]
     fn main_tab_labels_match_design() {
         assert_eq!(MAIN_TAB_LABELS[0], MainTab::Agent.label());
-        assert_eq!(MAIN_TAB_LABELS[5], MainTab::Logs.label());
+        assert_eq!(MAIN_TAB_LABELS[6], MainTab::Logs.label());
     }
 
     #[test]

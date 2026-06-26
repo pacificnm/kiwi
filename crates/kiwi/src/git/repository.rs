@@ -22,6 +22,8 @@ pub enum GitError {
     Open(String),
     Head(String),
     Status(String),
+    Branches(String),
+    Checkout(String),
 }
 
 impl std::fmt::Display for GitError {
@@ -30,6 +32,8 @@ impl std::fmt::Display for GitError {
             Self::Open(message) => write!(f, "failed to open git repository: {message}"),
             Self::Head(message) => write!(f, "failed to read git HEAD: {message}"),
             Self::Status(message) => write!(f, "failed to read git status: {message}"),
+            Self::Branches(message) => write!(f, "failed to list branches: {message}"),
+            Self::Checkout(message) => write!(f, "failed to checkout branch: {message}"),
         }
     }
 }

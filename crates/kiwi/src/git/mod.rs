@@ -1,3 +1,5 @@
+mod branch_selection;
+mod branches;
 mod io;
 mod panel;
 mod patch;
@@ -5,7 +7,12 @@ mod repository;
 mod selection;
 mod status;
 
-pub use io::spawn_git_refresh;
+pub use branch_selection::{
+    branch_move_selection, branch_row_at_viewport, branch_select_row, branch_selected_name,
+    branch_selected_row_index, ensure_branch_selection,
+};
+pub use branches::BranchEntry;
+pub use io::{spawn_branch_checkout, spawn_branch_list, spawn_git_refresh};
 pub use panel::{
     adjacent_changed_file, build_panel_rows, changed_file_paths, row_for_path, GitPanelRow,
 };
