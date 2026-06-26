@@ -45,6 +45,7 @@ mod tests {
             status_bar: StatusBarState::default(),
             workspace_meta: WorkspaceMeta::default(),
             text_selection: crate::selection::TextSelection::default(),
+            pty_cursor_blink_on: true,
         }
     }
 

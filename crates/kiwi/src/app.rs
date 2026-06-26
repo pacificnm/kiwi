@@ -28,7 +28,7 @@ use crate::github::{
     spawn_github_open_browser, spawn_github_pr_create, spawn_github_pr_detail_load,
     spawn_github_pr_list_load, spawn_github_repo_labels_load,
 };
-use crate::layout::{agent_pty_size, shell_pty_size, FocusTarget};
+use crate::layout::{agent_pty_size, shell_pty_size, FocusTarget, Region};
 use crate::navigation::{map_key, LeftNavTab, MainTab, NavCommand};
 use crate::preview::spawn_preview_load;
 use crate::search::{spawn_search, DebounceTimer, SearchCancelHandle, SearchJob, SearchMode};
@@ -48,6 +48,7 @@ use crate::watcher::RepoWatcher;
 use crate::workspace::{load_palette_history, save_palette_history};
 
 const SHELL_FORCE_QUIT_WINDOW: Duration = Duration::from_millis(500);
+const PTY_CURSOR_BLINK_INTERVAL: Duration = Duration::from_millis(530);
 
 struct PendingEditorLaunch {
     path: PathBuf,
@@ -69,6 +70,7 @@ pub struct App {
     pending_editor_launch: Option<PendingEditorLaunch>,
     clipboard: ClipboardService,
     double_click: DoubleClickTracker,
+    pty_cursor_blink_at: Instant,
     _repo_watcher: Option<RepoWatcher>,
 }
 
@@ -140,6 +142,7 @@ impl App {
             pending_editor_launch: None,
             clipboard: ClipboardService::new(),
             double_click: DoubleClickTracker::default(),
+            pty_cursor_blink_at: Instant::now(),
             _repo_watcher: repo_watcher,
         };
         let spawn_effects = agent_spawn_effects_if_needed(&mut app.state);
@@ -266,6 +269,8 @@ impl App {
 
             self.poll_search_debounce();
 
+            self.tick_pty_cursor_blink();
+
             if self.state.dirty {
                 terminal
                     .draw(|frame| draw_frame(frame, &self.state))
@@ -287,6 +292,22 @@ impl App {
         }
 
         self.shutdown(&mut terminal);
+    }
+
+    fn tick_pty_cursor_blink(&mut self) {
+        if !self.pty_cursor_blink_active() {
+            return;
+        }
+        if self.pty_cursor_blink_at.elapsed() < PTY_CURSOR_BLINK_INTERVAL {
+            return;
+        }
+        self.pty_cursor_blink_at = Instant::now();
+        self.state.pty_cursor_blink_on = !self.state.pty_cursor_blink_on;
+        self.state.dirty = true;
+    }
+
+    fn pty_cursor_blink_active(&self) -> bool {
+        self.state.navigation.focus.is_focused(Region::Shell) && self.state.shell.running
     }
 
     fn shutdown(&mut self, terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) {

@@ -283,11 +283,12 @@ mod tests {
     use std::path::PathBuf;
 
     use ratatui::backend::TestBackend;
+    use ratatui::style::Modifier;
     use ratatui::Terminal;
 
     use crate::config::ResolvedConfig;
     use crate::git::GitFileStatus;
-    use crate::layout::compute_layout;
+    use crate::layout::{compute_layout, FocusTarget};
     use crate::navigation::{LeftNavTab, MainTab, NavCommand};
     use crate::state::AppState;
     use crate::theme::capabilities::TerminalCapabilities;
@@ -503,6 +504,36 @@ mod tests {
 
         let content = buffer_content(terminal.backend().buffer());
         assert!(content.contains("user@host:~/kiwi$"));
+    }
+
+    #[test]
+    fn draw_frame_renders_shell_cursor_when_focused() {
+        let mut state = test_state();
+        state.navigation.focus = FocusTarget::Shell;
+        state.shell.running = true;
+        state.pty_cursor_blink_on = true;
+        state.shell.scrollback.append_bytes(b"user@host:~/kiwi$ ");
+
+        let rects = state.layout.rects;
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| draw_frame(frame, &state))
+            .expect("draw");
+
+        let buffer = terminal.backend().buffer();
+        let shell = rects.shell;
+        let mut found_cursor = false;
+        for y in shell.y + 1..shell.y + shell.height - 1 {
+            for x in shell.x + 1..shell.x + shell.width - 1 {
+                let cell = &buffer[(x, y)];
+                if cell.modifier.contains(Modifier::REVERSED) {
+                    found_cursor = true;
+                    break;
+                }
+            }
+        }
+        assert!(found_cursor, "expected reversed cursor cell in shell pane");
     }
 
     #[test]

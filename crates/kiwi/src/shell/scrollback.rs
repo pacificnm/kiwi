@@ -8,6 +8,7 @@ pub struct ScrollbackBuffer {
     screen: Vec<String>,
     cursor_row: usize,
     cursor_col: usize,
+    cursor_visible: bool,
     overwrite_line: bool,
     history: Vec<String>,
     pending: Vec<u8>,
@@ -29,6 +30,7 @@ impl ScrollbackBuffer {
             screen: vec![String::new()],
             cursor_row: 0,
             cursor_col: 0,
+            cursor_visible: true,
             overwrite_line: false,
             history: Vec::new(),
             pending: Vec::new(),
@@ -46,6 +48,21 @@ impl ScrollbackBuffer {
     }
 
     #[must_use]
+    pub fn cursor_display_position(&self, include_pending: bool) -> Option<(usize, usize)> {
+        if !self.cursor_visible {
+            return None;
+        }
+
+        let line_index = self.history.len() + self.cursor_row;
+        let lines = self.lines_for_display(include_pending);
+        if line_index >= lines.len() {
+            return None;
+        }
+
+        Some((line_index, self.cursor_col))
+    }
+
+    #[must_use]
     pub fn has_pending_line(&self) -> bool {
         self.current_line()
             .map(|line| !line.is_empty())
@@ -57,6 +74,7 @@ impl ScrollbackBuffer {
         self.screen = vec![String::new()];
         self.cursor_row = 0;
         self.cursor_col = 0;
+        self.cursor_visible = true;
         self.overwrite_line = false;
         self.pending.clear();
         self.text_pending.clear();
@@ -255,6 +273,8 @@ impl ScrollbackBuffer {
             EscapeAction::CursorBack(n) => {
                 self.cursor_col = self.cursor_col.saturating_sub(n);
             }
+            EscapeAction::ShowCursor => self.cursor_visible = true,
+            EscapeAction::HideCursor => self.cursor_visible = false,
             EscapeAction::Raw(sequence) => self.write_str(&sequence),
         }
     }
@@ -363,6 +383,8 @@ enum EscapeAction {
     CursorDown(usize),
     CursorForward(usize),
     CursorBack(usize),
+    ShowCursor,
+    HideCursor,
     Raw(String),
 }
 
@@ -479,6 +501,8 @@ fn decode_csi(final_byte: u8, params: &str) -> EscapeAction {
                 EscapeAction::Ignore
             }
         }
+        b'h' if first == "?25" => EscapeAction::ShowCursor,
+        b'l' if first == "?25" => EscapeAction::HideCursor,
         b'h' | b'l' => EscapeAction::Ignore,
         _ => EscapeAction::Ignore,
     }
@@ -671,5 +695,21 @@ mod tests {
         buffer.append_bytes(b"\x1b[?25l\x1b[?2004hhello\n");
         let lines = buffer.lines_for_display(false);
         assert_eq!(lines, vec!["hello".to_string()]);
+    }
+
+    #[test]
+    fn cursor_display_position_tracks_active_line() {
+        let mut buffer = ScrollbackBuffer::new();
+        buffer.append_bytes(b"prompt$ ");
+        assert_eq!(buffer.cursor_display_position(true), Some((0, 8)));
+    }
+
+    #[test]
+    fn hide_cursor_mode_suppresses_display_position() {
+        let mut buffer = ScrollbackBuffer::new();
+        buffer.append_bytes(b"\x1b[?25lprompt$ ");
+        assert_eq!(buffer.cursor_display_position(true), None);
+        buffer.append_bytes(b"\x1b[?25h");
+        assert_eq!(buffer.cursor_display_position(true), Some((0, 8)));
     }
 }
