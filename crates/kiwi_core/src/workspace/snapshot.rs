@@ -6,11 +6,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::github::GitHubLeftPane;
-use crate::layout::FocusTarget;
-use crate::navigation::{LeftNavTab, MainTab};
-use crate::state::AppState;
-
-use super::MAX_PALETTE_HISTORY_ENTRIES;
+use crate::navigation::{FocusTarget, LeftNavTab, MainTab};
+use crate::state::{ReduceView, MAX_PALETTE_HISTORY_ENTRIES};
 
 pub const WORKSPACE_SCHEMA_VERSION: u32 = 1;
 
@@ -71,51 +68,48 @@ impl WorkspaceSnapshot {
     }
 
     #[must_use]
-    pub fn from_app_state(state: &AppState) -> Self {
-        let repo_root = &state.repo_root;
+    pub fn from_reduce_view(view: &ReduceView<'_>) -> Self {
+        let repo_root = view.repo_root.as_path();
         let mut scroll_positions = HashMap::new();
         scroll_positions.insert(
             scroll_view::FILE_TREE.to_string(),
-            state.file_tree.scroll_offset,
+            view.file_tree.scroll_offset,
         );
-        scroll_positions.insert(scroll_view::GIT.to_string(), state.git.scroll_offset);
-        scroll_positions.insert(scroll_view::SEARCH.to_string(), state.search.scroll_offset);
+        scroll_positions.insert(scroll_view::GIT.to_string(), view.git.scroll_offset);
+        scroll_positions.insert(scroll_view::SEARCH.to_string(), view.search.scroll_offset);
         scroll_positions.insert(
             scroll_view::BRANCHES.to_string(),
-            state.branches.scroll_offset,
+            view.branches.scroll_offset,
         );
-        scroll_positions.insert(
-            scroll_view::PREVIEW.to_string(),
-            state.preview.scroll_offset,
-        );
-        scroll_positions.insert(scroll_view::DIFF.to_string(), state.diff.scroll_offset);
+        scroll_positions.insert(scroll_view::PREVIEW.to_string(), view.preview.scroll_offset);
+        scroll_positions.insert(scroll_view::DIFF.to_string(), view.diff.scroll_offset);
         scroll_positions.insert(
             scroll_view::DIFF_HORIZONTAL.to_string(),
-            state.diff.horizontal_scroll_offset,
+            view.diff.horizontal_scroll_offset,
         );
         scroll_positions.insert(
             scroll_view::GITHUB_ISSUES.to_string(),
-            state.github.issues_scroll_offset,
+            view.github.issues_scroll_offset,
         );
         scroll_positions.insert(
             scroll_view::GITHUB_PRS.to_string(),
-            state.github.prs_scroll_offset,
+            view.github.prs_scroll_offset,
         );
         scroll_positions.insert(
             scroll_view::GITHUB_ISSUE_DETAIL.to_string(),
-            state.github.issue_detail_scroll_offset,
+            view.github.issue_detail_scroll_offset,
         );
         scroll_positions.insert(
             scroll_view::GITHUB_PR_DETAIL.to_string(),
-            state.github.pr_detail_scroll_offset,
+            view.github.pr_detail_scroll_offset,
         );
 
-        for (path, (vertical, horizontal)) in &state.diff.scroll_by_path {
+        for (path, (vertical, horizontal)) in &view.diff.scroll_by_path {
             scroll_positions.insert(format!("{DIFF_SCROLL_PREFIX}{path}"), *vertical);
             scroll_positions.insert(format!("{DIFF_H_SCROLL_PREFIX}{path}"), *horizontal);
         }
 
-        let expanded_paths = state
+        let expanded_paths = view
             .file_tree
             .nodes
             .values()
@@ -123,7 +117,7 @@ impl WorkspaceSnapshot {
             .map(|node| rel_path_string(repo_root, &node.path))
             .collect();
 
-        let selected_path = state
+        let selected_path = view
             .file_tree
             .selected
             .as_ref()
@@ -131,55 +125,55 @@ impl WorkspaceSnapshot {
 
         Self {
             schema_version: WORKSPACE_SCHEMA_VERSION,
-            left_nav_tab: state.navigation.left_tab.label().to_string(),
-            main_tab: state.navigation.main_tab.label().to_string(),
-            focus: focus_label(state.navigation.focus).to_string(),
-            left_width: state.config.app.left_width,
+            left_nav_tab: view.navigation.left_tab.label().to_string(),
+            main_tab: view.navigation.main_tab.label().to_string(),
+            focus: focus_label(view.navigation.focus).to_string(),
+            left_width: view.config.app.left_width,
             expanded_paths,
             selected_path,
             scroll_positions,
-            command_palette_history: trim_history(state.palette.history.clone()),
+            command_palette_history: trim_history(view.palette.history.clone()),
         }
     }
 
-    pub fn apply_to_app_state(&self, state: &mut AppState) {
+    pub fn apply_to_reduce_view(&self, view: &mut ReduceView<'_>) {
         if let Some(left_tab) = parse_left_nav_tab(&self.left_nav_tab) {
-            state.navigation.left_tab = left_tab;
+            view.navigation.left_tab = left_tab;
         }
         if let Some(main_tab) = parse_main_tab(&self.main_tab) {
-            state.navigation.main_tab = main_tab;
+            view.navigation.main_tab = main_tab;
         }
         if let Some(focus) = parse_focus(&self.focus) {
-            state.navigation.focus = focus;
+            view.navigation.focus = focus;
         }
 
-        state.config.app.left_width = self.left_width;
+        view.config.app.left_width = self.left_width;
 
-        state.workspace_meta.pending_expanded_paths = self
+        view.workspace_meta.pending_expanded_paths = self
             .expanded_paths
             .iter()
-            .map(|rel| abs_path(&state.repo_root, rel))
+            .map(|rel| abs_path(view.repo_root, rel))
             .collect();
-        for path in &state.workspace_meta.pending_expanded_paths {
-            if let Some(node) = state.file_tree.nodes.get_mut(path) {
+        for path in &view.workspace_meta.pending_expanded_paths {
+            if let Some(node) = view.file_tree.nodes.get_mut(path) {
                 node.expanded = true;
             }
         }
 
-        state.workspace_meta.pending_selected_path = None;
+        view.workspace_meta.pending_selected_path = None;
         if let Some(rel) = &self.selected_path {
-            let path = abs_path(&state.repo_root, rel);
-            if state.file_tree.nodes.contains_key(&path) {
-                state.file_tree.select(path);
+            let path = abs_path(view.repo_root, rel);
+            if view.file_tree.nodes.contains_key(&path) {
+                view.file_tree.select(path);
             } else {
-                state.workspace_meta.pending_selected_path = Some(path);
+                view.workspace_meta.pending_selected_path = Some(path);
             }
         }
 
-        apply_scroll_positions(state, &self.scroll_positions);
-        sync_github_left_pane(state);
-        state.palette.history = trim_history(self.command_palette_history.clone());
-        state.dirty = true;
+        apply_scroll_positions(view, &self.scroll_positions);
+        sync_github_left_pane(view);
+        view.palette.history = trim_history(self.command_palette_history.clone());
+        view.set_dirty();
     }
 }
 
@@ -191,61 +185,60 @@ pub fn trim_history(mut history: Vec<String>) -> Vec<String> {
     history
 }
 
-fn apply_scroll_positions(state: &mut AppState, scroll_positions: &HashMap<String, usize>) {
-    state.file_tree.scroll_offset = *scroll_positions
+fn apply_scroll_positions(view: &mut ReduceView<'_>, scroll_positions: &HashMap<String, usize>) {
+    view.file_tree.scroll_offset = *scroll_positions
         .get(scroll_view::FILE_TREE)
-        .unwrap_or(&state.file_tree.scroll_offset);
-    state.git.scroll_offset = *scroll_positions
+        .unwrap_or(&view.file_tree.scroll_offset);
+    view.git.scroll_offset = *scroll_positions
         .get(scroll_view::GIT)
-        .unwrap_or(&state.git.scroll_offset);
-    state.search.scroll_offset = *scroll_positions
+        .unwrap_or(&view.git.scroll_offset);
+    view.search.scroll_offset = *scroll_positions
         .get(scroll_view::SEARCH)
-        .unwrap_or(&state.search.scroll_offset);
-    state.branches.scroll_offset = *scroll_positions
+        .unwrap_or(&view.search.scroll_offset);
+    view.branches.scroll_offset = *scroll_positions
         .get(scroll_view::BRANCHES)
-        .unwrap_or(&state.branches.scroll_offset);
-    state.preview.scroll_offset = *scroll_positions
+        .unwrap_or(&view.branches.scroll_offset);
+    view.preview.scroll_offset = *scroll_positions
         .get(scroll_view::PREVIEW)
-        .unwrap_or(&state.preview.scroll_offset);
-    state.diff.scroll_offset = *scroll_positions
+        .unwrap_or(&view.preview.scroll_offset);
+    view.diff.scroll_offset = *scroll_positions
         .get(scroll_view::DIFF)
-        .unwrap_or(&state.diff.scroll_offset);
-    state.diff.horizontal_scroll_offset = *scroll_positions
+        .unwrap_or(&view.diff.scroll_offset);
+    view.diff.horizontal_scroll_offset = *scroll_positions
         .get(scroll_view::DIFF_HORIZONTAL)
-        .unwrap_or(&state.diff.horizontal_scroll_offset);
-    state.github.issues_scroll_offset = *scroll_positions
+        .unwrap_or(&view.diff.horizontal_scroll_offset);
+    view.github.issues_scroll_offset = *scroll_positions
         .get(scroll_view::GITHUB_ISSUES)
-        .unwrap_or(&state.github.issues_scroll_offset);
-    state.github.prs_scroll_offset = *scroll_positions
+        .unwrap_or(&view.github.issues_scroll_offset);
+    view.github.prs_scroll_offset = *scroll_positions
         .get(scroll_view::GITHUB_PRS)
-        .unwrap_or(&state.github.prs_scroll_offset);
-    state.github.issue_detail_scroll_offset = *scroll_positions
+        .unwrap_or(&view.github.prs_scroll_offset);
+    view.github.issue_detail_scroll_offset = *scroll_positions
         .get(scroll_view::GITHUB_ISSUE_DETAIL)
-        .unwrap_or(&state.github.issue_detail_scroll_offset);
-    state.github.pr_detail_scroll_offset = *scroll_positions
+        .unwrap_or(&view.github.issue_detail_scroll_offset);
+    view.github.pr_detail_scroll_offset = *scroll_positions
         .get(scroll_view::GITHUB_PR_DETAIL)
-        .unwrap_or(&state.github.pr_detail_scroll_offset);
+        .unwrap_or(&view.github.pr_detail_scroll_offset);
 
-    state.diff.scroll_by_path.clear();
+    view.diff.scroll_by_path.clear();
     for (key, vertical) in scroll_positions {
         if let Some(rel) = key.strip_prefix(DIFF_SCROLL_PREFIX) {
             let horizontal = scroll_positions
                 .get(&format!("{DIFF_H_SCROLL_PREFIX}{rel}"))
                 .copied()
                 .unwrap_or(0);
-            state
-                .diff
+            view.diff
                 .scroll_by_path
                 .insert(rel.to_string(), (*vertical, horizontal));
         }
     }
 }
 
-fn sync_github_left_pane(state: &mut AppState) {
-    state.github.left_pane = match state.navigation.main_tab {
+fn sync_github_left_pane(view: &mut ReduceView<'_>) {
+    view.github.left_pane = match view.navigation.main_tab {
         MainTab::Issues => GitHubLeftPane::Issues,
         MainTab::Prs => GitHubLeftPane::Prs,
-        _ => state.github.left_pane,
+        _ => view.github.left_pane,
     };
 }
 
@@ -292,10 +285,8 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::config::ResolvedConfig;
-    use crate::layout::compute_layout;
-    use crate::state::AppState;
-    use crate::theme::capabilities::TerminalCapabilities;
-    use crate::theme::loader::load_theme_with_capabilities;
+    use crate::state::{AppState, ReduceView, ViewportMetrics};
+    use crate::theme::{load_theme_with_capabilities, TerminalCapabilities};
 
     use super::*;
 
@@ -309,7 +300,22 @@ mod tests {
                 TerminalCapabilities::TrueColor,
             )
             .expect("theme"),
-            compute_layout(120, 40, 30).expect("layout"),
+            TerminalCapabilities::TrueColor,
+            ViewportMetrics {
+                settings_rows: 10,
+                github_list_rows: 10,
+                github_detail_rows: 20,
+                branches_rows: 10,
+                git_rows: 10,
+                file_tree_rows: 10,
+                preview_rows: 20,
+                preview_cols: 80,
+                search_rows: 10,
+                shell_rows: 20,
+                shell_cols: 80,
+                agent_rows: 15,
+                agent_cols: 100,
+            },
         )
     }
 
@@ -350,7 +356,7 @@ mod tests {
     }
 
     #[test]
-    fn from_app_state_captures_navigation_and_scroll() {
+    fn from_reduce_view_captures_navigation_and_scroll() {
         let mut state = test_state();
         state.navigation.left_tab = LeftNavTab::Git;
         state.navigation.main_tab = MainTab::Diff;
@@ -360,7 +366,8 @@ mod tests {
         state.git.scroll_offset = 9;
         state.palette.history = vec!["git.refresh".to_string()];
 
-        let snapshot = WorkspaceSnapshot::from_app_state(&state);
+        let view = ReduceView::from_app_state(&mut state);
+        let snapshot = WorkspaceSnapshot::from_reduce_view(&view);
         assert_eq!(snapshot.left_nav_tab, "Git");
         assert_eq!(snapshot.main_tab, "Diff");
         assert_eq!(snapshot.focus, "Left");
@@ -377,7 +384,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_to_app_state_restores_tabs_focus_and_scroll() {
+    fn apply_to_reduce_view_restores_tabs_focus_and_scroll() {
         let mut state = test_state();
         let snapshot = WorkspaceSnapshot {
             left_nav_tab: "GH".to_string(),
@@ -389,7 +396,7 @@ mod tests {
             ..WorkspaceSnapshot::default()
         };
 
-        snapshot.apply_to_app_state(&mut state);
+        snapshot.apply_to_reduce_view(&mut ReduceView::from_app_state(&mut state));
 
         assert_eq!(state.navigation.left_tab, LeftNavTab::Gh);
         assert_eq!(state.navigation.main_tab, MainTab::Issues);
@@ -411,7 +418,7 @@ mod tests {
             main_tab: "AlsoNotATab".to_string(),
             ..WorkspaceSnapshot::default()
         };
-        snapshot.apply_to_app_state(&mut state);
+        snapshot.apply_to_reduce_view(&mut ReduceView::from_app_state(&mut state));
 
         assert_eq!(state.navigation.left_tab, LeftNavTab::Git);
         assert_eq!(state.navigation.main_tab, MainTab::Diff);

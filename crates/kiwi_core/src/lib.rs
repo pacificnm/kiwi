@@ -24,6 +24,7 @@ pub mod shell;
 pub mod state;
 pub mod theme;
 pub mod watcher;
+pub mod workspace;
 
 /// Crate version string for smoke tests and diagnostics.
 pub const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
