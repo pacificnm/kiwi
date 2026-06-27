@@ -1,31 +1,7 @@
-use std::path::PathBuf;
-use std::time::SystemTime;
 
-use crate::agent::infer_status_from_scrollback;
-use crate::commands::{execute_command, history_input_for_id, refresh_matches};
-use crate::config::{project_has_theme_override, ThemeSettings};
-use crate::file_tree::ExpandAction;
-use crate::git::{
-    adjacent_changed_file, branch_move_selection, branch_select_row, branch_selected_name,
-    build_panel_rows, changed_file_paths, clamp_git_scroll, ensure_branch_selection,
-    ensure_git_selection, git_move_selection, git_select_row, patch_git_file_entries,
-    row_for_path, BranchEntry, GitFileEntry,
-};
-use crate::github::{
-    advance_pr_create_prompt, apply_label_picker_load, ensure_issue_selection, ensure_pr_selection,
-    format_issue_agent_prompt, format_pr_agent_prompt, issue_body_excerpt_from_detail, issue_move_selection, issue_select_row,
-    missing_browser_target_message, page_scroll_issue_detail, pr_move_selection, pr_select_row,
-    pull_request_is_mergeable, resolve_browser_target, scroll_issue_detail, selected_pull_request,
-    GhContextMenuAction, GhContextMenuState, GhContextTarget, GitHubLeftPane,
-    IssueDetailLoadResult, IssueListLoadResult, LabelPickerState, PrCreatePromptAdvance,
-    PrDetailLoadResult, PrListLoadResult, ISSUE_LIST_CACHE_SECS, PR_LIST_CACHE_SECS,
-};
-use crate::navigation::{FocusTarget, LeftNavTab, MainTab, NavCommand};
-use crate::settings::{ensure_settings_selection, settings_move_selection, settings_select_row};
-use crate::state::{PalettePrompt, ReduceView};
-use crate::theme::load_theme_with_capabilities;
+use crate::state::ReduceView;
 
-use crate::events::{AgentEffect, AppCommand, AppEvent, FsEffect, GitEffect, GitHubEffect, SearchEffect, ShellEffect, SideEffect};
+use crate::events::{AgentEffect, AppCommand, AppEvent, ShellEffect, SideEffect};
 
 
 mod github;
@@ -59,20 +35,6 @@ pub use self::diff::diff_select_file_effects;
 pub use self::diff::diff_move_file_effects;
 pub use self::diff::diff_set_source_effects;
 
-use self::navigation::sync_github_left_pane_from_main_tab;
-use self::agent::agent_spawn_effects_for;
-use self::workspace::workspace_apply_pending_selection;
-use self::github::clear_issue_detail_cache;
-use self::github::clear_pr_detail_cache;
-use self::github::selected_pr_number;
-use self::github::github_pr_detail_effects;
-use self::github::selected_issue_number;
-use self::github::github_issue_detail_effects;
-use self::github::github_surface_active;
-use self::github::github_issue_list_surface_active;
-use self::github::issue_list_cache_fresh;
-use self::github::github_pr_list_surface_active;
-use self::github::pr_list_cache_fresh;
 use self::github::reduce_github_refresh_requested;
 use self::github::reduce_github_auth_checked;
 use self::github::reduce_github_issues_loaded;
@@ -81,22 +43,14 @@ use self::github::reduce_github_issue_detail_loaded;
 use self::github::reduce_github_pr_detail_loaded;
 use self::github::reduce_github_move_issue_selection;
 use self::github::reduce_github_select_issue;
-use self::github::issues_viewport_rows;
 use self::github::reduce_github_move_pr_selection;
 use self::github::reduce_github_select_pr;
-use self::github::prs_viewport_rows;
 use self::github::reduce_github_open_selected;
 use self::github::reduce_github_select_left_pane;
 use self::github::reduce_github_issue_detail_scroll;
 use self::github::reduce_github_issue_detail_page_scroll;
-use self::github::issue_detail_line_count;
-use self::github::clamp_issue_detail_scroll;
-use self::github::issue_detail_viewport_rows;
 use self::github::reduce_github_pr_detail_scroll;
 use self::github::reduce_github_pr_detail_page_scroll;
-use self::github::pr_detail_line_count;
-use self::github::clamp_pr_detail_scroll;
-use self::github::pr_detail_viewport_rows;
 use self::github::reduce_github_issue_comment_completed;
 use self::github::reduce_github_issue_create_branch_completed;
 use self::github::reduce_github_repo_labels_loaded;
@@ -110,19 +64,7 @@ use self::github::reduce_github_context_menu_move;
 use self::github::reduce_github_context_menu_select;
 use self::github::reduce_github_context_menu_execute;
 use self::github::reduce_github_list_action;
-use self::github::execute_github_list_action;
 use self::github::reduce_github_context_menu_cancel;
-use self::github::github_issue_create_branch_effects;
-use self::github::github_issue_comment_prompt_effects;
-use self::github::github_issue_label_picker_effects;
-use self::github::github_open_in_browser_effects;
-use self::github::github_pr_merge_effects;
-use self::github::issue_labels_for_number;
-use self::github::github_send_issue_to_agent_effects;
-use self::github::github_send_pr_to_agent_effects;
-use self::github::github_send_prompt_to_agent_effects;
-use self::github::issue_title_for_number;
-use self::github::pr_title_for_number;
 use self::github::reduce_github_open_in_browser;
 use self::github::reduce_github_open_browser_completed;
 use self::github::reduce_github_pr_create_completed;
@@ -135,8 +77,6 @@ use self::git::reduce_branch_select;
 use self::git::reduce_branch_checkout_selected;
 use self::git::reduce_branch_list_loaded;
 use self::git::reduce_branch_checkout_completed;
-use self::git::sync_git_status_patch_to_file_tree;
-use self::git::sync_git_statuses_to_file_tree;
 use self::shell::reduce_shell_output;
 use self::shell::reduce_shell_exited;
 use self::agent::reduce_agent_output;
@@ -157,18 +97,14 @@ use self::navigation::reduce_palette_move_selection;
 use self::navigation::reduce_palette_history_up;
 use self::navigation::reduce_palette_history_down;
 use self::navigation::reduce_palette_execute_selected;
-use self::navigation::reduce_palette_prompt_submit;
 use self::navigation::reduce_palette_execute_match;
 use self::workspace::reduce_file_tree_expand;
 use self::workspace::reduce_file_tree_collapse;
 use self::workspace::reduce_file_tree_select;
-use self::workspace::file_tree_viewport_rows;
 use self::workspace::reduce_file_tree_move_selection;
-use self::git::git_viewport_rows;
 use self::git::reduce_git_move_selection;
 use self::git::reduce_git_select;
 use self::git::reduce_git_open_selected;
-use self::git::sync_git_selection_for_path;
 use self::diff::reduce_diff_select_file;
 use self::diff::reduce_diff_move_file;
 use self::diff::reduce_diff_loaded;
@@ -176,11 +112,6 @@ use self::diff::reduce_diff_toggle_source;
 use self::diff::reduce_diff_set_source;
 use self::workspace::reduce_file_tree_refresh;
 use self::workspace::reduce_file_tree_children_loaded;
-use self::workspace::preview_viewport_rows;
-use self::diff::diff_viewport_rows;
-use self::diff::diff_text_width;
-use self::diff::diff_gutter_width;
-use self::diff::max_lineno_width;
 use self::workspace::reduce_preview_file;
 use self::workspace::reduce_preview_loaded;
 use self::workspace::reduce_preview_scroll;
@@ -195,7 +126,6 @@ use self::search::reduce_search_clear;
 use self::search::reduce_search_set_mode;
 use self::search::reduce_search_execute;
 use self::search::reduce_search_cancel;
-use self::search::search_viewport_rows;
 use self::search::reduce_search_move_selection;
 use self::search::reduce_search_select;
 use self::search::reduce_search_completed;
@@ -208,7 +138,6 @@ use self::settings::reduce_settings_select;
 use self::settings::reduce_settings_apply_theme;
 use self::settings::reduce_set_theme;
 use self::workspace::reduce_fs_changed;
-use self::workspace::preview_file_unchanged;
 
 pub fn reduce(state: &mut ReduceView<'_>, event: AppEvent) -> Vec<SideEffect> {
     match event {
@@ -441,11 +370,15 @@ mod tests {
     use crate::theme::TerminalCapabilities;
 
     use super::*;
+    use std::time::SystemTime;
     use crate::agent::{AgentId, AgentManager};
+    use crate::events::{FsEffect, GitEffect, GitHubEffect, SearchEffect};
     use crate::file_tree::{DirectoryEntry, FileTreeState};
+    use crate::github::GitHubLeftPane;
     use crate::preview::{PreviewLoadResult, PreviewState};
     use crate::search::{SearchMode, SearchResult, SearchState};
     use crate::state::{AppState, ViewportMetrics};
+    use super::diff::{diff_gutter_width, max_lineno_width};
 
     fn test_state() -> AppState {
         AppState::from_startup(
