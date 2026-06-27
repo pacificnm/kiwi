@@ -28,7 +28,7 @@ fn main() {
 
 fn run_gui(context: GuiBootstrapContext) -> eframe::Result<()> {
     let title = window_title(&context.repo_root);
-    let runtime = GuiRuntime::build(context);
+    let (runtime, gui_snapshot) = GuiRuntime::build(context);
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(title)
@@ -41,7 +41,7 @@ fn run_gui(context: GuiBootstrapContext) -> eframe::Result<()> {
     eframe::run_native(
         "kiwi-gui",
         native_options,
-        Box::new(move |cc| Ok(Box::new(app::KiwiApp::new(cc, runtime)))),
+        Box::new(move |cc| Ok(Box::new(app::KiwiApp::new(cc, runtime, gui_snapshot)))),
     )
 }
 

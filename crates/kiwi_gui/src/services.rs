@@ -4,6 +4,7 @@ use kiwi_core::events::{AppEvent, EventChannel, SideEffect};
 use kiwi_core::file_tree::spawn_directory_load;
 use kiwi_core::git::spawn_git_refresh;
 use kiwi_core::state::{AppState, ReduceView};
+use kiwi_core::workspace::try_save_from_reduce_view;
 
 /// Maximum events processed per frame to avoid stalling egui.
 pub const MAX_EVENTS_PER_FRAME: usize = 64;
@@ -38,6 +39,9 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
         SideEffect::LoadDirectoryChildren(path) => {
             spawn_directory_load(path, ctx.events.sender());
         }
+        SideEffect::SaveWorkspace => {
+            try_save_from_reduce_view(&ReduceView::from_app_state(ctx.state));
+        }
         SideEffect::SpawnBranchList
         | SideEffect::SpawnBranchCheckout { .. }
         | SideEffect::SpawnGitHubRefresh
@@ -46,7 +50,6 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
         | SideEffect::WriteShell(_)
         | SideEffect::WriteAgent(_)
         | SideEffect::ResizeShell { .. }
-        | SideEffect::SaveWorkspace
         | SideEffect::LoadPreviewFile(_)
         | SideEffect::LoadFileDiff { .. }
         | SideEffect::CancelSearch

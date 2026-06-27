@@ -4,7 +4,8 @@
 //! evolution of Agent — v1 uses a single [`KiwiTab::Agent`] PTY tab.
 
 /// Dock panel tab key for [`egui_dock::DockState`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "PascalCase")]
 pub enum KiwiTab {
     Explorer,
     GitStatus,

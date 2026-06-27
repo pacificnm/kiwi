@@ -6,18 +6,22 @@ use std::path::{Path, PathBuf};
 
 use crate::state::ReduceView;
 
-use super::snapshot::{trim_history, WorkspaceSnapshot, WORKSPACE_SCHEMA_VERSION};
+use super::snapshot::{
+    trim_history, GuiWorkspaceSnapshot, TuiWorkspaceSnapshot, WorkspaceFile, WorkspaceSnapshot,
+    WORKSPACE_SCHEMA_VERSION, WORKSPACE_SCHEMA_VERSION_V1,
+};
 
 pub fn load_snapshot(repo_root: &Path) -> Option<WorkspaceSnapshot> {
-    load_workspace_snapshot(repo_root, false)
+    load_workspace_file(repo_root, false).map(|file| file.tui_snapshot())
 }
 
 /// Load workspace snapshot for startup (SPEC-017). Logs warnings on corrupt or incompatible files.
 pub fn try_load_workspace(repo_root: &Path) -> Option<WorkspaceSnapshot> {
-    load_workspace_snapshot(repo_root, true)
+    load_workspace_file(repo_root, true).map(|file| file.tui_snapshot())
 }
 
-fn load_workspace_snapshot(repo_root: &Path, log_errors: bool) -> Option<WorkspaceSnapshot> {
+/// Load full workspace file including optional GUI section (ADR-022 / SPEC-017 v2).
+pub fn load_workspace_file(repo_root: &Path, log_errors: bool) -> Option<WorkspaceFile> {
     let path = workspace_file_path(repo_root);
     let contents = match fs::read_to_string(&path) {
         Ok(contents) => contents,
@@ -30,21 +34,44 @@ fn load_workspace_snapshot(repo_root: &Path, log_errors: bool) -> Option<Workspa
         }
     };
 
-    match serde_json::from_str::<WorkspaceSnapshot>(&contents) {
-        Ok(snapshot) if snapshot.is_compatible() => Some(snapshot),
+    parse_workspace_contents(&contents, log_errors)
+}
+
+/// Load full workspace file for startup; logs warnings on corrupt or incompatible files.
+pub fn try_load_workspace_file(repo_root: &Path) -> Option<WorkspaceFile> {
+    load_workspace_file(repo_root, true)
+}
+
+fn parse_workspace_contents(contents: &str, log_errors: bool) -> Option<WorkspaceFile> {
+    if let Ok(file) = serde_json::from_str::<WorkspaceFile>(contents) {
+        if file.schema_version == WORKSPACE_SCHEMA_VERSION {
+            return Some(file);
+        }
+        if log_errors {
+            eprintln!(
+                "workspace: unsupported schema version {} (expected {WORKSPACE_SCHEMA_VERSION})",
+                file.schema_version
+            );
+        }
+        return None;
+    }
+
+    match serde_json::from_str::<WorkspaceSnapshot>(contents) {
+        Ok(snapshot) if snapshot.schema_version == WORKSPACE_SCHEMA_VERSION_V1 => {
+            Some(WorkspaceFile::from_v1(snapshot))
+        }
         Ok(snapshot) => {
             if log_errors {
                 eprintln!(
-                    "workspace: unsupported schema version {} in {}",
-                    snapshot.schema_version,
-                    path.display()
+                    "workspace: unsupported schema version {} (expected {WORKSPACE_SCHEMA_VERSION_V1} or {WORKSPACE_SCHEMA_VERSION})",
+                    snapshot.schema_version
                 );
             }
             None
         }
         Err(err) => {
             if log_errors {
-                eprintln!("workspace: corrupt snapshot at {}: {err}", path.display());
+                eprintln!("workspace: corrupt snapshot: {err}");
             }
             None
         }
@@ -52,8 +79,10 @@ fn load_workspace_snapshot(repo_root: &Path, log_errors: bool) -> Option<Workspa
 }
 
 pub fn save_from_reduce_view(view: &ReduceView<'_>) -> std::io::Result<()> {
-    let snapshot = WorkspaceSnapshot::from_reduce_view(view);
-    save_snapshot(view.repo_root, &snapshot)
+    merge_save_tui(
+        view.repo_root,
+        &TuiWorkspaceSnapshot::from_reduce_view(view),
+    )
 }
 
 /// Persist current app state when `workspace.persist` is enabled (SPEC-017).
@@ -69,13 +98,44 @@ pub fn try_save_from_reduce_view(view: &ReduceView<'_>) {
     }
 }
 
+pub fn merge_save_tui(repo_root: &Path, tui: &TuiWorkspaceSnapshot) -> std::io::Result<()> {
+    let mut file = load_workspace_file(repo_root, false).unwrap_or_default();
+    file.schema_version = WORKSPACE_SCHEMA_VERSION;
+    file.tui = tui.clone();
+    save_workspace_file(repo_root, &file)
+}
+
+pub fn merge_save_gui(repo_root: &Path, gui: &GuiWorkspaceSnapshot) -> std::io::Result<()> {
+    let mut file = load_workspace_file(repo_root, false).unwrap_or_default();
+    file.schema_version = WORKSPACE_SCHEMA_VERSION;
+    file.gui = Some(gui.clone());
+    save_workspace_file(repo_root, &file)
+}
+
+/// Persist GUI dock layout when `workspace.persist` is enabled (SPEC-022 / #186).
+pub fn try_merge_save_gui(repo_root: &Path, persist: bool, gui: &GuiWorkspaceSnapshot) {
+    if !persist {
+        return;
+    }
+    if let Err(err) = merge_save_gui(repo_root, gui) {
+        eprintln!(
+            "workspace: failed to save gui layout {}: {err}",
+            workspace_file_path(repo_root).display()
+        );
+    }
+}
+
 pub fn save_snapshot(repo_root: &Path, snapshot: &WorkspaceSnapshot) -> std::io::Result<()> {
+    merge_save_tui(repo_root, &TuiWorkspaceSnapshot::from(snapshot.clone()))
+}
+
+pub fn save_workspace_file(repo_root: &Path, file: &WorkspaceFile) -> std::io::Result<()> {
     let path = workspace_file_path(repo_root);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
 
-    let serialized = serde_json::to_string_pretty(snapshot)?;
+    let serialized = serde_json::to_string_pretty(file)?;
     let temp_path = path.with_extension("json.tmp");
     {
         let mut temp = fs::File::create(&temp_path)?;
@@ -90,10 +150,10 @@ pub fn load_palette_history(repo_root: &Path) -> Option<Vec<String>> {
 }
 
 pub fn save_palette_history(repo_root: &Path, history: &[String]) -> std::io::Result<()> {
-    let mut snapshot = load_snapshot(repo_root).unwrap_or_default();
-    snapshot.schema_version = WORKSPACE_SCHEMA_VERSION;
-    snapshot.command_palette_history = trim_history(history.to_vec());
-    save_snapshot(repo_root, &snapshot)
+    let mut file = load_workspace_file(repo_root, false).unwrap_or_default();
+    file.schema_version = WORKSPACE_SCHEMA_VERSION;
+    file.tui.command_palette_history = trim_history(history.to_vec());
+    save_workspace_file(repo_root, &file)
 }
 
 #[must_use]
@@ -333,5 +393,89 @@ mod tests {
         .expect("write");
 
         assert!(load_snapshot(repo).is_none());
+    }
+
+    #[test]
+    fn v1_flat_file_migrates_on_load() {
+        let _dir = TempStateDir::new("v1-migrate");
+        let repo = Path::new("/tmp/kiwi-workspace-v1-migrate");
+        let path = workspace_file_path(repo);
+        fs::create_dir_all(path.parent().expect("parent")).expect("create dir");
+        fs::write(
+            path,
+            r#"{"schema_version":1,"left_nav_tab":"Git","main_tab":"Diff","focus":"Main","left_width":28,"expanded_paths":[],"selected_path":null,"scroll_positions":{},"command_palette_history":["quit"]}"#,
+        )
+        .expect("write");
+
+        let file = load_workspace_file(repo, false).expect("load");
+        assert_eq!(file.schema_version, WORKSPACE_SCHEMA_VERSION);
+        assert_eq!(file.tui.left_nav_tab, "Git");
+        assert_eq!(file.tui.main_tab, "Diff");
+        assert_eq!(file.gui, None);
+    }
+
+    #[test]
+    fn merge_save_tui_preserves_gui_section() {
+        let _dir = TempStateDir::new("merge-tui-gui");
+        let repo = Path::new("/tmp/kiwi-workspace-merge-tui-gui");
+        let gui = GuiWorkspaceSnapshot {
+            dock_layout: serde_json::json!({"tabs": ["Explorer"]}),
+            open_tabs: vec!["Explorer".to_string()],
+        };
+        merge_save_gui(repo, &gui).expect("save gui");
+
+        let mut state = test_state(repo);
+        state.navigation.main_tab = MainTab::Preview;
+        merge_save_tui(
+            repo,
+            &TuiWorkspaceSnapshot::from_reduce_view(&ReduceView::from_app_state(&mut state)),
+        )
+        .expect("save tui");
+
+        let file = load_workspace_file(repo, false).expect("load");
+        assert_eq!(file.tui.main_tab, "Preview");
+        assert_eq!(file.gui.as_ref(), Some(&gui));
+    }
+
+    #[test]
+    fn merge_save_gui_preserves_tui_section() {
+        let _dir = TempStateDir::new("merge-gui-tui");
+        let repo = Path::new("/tmp/kiwi-workspace-merge-gui-tui");
+        let snapshot = WorkspaceSnapshot {
+            main_tab: "Diff".to_string(),
+            left_width: 40,
+            ..WorkspaceSnapshot::default()
+        };
+        save_snapshot(repo, &snapshot).expect("save tui");
+
+        let gui = GuiWorkspaceSnapshot {
+            dock_layout: serde_json::json!({"tabs": ["Agent"]}),
+            open_tabs: vec!["Agent".to_string()],
+        };
+        merge_save_gui(repo, &gui).expect("save gui");
+
+        let file = load_workspace_file(repo, false).expect("load");
+        assert_eq!(file.tui.main_tab, "Diff");
+        assert_eq!(file.tui.left_width, 40);
+        assert_eq!(file.gui.as_ref(), Some(&gui));
+    }
+
+    #[test]
+    fn saved_file_uses_v2_schema_layout() {
+        let _dir = TempStateDir::new("v2-layout");
+        let repo = Path::new("/tmp/kiwi-workspace-v2-layout");
+        save_snapshot(
+            repo,
+            &WorkspaceSnapshot {
+                main_tab: "Agent".to_string(),
+                ..WorkspaceSnapshot::default()
+            },
+        )
+        .expect("save");
+
+        let raw = fs::read_to_string(workspace_file_path(repo)).expect("read");
+        let parsed: serde_json::Value = serde_json::from_str(&raw).expect("json");
+        assert_eq!(parsed["schema_version"], WORKSPACE_SCHEMA_VERSION);
+        assert!(parsed.get("tui").is_some());
     }
 }

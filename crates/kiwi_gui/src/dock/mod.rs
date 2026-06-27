@@ -4,12 +4,14 @@ mod actions;
 mod context;
 mod layout;
 mod panels;
+mod persistence;
 mod region;
 mod tab;
 mod viewer;
 
 pub use context::PanelContext;
 pub use layout::initial_dock_state;
+pub use persistence::{restore_dock, snapshot_from_dock};
 pub use tab::KiwiTab;
 
 use std::collections::HashMap;
@@ -37,7 +39,6 @@ impl DockShell {
     }
 
     #[must_use]
-    #[allow(dead_code)] // workspace restore (#186)
     pub fn with_state(dock_state: DockState<KiwiTab>) -> Self {
         Self {
             dock_state,
@@ -70,7 +71,7 @@ impl DockShell {
         self.last_region.clear();
     }
 
-    #[allow(dead_code)] // tests and persistence (#186)
+    #[allow(dead_code)] // tests
     pub fn dock_state(&self) -> &DockState<KiwiTab> {
         &self.dock_state
     }
