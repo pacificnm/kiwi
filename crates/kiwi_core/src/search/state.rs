@@ -123,19 +123,7 @@ impl SearchState {
     }
 }
 
-fn scroll_offset_for_row(selected: usize, scroll_offset: usize, viewport_rows: usize) -> usize {
-    if viewport_rows == 0 {
-        return 0;
-    }
-
-    if selected < scroll_offset {
-        selected
-    } else if selected >= scroll_offset.saturating_add(viewport_rows) {
-        selected.saturating_sub(viewport_rows.saturating_sub(1))
-    } else {
-        scroll_offset
-    }
-}
+use crate::selection::scroll_offset_for_row;
 
 #[cfg(test)]
 mod tests {
