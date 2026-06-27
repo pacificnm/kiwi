@@ -245,6 +245,7 @@ mod tests {
     use kiwi_core::theme::{load_theme_with_capabilities, SemanticRole, TerminalCapabilities};
 
     use super::*;
+    use crate::dock::PtySurfaceState;
     use crate::theme::GuiTheme;
 
     fn test_panel() -> (AppState, GuiTheme) {
@@ -268,11 +269,13 @@ mod tests {
         state: &'a mut AppState,
         theme: &'a GuiTheme,
         dispatch: &'a mut dyn FnMut(AppCommand) -> bool,
+        pty_surface: &'a mut PtySurfaceState,
     ) -> PanelContext<'a> {
         PanelContext {
             state,
             theme,
             dispatch,
+            pty_surface,
         }
     }
 
@@ -317,8 +320,9 @@ mod tests {
             .git_status = Some(GitFileStatus::Modified);
 
         let mut noop = |_cmd: AppCommand| false;
+        let mut pty_surface = PtySurfaceState::default();
         let node = state.file_tree.nodes.get(&path).expect("node").clone();
-        let ctx = panel_context(&mut state, &theme, &mut noop);
+        let ctx = panel_context(&mut state, &theme, &mut noop, &mut pty_surface);
         let color = row_name_color(&ctx, &node, false);
         assert_eq!(color, theme.role(SemanticRole::GitModified));
     }
@@ -331,8 +335,9 @@ mod tests {
         state.file_tree.select(path.clone());
 
         let mut noop = |_cmd: AppCommand| false;
+        let mut pty_surface = PtySurfaceState::default();
         let node = state.file_tree.nodes.get(&path).expect("node").clone();
-        let ctx = panel_context(&mut state, &theme, &mut noop);
+        let ctx = panel_context(&mut state, &theme, &mut noop, &mut pty_surface);
         assert_eq!(
             row_name_color(&ctx, &node, true),
             theme.role(SemanticRole::Accent)
@@ -346,7 +351,8 @@ mod tests {
         state.file_tree.select(state.file_tree.root.clone());
 
         let mut noop = |_cmd: AppCommand| false;
-        let _ctx = panel_context(&mut state, &theme, &mut noop);
+        let mut pty_surface = PtySurfaceState::default();
+        let _ctx = panel_context(&mut state, &theme, &mut noop, &mut pty_surface);
         assert!(preview_selected_file(&state).is_none());
     }
 
@@ -357,7 +363,8 @@ mod tests {
         let path = state.file_tree.root.join("README.md");
 
         let mut noop = |_cmd: AppCommand| false;
-        let _ctx = panel_context(&mut state, &theme, &mut noop);
+        let mut pty_surface = PtySurfaceState::default();
+        let _ctx = panel_context(&mut state, &theme, &mut noop, &mut pty_surface);
         assert_eq!(
             preview_selected_file(&state),
             Some(AppCommand::PreviewFile { path, line: None })

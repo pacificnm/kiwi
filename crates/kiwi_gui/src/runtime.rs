@@ -1,18 +1,22 @@
 //! Post-bootstrap runtime: shared state, event channel, and background services.
 
 use kiwi_core::events::{AppEvent, EventChannel};
-use kiwi_core::reducer::{file_tree_startup_effects, workspace_restore_effects};
+use kiwi_core::reducer::{
+    agent_spawn_effects_if_needed, file_tree_startup_effects, workspace_restore_effects,
+};
 use kiwi_core::state::{AppState, ReduceView, ViewportMetrics};
 use kiwi_core::theme::TerminalCapabilities;
 use kiwi_core::watcher::RepoWatcher;
 use kiwi_core::workspace::{try_load_workspace_file, GuiWorkspaceSnapshot};
 
 use crate::bootstrap::GuiBootstrapContext;
+use crate::pty::PtyRuntime;
 use crate::services::{execute_gui_effects, process_pending_events, ServiceContext};
 
 pub struct GuiRuntime {
     pub state: AppState,
     pub events: EventChannel,
+    pub pty: PtyRuntime,
     _repo_watcher: Option<RepoWatcher>,
 }
 
@@ -34,6 +38,7 @@ impl GuiRuntime {
             ViewportMetrics::default(),
         );
         let events = EventChannel::new();
+        let mut pty = PtyRuntime::new();
 
         let mut gui_snapshot = None;
         if state.config.workspace.persist {
@@ -44,8 +49,16 @@ impl GuiRuntime {
             }
         }
 
+        let shell_settings = state.config.shell.clone();
+        pty.spawn_shell_at_startup(
+            &repo_root,
+            &shell_settings,
+            &mut state,
+            events.sender(),
+        );
+
         let repo_watcher = match RepoWatcher::spawn(
-            repo_root,
+            repo_root.clone(),
             state.config.watcher.debounce_ms,
             events.sender(),
         ) {
@@ -62,6 +75,7 @@ impl GuiRuntime {
         let mut runtime = Self {
             state,
             events,
+            pty,
             _repo_watcher: repo_watcher,
         };
 
@@ -69,13 +83,13 @@ impl GuiRuntime {
             file_tree_startup_effects(&mut ReduceView::from_app_state(&mut runtime.state));
         let workspace_effects =
             workspace_restore_effects(&mut ReduceView::from_app_state(&mut runtime.state));
+        let agent_spawn_effects =
+            agent_spawn_effects_if_needed(&mut ReduceView::from_app_state(&mut runtime.state));
 
-        let mut ctx = ServiceContext {
-            state: &mut runtime.state,
-            events: &runtime.events,
-        };
+        let mut ctx = runtime.service_context();
         execute_gui_effects(&mut ctx, file_tree_effects);
         execute_gui_effects(&mut ctx, workspace_effects);
+        execute_gui_effects(&mut ctx, agent_spawn_effects);
 
         if runtime.state.workspace_meta.is_git_repo {
             runtime.dispatch(AppEvent::GitRefreshRequested);
@@ -84,13 +98,18 @@ impl GuiRuntime {
         (runtime, gui_snapshot)
     }
 
+    fn service_context(&mut self) -> ServiceContext<'_> {
+        ServiceContext {
+            state: &mut self.state,
+            events: &self.events,
+            pty: &mut self.pty,
+        }
+    }
+
     pub fn dispatch(&mut self, event: AppEvent) -> bool {
         let effects =
             kiwi_core::reducer::reduce(&mut ReduceView::from_app_state(&mut self.state), event);
-        let mut ctx = ServiceContext {
-            state: &mut self.state,
-            events: &self.events,
-        };
+        let mut ctx = self.service_context();
         execute_gui_effects(&mut ctx, effects)
     }
 
@@ -99,9 +118,58 @@ impl GuiRuntime {
         self.dispatch(AppEvent::Command(command))
     }
 
+    fn poll_agent_exits(&mut self) {
+        let exits = self.pty.poll_agent_exits();
+        for (agent_id, code) in exits {
+            self.dispatch(AppEvent::AgentExited { agent_id, code });
+        }
+    }
+
     /// Returns `(should_quit, event_count)`.
     pub fn process_pending_events(&mut self) -> (bool, usize) {
-        process_pending_events(&mut self.state, &mut self.events)
+        self.poll_agent_exits();
+        process_pending_events(&mut self.state, &mut self.events, &mut self.pty)
+    }
+
+    /// Propagate measured viewport dimensions to running PTY sessions.
+    pub fn sync_pty_resize_from_viewport(&mut self) {
+        let shell_cols = self.state.viewport.shell_cols;
+        let shell_rows = self.state.viewport.shell_rows;
+        if self.state.shell.running
+            && shell_cols > 0
+            && shell_rows > 0
+            && (self.state.shell.cols != shell_cols || self.state.shell.rows != shell_rows)
+            && self.pty.resize_shell(shell_cols, shell_rows)
+        {
+            self.state.shell.apply_resize(shell_cols, shell_rows);
+            self.state.shell.scrollback.set_cols(shell_cols);
+        }
+
+        let agent_id = self.state.agent_manager.active_id();
+        let agent_cols = self.state.viewport.agent_cols;
+        let agent_rows = self.state.viewport.agent_rows;
+        let needs_agent_resize = self
+            .state
+            .agent_manager
+            .pty(agent_id)
+            .is_some_and(|pty| {
+                pty.spawned
+                    && pty.running
+                    && agent_cols > 0
+                    && agent_rows > 0
+                    && (pty.cols != agent_cols || pty.rows != agent_rows)
+            });
+
+        if needs_agent_resize && self.pty.resize_agent(agent_id, agent_cols, agent_rows) {
+            if let Some(pty) = self.state.agent_manager.pty_mut(agent_id) {
+                pty.apply_resize(agent_cols, agent_rows);
+                pty.scrollback.set_cols(agent_cols);
+            }
+        }
+    }
+
+    pub fn shutdown(&mut self) {
+        self.pty.shutdown();
     }
 }
 

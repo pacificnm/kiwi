@@ -5,6 +5,14 @@
 
 use egui::{Align, Rect, Ui};
 
+use super::ansi::{max_cols_for_ui, monospace_font_id};
+
+const MIN_PTY_COLS: u16 = 2;
+const MIN_PTY_ROWS: u16 = 1;
+
+/// Monospace row height for PTY scrollback virtualization.
+pub const PTY_ROW_HEIGHT: f32 = 18.0;
+
 /// Row count that fits in a region of the given height.
 #[must_use]
 pub fn row_count_for_height(height: f32, row_height: f32) -> usize {
@@ -72,6 +80,16 @@ pub fn render_virtual_rows(
 
     *scroll_row = start;
     viewport_rows
+}
+
+/// Measure PTY columns and rows from the current panel clip rect.
+#[must_use]
+pub fn pty_dimensions_from_ui(ui: &Ui, theme_font_size: f32) -> (u16, u16) {
+    let font_id = monospace_font_id(ui, theme_font_size);
+    let cols = max_cols_for_ui(ui, &font_id).max(usize::from(MIN_PTY_COLS)) as u16;
+    let rows = row_count_for_height(ui.clip_rect().height(), PTY_ROW_HEIGHT)
+        .max(usize::from(MIN_PTY_ROWS)) as u16;
+    (cols, rows)
 }
 
 #[cfg(test)]

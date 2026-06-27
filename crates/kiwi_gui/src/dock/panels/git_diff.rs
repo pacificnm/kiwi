@@ -297,6 +297,7 @@ mod tests {
     use kiwi_core::theme::{load_theme_with_capabilities, SemanticRole, TerminalCapabilities};
 
     use super::*;
+    use crate::dock::PtySurfaceState;
     use crate::theme::GuiTheme;
 
     fn test_panel() -> (AppState, GuiTheme) {
@@ -320,11 +321,13 @@ mod tests {
     fn color_for_addition_uses_git_added_role() {
         let (state, theme) = test_panel();
         let mut noop = |_cmd: kiwi_core::events::AppCommand| false;
+        let mut pty_surface = PtySurfaceState::default();
         let mut state = state;
         let ctx = PanelContext {
             state: &mut state,
             theme: &theme,
             dispatch: &mut noop,
+            pty_surface: &mut pty_surface,
         };
         assert_eq!(
             color_for_line_kind(&ctx, DiffLineKind::Addition),
