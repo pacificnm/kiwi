@@ -1586,6 +1586,7 @@ dependencies = [
  "git2",
  "kiwi_plugin_api",
  "kiwi_plugin_loader",
+ "log",
  "notify",
  "portable-pty",
  "serde",

@@ -14,7 +14,7 @@ use crate::state::AgentState;
 use super::id::AgentId;
 
 /// GitHub issue number linked to an agent session (ADR-017).
-pub type IssueNumber = u64;
+pub type IssueNumber = u32;
 
 /// Per-agent session metadata and PTY state (ADR-017 `AgentSession`).
 #[derive(Debug, Clone, PartialEq, Eq)]

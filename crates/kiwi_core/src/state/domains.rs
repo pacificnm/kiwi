@@ -177,8 +177,8 @@ impl DiffState {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GitHubState {
-    pub selected_issue: Option<u64>,
-    pub selected_pr: Option<u64>,
+    pub selected_issue: Option<u32>,
+    pub selected_pr: Option<u32>,
     pub auth_checked: bool,
     pub auth_ok: bool,
     pub loading: bool,
@@ -194,12 +194,12 @@ pub struct GitHubState {
     pub prs_error: Option<String>,
     pub prs_scroll_offset: usize,
     pub prs_loaded_at: Option<SystemTime>,
-    pub issue_detail_number: Option<u64>,
+    pub issue_detail_number: Option<u32>,
     pub issue_detail: Option<IssueDetail>,
     pub issue_detail_loading: bool,
     pub issue_detail_error: Option<String>,
     pub issue_detail_scroll_offset: usize,
-    pub pr_detail_number: Option<u64>,
+    pub pr_detail_number: Option<u32>,
     pub pr_detail: Option<PrDetail>,
     pub pr_detail_loading: bool,
     pub pr_detail_error: Option<String>,
