@@ -304,6 +304,11 @@ impl AgentState {
         self.status = AgentStatus::Idle;
     }
 
+    pub fn apply_resize(&mut self, cols: u16, rows: u16) {
+        self.cols = cols;
+        self.rows = rows;
+    }
+
     pub fn scroll_by(&mut self, delta: i32, page_size: u16) {
         let scroll_lines = delta.signum() * i32::from(page_size.max(1));
         self.scroll_by_lines(scroll_lines, page_size);

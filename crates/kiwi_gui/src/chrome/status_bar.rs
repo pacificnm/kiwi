@@ -55,14 +55,10 @@ pub fn render_status_bar(ctx: &egui::Context, theme: &GuiTheme, state: &AppState
 }
 
 fn agent_semantic_role(snapshot: &kiwi_core::status_bar::StatusBarSnapshot) -> SemanticRole {
-    if snapshot.agent_status == AgentStatus::Idle {
-        if snapshot.agent_running {
-            SemanticRole::Accent
-        } else {
-            SemanticRole::Fg
-        }
-    } else {
-        snapshot.agent_status.semantic_role()
+    match snapshot.agent_status {
+        AgentStatus::Idle if snapshot.agent_running => SemanticRole::AgentExecuting,
+        AgentStatus::Idle => SemanticRole::Muted,
+        status => status.semantic_role(),
     }
 }
 

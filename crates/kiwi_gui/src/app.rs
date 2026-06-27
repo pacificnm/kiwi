@@ -3,6 +3,7 @@
 use std::time::{Duration, Instant};
 
 use kiwi_core::events::{AppCommand, AppEvent};
+use kiwi_core::navigation::FocusTarget;
 use kiwi_core::state::ReduceView;
 use kiwi_core::workspace::{try_merge_save_gui, try_save_from_reduce_view, GuiWorkspaceSnapshot};
 
@@ -12,8 +13,9 @@ use crate::chrome::{
     render_status_bar,
 };
 use crate::dock::{
-    explorer_keyboard_action, git_diff_keyboard_action, git_status_keyboard_action, restore_dock,
-    snapshot_from_dock, DockShell, KiwiTab, PanelContext,
+    collect_pty_input, explorer_keyboard_action, git_diff_keyboard_action,
+    git_status_keyboard_action, navigation_sync_commands, restore_dock, snapshot_from_dock,
+    DockShell, KiwiTab, PanelContext, PtySurfaceState, PtyTarget,
 };
 use crate::navigation_bridge::sync_dock_from_navigation;
 use crate::runtime::GuiRuntime;
@@ -28,6 +30,7 @@ pub struct KiwiApp {
     shortcuts_help_open: bool,
     about_open: bool,
     workspace_last_saved: Instant,
+    last_shell_interrupt: Option<Instant>,
 }
 
 impl KiwiApp {
@@ -51,6 +54,7 @@ impl KiwiApp {
             shortcuts_help_open: false,
             about_open: false,
             workspace_last_saved: Instant::now(),
+            last_shell_interrupt: None,
         };
         app.sync_dock();
         app
@@ -88,6 +92,58 @@ impl KiwiApp {
         let nav = self.runtime.state.navigation.clone();
         let gh_pane = self.runtime.state.github.left_pane;
         sync_dock_from_navigation(&mut self.dock, &nav, gh_pane);
+    }
+
+    fn resolve_pty_target(&self, pty_surface: &PtySurfaceState) -> Option<(PtyTarget, bool)> {
+        if pty_surface.shell_keyboard_focus {
+            return Some((PtyTarget::Shell, true));
+        }
+        if pty_surface.agent_keyboard_focus {
+            return Some((PtyTarget::Agent, true));
+        }
+        match self.dock.focused_tab() {
+            Some(KiwiTab::Terminal) => Some((PtyTarget::Shell, true)),
+            Some(KiwiTab::Agent) => Some((PtyTarget::Agent, true)),
+            _ if self.runtime.state.navigation.focus == FocusTarget::Shell => {
+                Some((PtyTarget::Shell, true))
+            }
+            _ => None,
+        }
+    }
+
+    fn handle_pty_input(&mut self, ctx: &egui::Context, pty_surface: &PtySurfaceState) -> bool {
+        let Some((target, accept_keyboard)) = self.resolve_pty_target(pty_surface) else {
+            return false;
+        };
+
+        for command in navigation_sync_commands(
+            &self.runtime.state,
+            match target {
+                PtyTarget::Shell => KiwiTab::Terminal,
+                PtyTarget::Agent => KiwiTab::Agent,
+            },
+        ) {
+            let _ = self.runtime.dispatch_command(command);
+        }
+
+        let outcome = collect_pty_input(
+            ctx,
+            &self.runtime.state,
+            target,
+            &mut self.last_shell_interrupt,
+            accept_keyboard,
+        );
+
+        if let Some(text) = outcome.copy_to_clipboard {
+            ctx.copy_text(text);
+        }
+
+        for command in outcome.commands {
+            if self.dispatch_command(command) {
+                return true;
+            }
+        }
+        false
     }
 
     fn handle_input_shortcuts(&mut self, ctx: &egui::Context) -> bool {
@@ -135,6 +191,7 @@ impl KiwiApp {
     }
 
     fn close_window(&mut self, ctx: &egui::Context) {
+        self.runtime.shutdown();
         self.save_workspace();
         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
     }
@@ -187,12 +244,14 @@ impl eframe::App for KiwiApp {
                 pending_commands.push(command);
                 false
             };
+            let mut pty_surface = PtySurfaceState::default();
             self.dock.render(
                 ui,
                 PanelContext {
                     state: &mut self.runtime.state,
                     theme: &self.gui_theme,
                     dispatch: &mut dispatch,
+                    pty_surface: &mut pty_surface,
                 },
             );
             for command in pending_commands {
@@ -200,6 +259,10 @@ impl eframe::App for KiwiApp {
                     self.close_window(ctx);
                     return;
                 }
+            }
+            self.runtime.sync_pty_resize_from_viewport();
+            if self.handle_pty_input(ctx, &pty_surface) {
+                self.close_window(ctx);
             }
         });
 
@@ -224,6 +287,7 @@ impl eframe::App for KiwiApp {
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.runtime.shutdown();
         self.save_workspace();
     }
 }

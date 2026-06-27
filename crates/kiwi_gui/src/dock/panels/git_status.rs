@@ -202,6 +202,7 @@ mod tests {
     use kiwi_core::theme::{load_theme_with_capabilities, SemanticRole, TerminalCapabilities};
 
     use super::*;
+    use crate::dock::PtySurfaceState;
     use crate::theme::GuiTheme;
 
     fn test_panel() -> (AppState, GuiTheme) {
@@ -221,6 +222,20 @@ mod tests {
         (state, gui_theme)
     }
 
+    fn panel_ctx<'a>(
+        state: &'a mut AppState,
+        theme: &'a GuiTheme,
+        dispatch: &'a mut dyn FnMut(kiwi_core::events::AppCommand) -> bool,
+        pty_surface: &'a mut PtySurfaceState,
+    ) -> PanelContext<'a> {
+        PanelContext {
+            state,
+            theme,
+            dispatch,
+            pty_surface,
+        }
+    }
+
     #[test]
     fn branch_line_shows_ahead_behind() {
         let (mut state, theme) = test_panel();
@@ -231,11 +246,8 @@ mod tests {
             ..GitState::default()
         };
         let mut noop = |_cmd: kiwi_core::events::AppCommand| false;
-        let ctx = PanelContext {
-            state: &mut state,
-            theme: &theme,
-            dispatch: &mut noop,
-        };
+        let mut pty_surface = PtySurfaceState::default();
+        let ctx = panel_ctx(&mut state, &theme, &mut noop, &mut pty_surface);
         assert!(branch_line_text(&ctx).contains("main"));
         assert!(branch_line_text(&ctx).contains("↑2 ↓1"));
     }
@@ -245,11 +257,8 @@ mod tests {
         let (mut state, theme) = test_panel();
         state.workspace_meta.is_git_repo = false;
         let mut noop = |_cmd: kiwi_core::events::AppCommand| false;
-        let ctx = PanelContext {
-            state: &mut state,
-            theme: &theme,
-            dispatch: &mut noop,
-        };
+        let mut pty_surface = PtySurfaceState::default();
+        let ctx = panel_ctx(&mut state, &theme, &mut noop, &mut pty_surface);
         assert_eq!(branch_line_text(&ctx), "Not a git repository");
         assert_eq!(footer_line_text(&ctx), "Git features disabled");
     }
@@ -262,11 +271,8 @@ mod tests {
             status: GitFileStatus::Modified,
         }];
         let mut noop = |_cmd: kiwi_core::events::AppCommand| false;
-        let ctx = PanelContext {
-            state: &mut state,
-            theme: &theme,
-            dispatch: &mut noop,
-        };
+        let mut pty_surface = PtySurfaceState::default();
+        let ctx = panel_ctx(&mut state, &theme, &mut noop, &mut pty_surface);
         let accent = file_row_color(&ctx, GitFileStatus::Modified, true);
         assert_eq!(accent, theme.role(SemanticRole::Accent));
     }
@@ -275,11 +281,8 @@ mod tests {
     fn unselected_file_uses_status_color() {
         let (mut state, theme) = test_panel();
         let mut noop = |_cmd: kiwi_core::events::AppCommand| false;
-        let ctx = PanelContext {
-            state: &mut state,
-            theme: &theme,
-            dispatch: &mut noop,
-        };
+        let mut pty_surface = PtySurfaceState::default();
+        let ctx = panel_ctx(&mut state, &theme, &mut noop, &mut pty_surface);
         let color = file_row_color(&ctx, GitFileStatus::Deleted, false);
         assert_eq!(color, theme.role(SemanticRole::GitDeleted));
     }

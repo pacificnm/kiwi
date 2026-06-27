@@ -95,6 +95,25 @@ impl AgentSession {
             .map_err(|err| AgentError::write(err.to_string()))
     }
 
+    pub fn resize(&mut self, cols: u16, rows: u16) -> Result<(), AgentError> {
+        if cols == self.cols && rows == self.rows {
+            return Ok(());
+        }
+
+        self.master
+            .resize(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|err| AgentError::spawn(err.to_string()))?;
+
+        self.cols = cols;
+        self.rows = rows;
+        Ok(())
+    }
+
     #[must_use]
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn is_running(&mut self) -> bool {

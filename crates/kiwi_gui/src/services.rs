@@ -13,12 +13,15 @@ use kiwi_core::preview::spawn_preview_load;
 use kiwi_core::state::{AppState, ReduceView};
 use kiwi_core::workspace::try_save_from_reduce_view;
 
+use crate::pty::PtyRuntime;
+
 /// Maximum events processed per frame to avoid stalling egui.
 pub const MAX_EVENTS_PER_FRAME: usize = 64;
 
 pub struct ServiceContext<'a> {
     pub state: &'a mut AppState,
     pub events: &'a EventChannel,
+    pub pty: &'a mut PtyRuntime,
 }
 
 /// Execute a batch of reducer side effects. Returns `true` when the app should quit.
@@ -33,7 +36,10 @@ pub fn execute_gui_effects(ctx: &mut ServiceContext<'_>, effects: Vec<SideEffect
 
 fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool {
     match effect {
-        SideEffect::Quit => return true,
+        SideEffect::Quit => {
+            ctx.pty.shutdown();
+            return true;
+        }
         SideEffect::SpawnGitRefresh => {
             if ctx.state.workspace_meta.is_git_repo {
                 spawn_git_refresh(
@@ -74,14 +80,43 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
         SideEffect::SaveWorkspace => {
             try_save_from_reduce_view(&ReduceView::from_app_state(ctx.state));
         }
+        SideEffect::SpawnAgent(id) => {
+            let repo_root = ctx.state.repo_root.clone();
+            let agent_settings = ctx.state.config.agent.clone();
+            ctx.pty.spawn_agent(
+                id,
+                &repo_root,
+                &agent_settings,
+                ctx.state,
+                ctx.events.sender(),
+            );
+        }
+        SideEffect::RestartAgent(id) => {
+            let repo_root = ctx.state.repo_root.clone();
+            let config = ctx.state.config.clone();
+            ctx.pty.restart_agent(
+                id,
+                &repo_root,
+                &config,
+                ctx.state,
+                ctx.events.sender(),
+            );
+        }
+        SideEffect::WriteShell(data) => {
+            let _ = ctx.pty.write_shell(&data);
+        }
+        SideEffect::WriteAgent(data) => {
+            let id = ctx.state.agent_manager.active_id();
+            let _ = ctx.pty.write_agent(id, &data);
+        }
+        SideEffect::ResizeShell { cols, rows } => {
+            if ctx.pty.resize_shell(cols, rows) {
+                ctx.state.shell.apply_resize(cols, rows);
+            }
+        }
         SideEffect::SpawnBranchList
         | SideEffect::SpawnBranchCheckout { .. }
         | SideEffect::SpawnGitHubRefresh
-        | SideEffect::SpawnAgent(_)
-        | SideEffect::RestartAgent(_)
-        | SideEffect::WriteShell(_)
-        | SideEffect::WriteAgent(_)
-        | SideEffect::ResizeShell { .. }
         | SideEffect::CancelSearch
         | SideEffect::RunSearch { .. }
         | SideEffect::CopyToClipboard(_)
@@ -149,7 +184,11 @@ fn spawn_editor_launch(
 /// Drain pending events, apply reducers, and execute resulting side effects.
 ///
 /// Returns `(should_quit, event_count)`.
-pub fn process_pending_events(state: &mut AppState, events: &mut EventChannel) -> (bool, usize) {
+pub fn process_pending_events(
+    state: &mut AppState,
+    events: &mut EventChannel,
+    pty: &mut PtyRuntime,
+) -> (bool, usize) {
     let pending: Vec<AppEvent> = events
         .drain_coalesced()
         .into_iter()
@@ -160,7 +199,11 @@ pub fn process_pending_events(state: &mut AppState, events: &mut EventChannel) -
 
     for event in pending {
         let effects = kiwi_core::reducer::reduce(&mut ReduceView::from_app_state(state), event);
-        let mut ctx = ServiceContext { state, events };
+        let mut ctx = ServiceContext {
+            state,
+            events,
+            pty,
+        };
         if execute_gui_effects(&mut ctx, effects) {
             should_quit = true;
             break;
@@ -180,6 +223,8 @@ mod tests {
     use kiwi_core::state::{AppState, ViewportMetrics};
     use kiwi_core::status_bar::compute_status_bar;
     use kiwi_core::theme::{load_theme_with_capabilities, TerminalCapabilities};
+
+    use crate::pty::PtyRuntime;
 
     use super::*;
 
@@ -202,6 +247,7 @@ mod tests {
     fn git_status_updated_updates_status_bar_snapshot() {
         let mut state = test_state();
         let mut events = EventChannel::new();
+        let mut pty = PtyRuntime::new();
 
         events
             .sender()
@@ -218,7 +264,7 @@ mod tests {
             })
             .expect("send");
 
-        let (quit, count) = process_pending_events(&mut state, &mut events);
+        let (quit, count) = process_pending_events(&mut state, &mut events, &mut pty);
         assert!(!quit);
         assert_eq!(count, 1);
 
@@ -233,9 +279,11 @@ mod tests {
         let mut state = test_state();
         state.workspace_meta.is_git_repo = false;
         let events = EventChannel::new();
+        let mut pty = PtyRuntime::new();
         let mut ctx = ServiceContext {
             state: &mut state,
             events: &events,
+            pty: &mut pty,
         };
 
         let quit = execute_gui_effects(&mut ctx, vec![SideEffect::SpawnGitRefresh]);

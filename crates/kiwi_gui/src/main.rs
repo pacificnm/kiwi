@@ -4,6 +4,7 @@ mod chrome;
 mod cli;
 mod dock;
 mod navigation_bridge;
+mod pty;
 mod runtime;
 mod services;
 mod theme;
