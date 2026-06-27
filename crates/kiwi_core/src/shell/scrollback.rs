@@ -518,24 +518,30 @@ fn split_at_visible(line: &str, col: usize) -> (String, String) {
 
     let mut visible = 0usize;
     let mut split_idx = 0usize;
-    let mut chars = line.char_indices().peekable();
-    while let Some((idx, ch)) = chars.next() {
+    let mut byte_pos = 0usize;
+    let mut chars = line.chars().peekable();
+
+    while let Some(ch) = chars.next() {
         if ch == '\x1b' {
-            if chars.next_if_eq(&(0, '[')).is_some() {
-                for (_, c) in chars.by_ref() {
-                    split_idx = idx.saturating_add(1);
+            byte_pos += ch.len_utf8();
+            if chars.next_if_eq(&'[').is_some() {
+                byte_pos += '['.len_utf8();
+                for c in chars.by_ref() {
+                    byte_pos += c.len_utf8();
                     if ('@'..='~').contains(&c) {
                         break;
                     }
                 }
             }
+            split_idx = byte_pos;
             continue;
         }
         if visible == col {
             return (line[..split_idx].to_string(), line[split_idx..].to_string());
         }
         visible += 1;
-        split_idx = idx + ch.len_utf8();
+        byte_pos += ch.len_utf8();
+        split_idx = byte_pos;
     }
 
     (line.to_string(), String::new())
@@ -710,5 +716,63 @@ mod tests {
         assert_eq!(buffer.cursor_display_position(true), Some((0, 8)));
         buffer.append_bytes(b"\x1b[?25h");
         assert_eq!(buffer.cursor_display_position(true), Some((0, 8)));
+    }
+
+    #[test]
+    fn split_at_visible_plain_text() {
+        assert_eq!(
+            split_at_visible("hello world", 5),
+            ("hello".to_string(), " world".to_string())
+        );
+    }
+
+    #[test]
+    fn split_at_visible_ansi_prefix_not_counted_as_columns() {
+        // "\x1b[32m" is 5 bytes but 0 visible columns — split at col 3 must
+        // not treat the escape characters as visible width.
+        let colored = "\x1b[32mabc\x1b[0m";
+        let (left, right) = split_at_visible(colored, 2);
+        assert_eq!(left, "\x1b[32mab");
+        assert_eq!(right, "c\x1b[0m");
+    }
+
+    #[test]
+    fn split_at_visible_ansi_between_chars_goes_to_left() {
+        // Escape between "b" and "c": split at col 2 should include the escape
+        // in the left (prefix) portion since it precedes the split point.
+        let line = "ab\x1b[32mc";
+        let (left, right) = split_at_visible(line, 2);
+        assert_eq!(left, "ab\x1b[32m");
+        assert_eq!(right, "c");
+    }
+
+    #[test]
+    fn split_at_visible_col_zero_returns_empty_prefix() {
+        assert_eq!(
+            split_at_visible("abc", 0),
+            (String::new(), "abc".to_string())
+        );
+    }
+
+    #[test]
+    fn split_at_visible_col_beyond_length_returns_full_line() {
+        assert_eq!(
+            split_at_visible("abc", 10),
+            ("abc".to_string(), String::new())
+        );
+    }
+
+    #[test]
+    fn ansi_overwrite_via_carriage_return_preserves_color() {
+        // Simulates a colored prompt being overwritten at col 0:
+        // "\r\x1b[31mERR" overwrites from column 0 on a line that already
+        // has "\x1b[32mOK\x1b[0m".
+        let mut buffer = ScrollbackBuffer::new();
+        buffer.append_bytes(b"\x1b[32mOK\x1b[0m");
+        buffer.append_bytes(b"\r\x1b[31mERR\x1b[0m");
+        let lines = buffer.lines_for_display(true);
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("ERR"));
+        assert!(!lines[0].contains("OK"));
     }
 }
