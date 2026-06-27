@@ -108,6 +108,13 @@ fn read_file_statuses(
     let mut entries = Vec::new();
     for entry in statuses.iter() {
         let Some(path) = entry.path() else {
+            // git2 returns path-less entries for submodule conflicts and binary
+            // renames. We can't show them without a path, but log so the user
+            // can see the omission in diagnostics.
+            log::warn!(
+                "git status: skipping entry with no path (status bits: {:?})",
+                entry.status()
+            );
             continue;
         };
         let Some(status) = map_git2_status(entry.status()) else {
