@@ -13,9 +13,10 @@ use crate::chrome::{
     render_status_bar,
 };
 use crate::dock::{
-    collect_pty_input, explorer_keyboard_action, git_diff_keyboard_action,
-    git_status_keyboard_action, navigation_sync_commands, restore_dock, snapshot_from_dock,
-    DockShell, KiwiTab, PanelContext, PtySurfaceState, PtyTarget,
+    collect_github_keyboard, collect_pty_input, explorer_keyboard_action,
+    git_diff_keyboard_action, git_status_keyboard_action, github_navigation_sync_commands,
+    navigation_sync_commands, restore_dock, snapshot_from_dock, DockShell, KiwiTab, PanelContext,
+    PtySurfaceState, PtyTarget,
 };
 use crate::navigation_bridge::sync_dock_from_navigation;
 use crate::runtime::GuiRuntime;
@@ -146,6 +147,29 @@ impl KiwiApp {
         false
     }
 
+    fn handle_github_input(&mut self, ctx: &egui::Context) -> bool {
+        let Some(tab) = self.dock.focused_tab() else {
+            return false;
+        };
+        if !matches!(
+            tab,
+            KiwiTab::GitHubIssues | KiwiTab::Issues | KiwiTab::GitHubPrs
+        ) {
+            return false;
+        }
+
+        for command in github_navigation_sync_commands(&self.runtime.state, tab) {
+            let _ = self.dispatch_command(command);
+        }
+
+        for command in collect_github_keyboard(ctx, tab, &self.runtime.state) {
+            if self.dispatch_command(command) {
+                return true;
+            }
+        }
+        false
+    }
+
     fn handle_input_shortcuts(&mut self, ctx: &egui::Context) -> bool {
         if self.runtime.state.palette.open {
             let prompt_mode = self.runtime.state.palette.prompt.is_some();
@@ -163,7 +187,14 @@ impl KiwiApp {
         }
 
         if ctx.input(|input| input.key_pressed(egui::Key::F5)) {
-            return self.runtime.dispatch(AppEvent::GitRefreshRequested);
+            match self.dock.focused_tab() {
+                Some(KiwiTab::GitHubIssues) | Some(KiwiTab::Issues) | Some(KiwiTab::GitHubPrs) => {
+                    let _ = self.dispatch_command(AppCommand::GitHubRefresh);
+                }
+                _ => {
+                    let _ = self.runtime.dispatch(AppEvent::GitRefreshRequested);
+                }
+            }
         }
 
         if !self.runtime.state.palette.open {
@@ -261,6 +292,10 @@ impl eframe::App for KiwiApp {
                 }
             }
             self.runtime.sync_pty_resize_from_viewport();
+            if self.handle_github_input(ctx) {
+                self.close_window(ctx);
+                return;
+            }
             if self.handle_pty_input(ctx, &pty_surface) {
                 self.close_window(ctx);
             }

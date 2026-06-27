@@ -10,10 +10,13 @@ use crate::dock::context::PanelContext;
 use crate::dock::tab::KiwiTab;
 
 pub fn render_placeholder(ui: &mut Ui, tab: KiwiTab, ctx: &mut PanelContext<'_>) {
-    // Safety net: PTY tabs must never show the generic stub (see `render_panel`).
+    // Safety net: dedicated panels must never show the generic stub (see `render_panel`).
     match tab {
         KiwiTab::Terminal => return super::terminal::render(ui, ctx),
         KiwiTab::Agent => return super::agent::render(ui, ctx),
+        KiwiTab::GitHubIssues => return super::github_left::render(ui, ctx),
+        KiwiTab::Issues => return super::issues_detail::render(ui, ctx),
+        KiwiTab::GitHubPrs => return super::github_prs::render(ui, ctx),
         _ => {}
     }
 
@@ -39,8 +42,17 @@ fn state_hint(tab: KiwiTab, ctx: &mut PanelContext<'_>) -> Option<String> {
             .selected_path
             .clone()
             .map(|path| format!("Selected: {path}")),
-        KiwiTab::GitHubIssues => Some(format!("{} issue(s) loaded", ctx.state.github.issues.len())),
-        KiwiTab::GitHubPrs => Some(format!("{} PR(s) loaded", ctx.state.github.prs.len())),
+        KiwiTab::GitHubIssues => Some(format!("{} issue(s) in GH list", ctx.state.github.issues.len())),
+        KiwiTab::Issues => ctx
+            .state
+            .github
+            .selected_issue
+            .map(|n| format!("Issue #{n}")),
+        KiwiTab::GitHubPrs => ctx
+            .state
+            .github
+            .selected_pr
+            .map(|n| format!("PR #{n}")),
         KiwiTab::Preview => ctx
             .state
             .preview
@@ -71,7 +83,7 @@ mod tests {
     use kiwi_core::theme::{load_theme_with_capabilities, TerminalCapabilities};
 
     use super::*;
-    use crate::dock::PtySurfaceState;
+    use crate::dock::{PanelContext, PtySurfaceState};
     use crate::theme::GuiTheme;
 
     fn test_context() -> (AppState, GuiTheme) {

@@ -20,6 +20,7 @@ impl KiwiTab {
             Self::Explorer | Self::GitStatus | Self::GitHubIssues => DockRegion::Left,
             Self::Terminal => DockRegion::Bottom,
             Self::Agent
+            | Self::Issues
             | Self::GitDiff
             | Self::GitLog
             | Self::GitHubPrs
