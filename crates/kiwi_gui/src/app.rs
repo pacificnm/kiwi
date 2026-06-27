@@ -11,7 +11,7 @@ use crate::chrome::{
     render_command_palette, render_menu_bar, render_reset_layout_modal, render_shortcuts_modal,
     render_status_bar,
 };
-use crate::dock::{restore_dock, snapshot_from_dock, DockShell, PanelContext};
+use crate::dock::{explorer_keyboard_action, restore_dock, snapshot_from_dock, DockShell, KiwiTab, PanelContext};
 use crate::navigation_bridge::sync_dock_from_navigation;
 use crate::runtime::GuiRuntime;
 use crate::theme::GuiTheme;
@@ -105,6 +105,14 @@ impl KiwiApp {
             return self.runtime.dispatch(AppEvent::GitRefreshRequested);
         }
 
+        if self.dock.focused_tab() == Some(KiwiTab::Explorer)
+            && !self.runtime.state.palette.open
+        {
+            if let Some(command) = explorer_keyboard_action(ctx, &self.runtime.state) {
+                return self.dispatch_command(command);
+            }
+        }
+
         false
     }
 
@@ -151,13 +159,25 @@ impl eframe::App for KiwiApp {
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            let mut pending_commands = Vec::new();
+            let mut dispatch = |command: AppCommand| {
+                pending_commands.push(command);
+                false
+            };
             self.dock.render(
                 ui,
                 PanelContext {
-                    state: &self.runtime.state,
+                    state: &mut self.runtime.state,
                     theme: &self.gui_theme,
+                    dispatch: &mut dispatch,
                 },
             );
+            for command in pending_commands {
+                if self.dispatch_command(command) {
+                    self.close_window(ctx);
+                    return;
+                }
+            }
         });
 
         render_status_bar(ctx, &self.gui_theme, &self.runtime.state);

@@ -1,8 +1,14 @@
 //! Background service wiring and side-effect execution for the GUI.
 
+use std::path::PathBuf;
+
+use kiwi_core::editor::{
+    launch_gui_editor, prepare_editor_launch, run_terminal_editor, EditorLaunchMode,
+};
 use kiwi_core::events::{AppEvent, EventChannel, SideEffect};
 use kiwi_core::file_tree::spawn_directory_load;
 use kiwi_core::git::spawn_git_refresh;
+use kiwi_core::preview::spawn_preview_load;
 use kiwi_core::state::{AppState, ReduceView};
 use kiwi_core::workspace::try_save_from_reduce_view;
 
@@ -39,6 +45,22 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
         SideEffect::LoadDirectoryChildren(path) => {
             spawn_directory_load(path, ctx.events.sender());
         }
+        SideEffect::LoadPreviewFile(path) => {
+            spawn_preview_load(
+                path,
+                ctx.state.config.preview.max_size_bytes,
+                ctx.events.sender(),
+            );
+        }
+        SideEffect::LaunchEditor { path, line } => {
+            spawn_editor_launch(
+                ctx.state.repo_root.clone(),
+                ctx.state.config.editor.clone(),
+                path,
+                line,
+                ctx.events.sender(),
+            );
+        }
         SideEffect::SaveWorkspace => {
             try_save_from_reduce_view(&ReduceView::from_app_state(ctx.state));
         }
@@ -50,11 +72,9 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
         | SideEffect::WriteShell(_)
         | SideEffect::WriteAgent(_)
         | SideEffect::ResizeShell { .. }
-        | SideEffect::LoadPreviewFile(_)
         | SideEffect::LoadFileDiff { .. }
         | SideEffect::CancelSearch
         | SideEffect::RunSearch { .. }
-        | SideEffect::LaunchEditor { .. }
         | SideEffect::CopyToClipboard(_)
         | SideEffect::PasteFromClipboard
         | SideEffect::SpawnGitHubAuthCheck
@@ -72,6 +92,49 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
         | SideEffect::PersistUserTheme { .. } => {}
     }
     false
+}
+
+fn spawn_editor_launch(
+    repo_root: PathBuf,
+    settings: kiwi_core::config::EditorSettings,
+    path: PathBuf,
+    line: Option<u32>,
+    sender: kiwi_core::events::EventSender,
+) {
+    std::thread::spawn(move || {
+        let event = match prepare_editor_launch(&repo_root, &settings, &path, line) {
+            Ok(prepared) => match prepared.mode {
+                EditorLaunchMode::Gui => match launch_gui_editor(&prepared) {
+                    Ok(result) => AppEvent::EditorLaunched {
+                        path: result.path,
+                        command: result.command,
+                    },
+                    Err(err) => AppEvent::EditorLaunchFailed {
+                        path: prepared.path,
+                        error: err.user_message(),
+                        show_modal: err.is_command_not_found(),
+                    },
+                },
+                EditorLaunchMode::Terminal => match run_terminal_editor(&repo_root, &prepared) {
+                    Ok(result) => AppEvent::EditorLaunched {
+                        path: result.path,
+                        command: result.command,
+                    },
+                    Err(err) => AppEvent::EditorLaunchFailed {
+                        path: prepared.path,
+                        error: err.user_message(),
+                        show_modal: err.is_command_not_found(),
+                    },
+                },
+            },
+            Err(err) => AppEvent::EditorLaunchFailed {
+                path,
+                error: err.user_message(),
+                show_modal: err.is_command_not_found(),
+            },
+        };
+        let _ = sender.send(event);
+    });
 }
 
 /// Drain pending events, apply reducers, and execute resulting side effects.

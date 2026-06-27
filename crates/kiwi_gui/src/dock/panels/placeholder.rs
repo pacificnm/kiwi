@@ -6,7 +6,7 @@ use kiwi_core::theme::SemanticRole;
 use crate::dock::context::PanelContext;
 use crate::dock::tab::KiwiTab;
 
-pub fn render_placeholder(ui: &mut Ui, tab: KiwiTab, ctx: &PanelContext<'_>) {
+pub fn render_placeholder(ui: &mut Ui, tab: KiwiTab, ctx: &mut PanelContext<'_>) {
     ui.heading(tab.title());
     ui.separator();
     ui.label("Panel content arrives in a later milestone.");
@@ -16,7 +16,7 @@ pub fn render_placeholder(ui: &mut Ui, tab: KiwiTab, ctx: &PanelContext<'_>) {
     }
 }
 
-fn state_hint(tab: KiwiTab, ctx: &PanelContext<'_>) -> Option<String> {
+fn state_hint(tab: KiwiTab, ctx: &mut PanelContext<'_>) -> Option<String> {
     match tab {
         KiwiTab::Explorer => Some(format!("Root: {}", ctx.state.file_tree.root.display())),
         KiwiTab::GitStatus => {
@@ -86,24 +86,28 @@ mod tests {
 
     #[test]
     fn explorer_hint_includes_root_path() {
-        let (state, theme) = test_context();
-        let ctx = PanelContext {
-            state: &state,
+        let (mut state, theme) = test_context();
+        let mut noop = |_cmd: kiwi_core::events::AppCommand| false;
+        let mut ctx = PanelContext {
+            state: &mut state,
             theme: &theme,
+            dispatch: &mut noop,
         };
-        let hint = state_hint(KiwiTab::Explorer, &ctx).expect("hint");
+        let hint = state_hint(KiwiTab::Explorer, &mut ctx).expect("hint");
         assert!(hint.contains("Root:"));
     }
 
     #[test]
     fn every_tab_variant_has_placeholder_hint_handler() {
-        let (state, theme) = test_context();
-        let ctx = PanelContext {
-            state: &state,
+        let (mut state, theme) = test_context();
+        let mut noop = |_cmd: kiwi_core::events::AppCommand| false;
+        let mut ctx = PanelContext {
+            state: &mut state,
             theme: &theme,
+            dispatch: &mut noop,
         };
         for tab in KiwiTab::all_variants() {
-            let _ = state_hint(*tab, &ctx);
+            let _ = state_hint(*tab, &mut ctx);
         }
     }
 }
