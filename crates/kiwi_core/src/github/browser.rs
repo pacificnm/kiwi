@@ -31,14 +31,10 @@ pub fn resolve_browser_target(
     }
 
     match browser_target_kind(navigation, github) {
-        GitHubBrowserKind::PullRequest => github
-            .selected_pr
-            .and_then(|number| u32::try_from(number).ok())
-            .map(GitHubBrowserTarget::PullRequest),
-        GitHubBrowserKind::Issue => github
-            .selected_issue
-            .and_then(|number| u32::try_from(number).ok())
-            .map(GitHubBrowserTarget::Issue),
+        GitHubBrowserKind::PullRequest => {
+            github.selected_pr.map(GitHubBrowserTarget::PullRequest)
+        }
+        GitHubBrowserKind::Issue => github.selected_issue.map(GitHubBrowserTarget::Issue),
     }
 }
 

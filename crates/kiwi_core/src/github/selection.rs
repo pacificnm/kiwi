@@ -13,13 +13,13 @@ pub fn ensure_issue_selection(state: &mut GitHubState) {
         if state
             .issues
             .iter()
-            .any(|issue| u64::from(issue.number) == number)
+            .any(|issue| issue.number == number)
         {
             return;
         }
     }
 
-    state.selected_issue = Some(u64::from(state.issues[0].number));
+    state.selected_issue = Some(state.issues[0].number);
     state.issues_scroll_offset = 0;
 }
 
@@ -34,14 +34,14 @@ pub fn issue_move_selection(state: &mut GitHubState, delta: i32, viewport_rows: 
             state
                 .issues
                 .iter()
-                .position(|issue| u64::from(issue.number) == number)
+                .position(|issue| issue.number == number)
         })
         .unwrap_or(0);
 
     let next_index = (current_index as i32 + delta)
         .clamp(0, state.issues.len().saturating_sub(1) as i32) as usize;
     let issue = &state.issues[next_index];
-    state.selected_issue = Some(u64::from(issue.number));
+    state.selected_issue = Some(issue.number);
     state.issues_scroll_offset =
         scroll_offset_for_row(next_index, state.issues_scroll_offset, viewport_rows);
 }
@@ -52,7 +52,7 @@ pub fn issue_select_row(state: &mut GitHubState, row_index: usize, viewport_rows
     }
 
     let issue = &state.issues[row_index];
-    state.selected_issue = Some(u64::from(issue.number));
+    state.selected_issue = Some(issue.number);
     state.issues_scroll_offset =
         scroll_offset_for_row(row_index, state.issues_scroll_offset, viewport_rows);
 }
@@ -68,7 +68,7 @@ pub fn issue_selected_row_index(state: &GitHubState) -> Option<usize> {
     state
         .issues
         .iter()
-        .position(|issue| u64::from(issue.number) == number)
+        .position(|issue| issue.number == number)
 }
 
 pub fn ensure_pr_selection(state: &mut GitHubState) {
@@ -79,12 +79,12 @@ pub fn ensure_pr_selection(state: &mut GitHubState) {
     }
 
     if let Some(number) = state.selected_pr {
-        if state.prs.iter().any(|pr| u64::from(pr.number) == number) {
+        if state.prs.iter().any(|pr| pr.number == number) {
             return;
         }
     }
 
-    state.selected_pr = Some(u64::from(state.prs[0].number));
+    state.selected_pr = Some(state.prs[0].number);
     state.prs_scroll_offset = 0;
 }
 
@@ -99,14 +99,14 @@ pub fn pr_move_selection(state: &mut GitHubState, delta: i32, viewport_rows: usi
             state
                 .prs
                 .iter()
-                .position(|pr| u64::from(pr.number) == number)
+                .position(|pr| pr.number == number)
         })
         .unwrap_or(0);
 
     let next_index =
         (current_index as i32 + delta).clamp(0, state.prs.len().saturating_sub(1) as i32) as usize;
     let pr = &state.prs[next_index];
-    state.selected_pr = Some(u64::from(pr.number));
+    state.selected_pr = Some(pr.number);
     state.prs_scroll_offset =
         scroll_offset_for_row(next_index, state.prs_scroll_offset, viewport_rows);
 }
@@ -117,7 +117,7 @@ pub fn pr_select_row(state: &mut GitHubState, row_index: usize, viewport_rows: u
     }
 
     let pr = &state.prs[row_index];
-    state.selected_pr = Some(u64::from(pr.number));
+    state.selected_pr = Some(pr.number);
     state.prs_scroll_offset =
         scroll_offset_for_row(row_index, state.prs_scroll_offset, viewport_rows);
 }
@@ -133,12 +133,12 @@ pub fn pr_selected_row_index(state: &GitHubState) -> Option<usize> {
     state
         .prs
         .iter()
-        .position(|pr| u64::from(pr.number) == number)
+        .position(|pr| pr.number == number)
 }
 
 #[must_use]
 pub fn selected_pull_request(state: &GitHubState) -> Option<&PullRequest> {
-    let number = u32::try_from(state.selected_pr?).ok()?;
+    let number = state.selected_pr?;
     state.prs.iter().find(|pr| pr.number == number)
 }
 

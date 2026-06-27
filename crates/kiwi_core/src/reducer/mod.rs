@@ -538,9 +538,7 @@ pub fn github_pr_detail_access_effects(state: &mut ReduceView<'_>, force: bool) 
 }
 
 fn selected_pr_number(github: &crate::state::GitHubState) -> Option<u32> {
-    github
-        .selected_pr
-        .and_then(|number| u32::try_from(number).ok())
+    github.selected_pr
 }
 
 fn github_pr_detail_effects(
@@ -552,12 +550,12 @@ fn github_pr_detail_effects(
         return Vec::new();
     }
 
-    if state.github.pr_detail_loading && state.github.pr_detail_number == Some(u64::from(number)) {
+    if state.github.pr_detail_loading && state.github.pr_detail_number == Some(number) {
         return Vec::new();
     }
 
     if !force
-        && state.github.pr_detail_number == Some(u64::from(number))
+        && state.github.pr_detail_number == Some(number)
         && state.github.pr_detail.is_some()
         && state.github.pr_detail_error.is_none()
     {
@@ -566,20 +564,18 @@ fn github_pr_detail_effects(
 
     state.github.pr_detail_loading = true;
     state.github.pr_detail_error = None;
-    if state.github.pr_detail_number != Some(u64::from(number)) {
+    if state.github.pr_detail_number != Some(number) {
         state.github.pr_detail = None;
         state.github.pr_detail_scroll_offset = 0;
     }
-    state.github.pr_detail_number = Some(u64::from(number));
+    state.github.pr_detail_number = Some(number);
     state.set_dirty();
 
     vec![SideEffect::SpawnGitHubPrDetail { number }]
 }
 
 fn selected_issue_number(github: &crate::state::GitHubState) -> Option<u32> {
-    github
-        .selected_issue
-        .and_then(|number| u32::try_from(number).ok())
+    github.selected_issue
 }
 
 fn github_issue_detail_effects(
@@ -592,13 +588,13 @@ fn github_issue_detail_effects(
     }
 
     if state.github.issue_detail_loading
-        && state.github.issue_detail_number == Some(u64::from(number))
+        && state.github.issue_detail_number == Some(number)
     {
         return Vec::new();
     }
 
     if !force
-        && state.github.issue_detail_number == Some(u64::from(number))
+        && state.github.issue_detail_number == Some(number)
         && state.github.issue_detail.is_some()
         && state.github.issue_detail_error.is_none()
     {
@@ -607,11 +603,11 @@ fn github_issue_detail_effects(
 
     state.github.issue_detail_loading = true;
     state.github.issue_detail_error = None;
-    if state.github.issue_detail_number != Some(u64::from(number)) {
+    if state.github.issue_detail_number != Some(number) {
         state.github.issue_detail = None;
         state.github.issue_detail_scroll_offset = 0;
     }
-    state.github.issue_detail_number = Some(u64::from(number));
+    state.github.issue_detail_number = Some(number);
     state.set_dirty();
 
     vec![SideEffect::SpawnGitHubIssueDetail { number }]
@@ -725,7 +721,7 @@ fn reduce_github_issue_detail_loaded(
     number: u32,
     result: IssueDetailLoadResult,
 ) -> Vec<SideEffect> {
-    if state.github.issue_detail_number != Some(u64::from(number)) {
+    if state.github.issue_detail_number != Some(number) {
         return Vec::new();
     }
 
@@ -744,7 +740,7 @@ fn reduce_github_pr_detail_loaded(
     number: u32,
     result: PrDetailLoadResult,
 ) -> Vec<SideEffect> {
-    if state.github.pr_detail_number != Some(u64::from(number)) {
+    if state.github.pr_detail_number != Some(number) {
         return Vec::new();
     }
 
@@ -953,7 +949,7 @@ fn reduce_github_issue_comment_completed(
     number: u32,
     result: crate::github::IssueActionResult,
 ) -> Vec<SideEffect> {
-    if state.github.selected_issue != Some(u64::from(number)) {
+    if state.github.selected_issue != Some(number) {
         return Vec::new();
     }
 
@@ -977,7 +973,7 @@ fn reduce_github_issue_create_branch_completed(
     number: u32,
     result: crate::github::IssueActionResult,
 ) -> Vec<SideEffect> {
-    if state.github.selected_issue != Some(u64::from(number)) {
+    if state.github.selected_issue != Some(number) {
         return Vec::new();
     }
 
@@ -1554,7 +1550,7 @@ fn reduce_github_pr_merge_completed(
     number: u32,
     result: crate::github::IssueActionResult,
 ) -> Vec<SideEffect> {
-    if state.github.selected_pr != Some(u64::from(number)) {
+    if state.github.selected_pr != Some(number) {
         return Vec::new();
     }
 
