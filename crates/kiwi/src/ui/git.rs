@@ -174,12 +174,13 @@ fn render_file_list(
     let viewport_rows = content.height as usize;
     let max_width = content.width as usize;
     let show_untracked = state.config.git.show_untracked;
-    let total_rows = build_panel_rows(&state.git.file_entries, show_untracked).len();
-    let selected_row = git_selected_row_index(&state.git, show_untracked);
+    let rows = build_panel_rows(&state.git.file_entries, show_untracked);
+    let total_rows = rows.len();
+    let selected_row = git_selected_row_index(&state.git, &rows);
     let mut lines = Vec::new();
 
     for viewport_index in 0..viewport_rows {
-        let Some(row) = git_row_at_viewport(&state.git, viewport_index, show_untracked) else {
+        let Some(row) = git_row_at_viewport(&state.git, &rows, viewport_index) else {
             break;
         };
         let row_index = state.git.scroll_offset + viewport_index;

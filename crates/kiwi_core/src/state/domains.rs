@@ -56,6 +56,7 @@ pub struct DiffState {
     pub selected_path: Option<String>,
     pub source: DiffSource,
     pub lines: Vec<DiffLine>,
+    pub max_content_width: usize,
     pub scroll_offset: usize,
     pub horizontal_scroll_offset: usize,
     pub scroll_by_path: HashMap<String, (usize, usize)>,
@@ -70,6 +71,7 @@ impl Default for DiffState {
             selected_path: None,
             source: DiffSource::Unstaged,
             lines: Vec::new(),
+            max_content_width: 0,
             scroll_offset: 0,
             horizontal_scroll_offset: 0,
             scroll_by_path: HashMap::new(),
@@ -95,6 +97,7 @@ impl DiffState {
         self.error = None;
         self.is_binary = false;
         self.lines.clear();
+        self.max_content_width = 0;
         if let Some((scroll_offset, horizontal_scroll_offset)) =
             self.scroll_by_path.get(&path).copied()
         {
@@ -121,6 +124,12 @@ impl DiffState {
         self.is_binary = result.is_binary;
         self.error = result.error;
         self.lines = result.lines;
+        self.max_content_width = self
+            .lines
+            .iter()
+            .map(|line| line.content.chars().count())
+            .max()
+            .unwrap_or(0);
         self.clamp_scroll_to_viewport(1);
     }
 
@@ -157,12 +166,7 @@ impl DiffState {
     }
 
     pub fn scroll_horizontal(&mut self, delta: i32, visible_text_width: usize) {
-        let max_width = self
-            .lines
-            .iter()
-            .map(|line| line.content.chars().count())
-            .max()
-            .unwrap_or(0);
+        let max_width = self.max_content_width;
         if visible_text_width >= max_width {
             self.horizontal_scroll_offset = 0;
             return;

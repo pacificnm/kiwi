@@ -1,6 +1,21 @@
 #[must_use]
 pub fn visible_width(text: &str) -> usize {
-    strip_ansi(text).chars().count()
+    let mut count = 0usize;
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            if chars.next_if_eq(&'[').is_some() {
+                for c in chars.by_ref() {
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+        count += 1;
+    }
+    count
 }
 
 #[must_use]

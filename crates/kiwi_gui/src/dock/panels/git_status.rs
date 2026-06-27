@@ -67,7 +67,7 @@ fn render_file_list(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
     let show_untracked = ctx.state.config.git.show_untracked;
     let rows = build_panel_rows(&ctx.state.git.file_entries, show_untracked);
     let total_rows = rows.len();
-    let selected_row = git_selected_row_index(&ctx.state.git, show_untracked);
+    let selected_row = git_selected_row_index(&ctx.state.git, &rows);
 
     if total_rows == 0 {
         ui.label(RichText::new(empty_list_message(ctx)).color(ctx.theme.role(SemanticRole::Muted)));
@@ -75,7 +75,7 @@ fn render_file_list(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
         return;
     }
 
-    clamp_git_scroll(&mut ctx.state.git, 1, show_untracked);
+    clamp_git_scroll(&mut ctx.state.git, &rows, 1);
 
     let mut scroll_offset = ctx.state.git.scroll_offset;
     let viewport_rows = render_virtual_rows(
@@ -89,7 +89,7 @@ fn render_file_list(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
     );
     ctx.state.git.scroll_offset = scroll_offset;
     ctx.state.viewport.git_rows = viewport_rows;
-    clamp_git_scroll(&mut ctx.state.git, viewport_rows, show_untracked);
+    clamp_git_scroll(&mut ctx.state.git, &rows, viewport_rows);
 }
 
 fn render_row(
