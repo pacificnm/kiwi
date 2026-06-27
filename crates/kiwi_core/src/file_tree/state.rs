@@ -203,7 +203,7 @@ impl FileTreeState {
     pub fn invalidate_children(&mut self, path: &Path) {
         if let Some(child_paths) = self.children.remove(path) {
             for child in child_paths {
-                if child.is_dir() {
+                if self.nodes.get(&child).is_some_and(|n| n.is_dir) {
                     self.invalidate_children(&child);
                 }
                 self.nodes.remove(&child);
@@ -545,6 +545,50 @@ mod tests {
             state.nodes[&root.join("README.md")].git_status,
             Some(GitFileStatus::Untracked)
         );
+    }
+
+    #[test]
+    fn invalidate_children_recurses_without_filesystem_stat() {
+        // Verifies that invalidate_children uses in-memory FileNode.is_dir
+        // rather than Path::is_dir() (which would be a blocking stat syscall).
+        // Paths are non-existent so any real stat would return false and
+        // break the recursion — but with the in-memory check it still works.
+        let root = PathBuf::from("/nonexistent/repo");
+        let mut state = FileTreeState::at_root(root.clone());
+
+        // Simulate a loaded tree: root → src (dir) → main.rs (file)
+        state.apply_children_loaded(
+            &root,
+            vec![DirectoryEntry {
+                path: root.join("src"),
+                name: "src".to_string(),
+                is_dir: true,
+            }],
+            None,
+        );
+        state.apply_children_loaded(
+            &root.join("src"),
+            vec![DirectoryEntry {
+                path: root.join("src/main.rs"),
+                name: "main.rs".to_string(),
+                is_dir: false,
+            }],
+            None,
+        );
+
+        assert!(state.nodes.contains_key(&root.join("src")));
+        assert!(state.nodes.contains_key(&root.join("src/main.rs")));
+        assert!(state.nodes[&root.join("src")].is_dir);
+
+        state.invalidate_children(&root);
+
+        // src and main.rs nodes removed, children caches cleared
+        assert!(!state.nodes.contains_key(&root.join("src")));
+        assert!(!state.nodes.contains_key(&root.join("src/main.rs")));
+        assert!(!state.children.contains_key(&root));
+        assert!(!state.children.contains_key(&root.join("src")));
+        // root node itself still exists but marked not loaded
+        assert!(!state.nodes[&root].children_loaded);
     }
 
     #[test]
