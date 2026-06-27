@@ -2,11 +2,17 @@
 
 use std::time::{Duration, Instant};
 
+use kiwi_core::events::{AppCommand, AppEvent};
 use kiwi_core::state::ReduceView;
 use kiwi_core::workspace::{try_merge_save_gui, try_save_from_reduce_view, GuiWorkspaceSnapshot};
 
-use crate::chrome::{render_menu_bar, render_reset_layout_modal, render_status_bar};
+use crate::chrome::{
+    palette_keyboard_action, palette_open_shortcut_action, render_about_modal,
+    render_command_palette, render_menu_bar, render_reset_layout_modal, render_shortcuts_modal,
+    render_status_bar,
+};
 use crate::dock::{restore_dock, snapshot_from_dock, DockShell, PanelContext};
+use crate::navigation_bridge::sync_dock_from_navigation;
 use crate::runtime::GuiRuntime;
 use crate::theme::GuiTheme;
 
@@ -16,6 +22,8 @@ pub struct KiwiApp {
     gui_theme: GuiTheme,
     dock: DockShell,
     reset_layout_prompt: bool,
+    shortcuts_help_open: bool,
+    about_open: bool,
     workspace_last_saved: Instant,
 }
 
@@ -37,6 +45,8 @@ impl KiwiApp {
             gui_theme,
             dock,
             reset_layout_prompt: false,
+            shortcuts_help_open: false,
+            about_open: false,
             workspace_last_saved: Instant::now(),
         }
     }
@@ -62,14 +72,58 @@ impl KiwiApp {
             self.save_workspace();
         }
     }
+
+    fn dispatch_command(&mut self, command: AppCommand) -> bool {
+        let quit = self.runtime.dispatch_command(command);
+        self.sync_dock();
+        quit
+    }
+
+    fn sync_dock(&mut self) {
+        let nav = self.runtime.state.navigation.clone();
+        let gh_pane = self.runtime.state.github.left_pane;
+        sync_dock_from_navigation(&mut self.dock, &nav, gh_pane);
+    }
+
+    fn handle_input_shortcuts(&mut self, ctx: &egui::Context) -> bool {
+        if self.runtime.state.palette.open {
+            let prompt_mode = self.runtime.state.palette.prompt.is_some();
+            let input_empty = self.runtime.state.palette.input.is_empty();
+            if let Some(command) = palette_keyboard_action(ctx, prompt_mode, input_empty) {
+                return self.dispatch_command(command);
+            }
+        } else if let Some(command) = palette_open_shortcut_action(ctx) {
+            let _ = self.dispatch_command(command);
+            return false;
+        }
+
+        if ctx.input(|input| input.key_pressed(egui::Key::Q) && input.modifiers.command) {
+            return self.dispatch_command(AppCommand::Quit);
+        }
+
+        if ctx.input(|input| input.key_pressed(egui::Key::F5)) {
+            return self.runtime.dispatch(AppEvent::GitRefreshRequested);
+        }
+
+        false
+    }
+
+    fn close_window(&mut self, ctx: &egui::Context) {
+        self.save_workspace();
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    }
 }
 
 impl eframe::App for KiwiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let (should_quit, event_count) = self.runtime.process_pending_events();
         if should_quit {
-            self.save_workspace();
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            self.close_window(ctx);
+            return;
+        }
+
+        if self.handle_input_shortcuts(ctx) {
+            self.close_window(ctx);
             return;
         }
 
@@ -78,6 +132,22 @@ impl eframe::App for KiwiApp {
         let menu_action = render_menu_bar(ctx, &mut self.dock);
         if menu_action.reset_layout_requested {
             self.reset_layout_prompt = true;
+        }
+        if menu_action.command_palette_requested {
+            let _ = self.dispatch_command(AppCommand::PaletteOpen);
+        }
+        if menu_action.git_refresh_requested {
+            let _ = self.runtime.dispatch(AppEvent::GitRefreshRequested);
+        }
+        if menu_action.shortcuts_help_requested {
+            self.shortcuts_help_open = true;
+        }
+        if menu_action.about_requested {
+            self.about_open = true;
+        }
+        if menu_action.quit_requested && self.dispatch_command(AppCommand::Quit) {
+            self.close_window(ctx);
+            return;
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -92,11 +162,15 @@ impl eframe::App for KiwiApp {
 
         render_status_bar(ctx, &self.gui_theme, &self.runtime.state);
         render_reset_layout_modal(ctx, &mut self.reset_layout_prompt, &mut self.dock);
+        render_shortcuts_modal(ctx, &mut self.shortcuts_help_open);
+        render_about_modal(ctx, &mut self.about_open);
 
-        if ctx.input(|input| input.key_pressed(egui::Key::Q) && input.modifiers.command) {
-            self.save_workspace();
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            return;
+        if let Some(command) = render_command_palette(ctx, &self.gui_theme, &mut self.runtime.state)
+        {
+            if self.dispatch_command(command) {
+                self.close_window(ctx);
+                return;
+            }
         }
 
         self.poll_workspace_save();

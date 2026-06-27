@@ -1,6 +1,4 @@
-//! Top menu bar — View menu for dock tabs (SPEC-022 / #185).
-//!
-//! File, Git, Help, and command palette arrive in #187.
+//! Top menu bar — File, View, Git, Help (SPEC-022 / #185 / #187).
 
 use egui::Context;
 
@@ -12,6 +10,11 @@ const MENU_BAR_HEIGHT: f32 = 28.0;
 #[derive(Debug, Default)]
 pub struct MenuBarAction {
     pub reset_layout_requested: bool,
+    pub quit_requested: bool,
+    pub git_refresh_requested: bool,
+    pub command_palette_requested: bool,
+    pub shortcuts_help_requested: bool,
+    pub about_requested: bool,
 }
 
 pub fn render_menu_bar(ctx: &Context, dock: &mut DockShell) -> MenuBarAction {
@@ -21,6 +24,22 @@ pub fn render_menu_bar(ctx: &Context, dock: &mut DockShell) -> MenuBarAction {
         .min_height(MENU_BAR_HEIGHT)
         .show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
+                ui.menu_button("File", |ui| {
+                    if ui
+                        .button("Command Palette…")
+                        .on_hover_text("Ctrl+Shift+P")
+                        .clicked()
+                    {
+                        action.command_palette_requested = true;
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    if ui.button("Quit").on_hover_text("Ctrl+Q").clicked() {
+                        action.quit_requested = true;
+                        ui.close_menu();
+                    }
+                });
+
                 ui.menu_button("View", |ui| {
                     for tab in KiwiTab::all_variants() {
                         let mut open = dock.is_tab_open(*tab);
@@ -35,6 +54,24 @@ pub fn render_menu_bar(ctx: &Context, dock: &mut DockShell) -> MenuBarAction {
                     ui.separator();
                     if ui.button("Reset Layout…").clicked() {
                         action.reset_layout_requested = true;
+                        ui.close_menu();
+                    }
+                });
+
+                ui.menu_button("Git", |ui| {
+                    if ui.button("Refresh Status").on_hover_text("F5").clicked() {
+                        action.git_refresh_requested = true;
+                        ui.close_menu();
+                    }
+                });
+
+                ui.menu_button("Help", |ui| {
+                    if ui.button("Keyboard Shortcuts").clicked() {
+                        action.shortcuts_help_requested = true;
+                        ui.close_menu();
+                    }
+                    if ui.button("About Kiwi").clicked() {
+                        action.about_requested = true;
                         ui.close_menu();
                     }
                 });
