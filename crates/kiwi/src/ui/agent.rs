@@ -88,7 +88,10 @@ pub fn render_agent_tab(
         render_agent_subtabs(frame, layout.subtabs, theme, chrome, state);
     }
 
-    let agent_title = format!("Agent: {}", state.agent_manager.active_session().label);
+    let agent_title = format!(
+        "Agent: {}",
+        state.agent_manager.active_session().map(|s| s.label.as_str()).unwrap_or("Agent")
+    );
     render_agent_pane(
         frame,
         layout.pane,
