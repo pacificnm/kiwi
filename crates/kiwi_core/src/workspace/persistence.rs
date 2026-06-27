@@ -86,15 +86,15 @@ pub fn save_from_reduce_view(view: &ReduceView<'_>) -> std::io::Result<()> {
 }
 
 /// Persist current app state when `workspace.persist` is enabled (SPEC-017).
-pub fn try_save_from_reduce_view(view: &ReduceView<'_>) {
+pub fn try_save_from_reduce_view(view: &mut ReduceView<'_>) {
     if !view.config.workspace.persist {
         return;
     }
     if let Err(err) = save_from_reduce_view(view) {
-        eprintln!(
+        view.logs.push_error(format!(
             "workspace: failed to save {}: {err}",
             workspace_file_path(view.repo_root).display()
-        );
+        ));
     }
 }
 
@@ -113,15 +113,20 @@ pub fn merge_save_gui(repo_root: &Path, gui: &GuiWorkspaceSnapshot) -> std::io::
 }
 
 /// Persist GUI dock layout when `workspace.persist` is enabled (SPEC-022 / #186).
-pub fn try_merge_save_gui(repo_root: &Path, persist: bool, gui: &GuiWorkspaceSnapshot) {
+pub fn try_merge_save_gui(
+    repo_root: &Path,
+    persist: bool,
+    gui: &GuiWorkspaceSnapshot,
+    logs: &mut crate::state::LogsState,
+) {
     if !persist {
         return;
     }
     if let Err(err) = merge_save_gui(repo_root, gui) {
-        eprintln!(
+        logs.push_error(format!(
             "workspace: failed to save gui layout {}: {err}",
             workspace_file_path(repo_root).display()
-        );
+        ));
     }
 }
 

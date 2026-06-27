@@ -139,7 +139,8 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
             );
         }
         SideEffect::SaveWorkspace => {
-            try_save_from_reduce_view(&ReduceView::from_app_state(ctx.state));
+            let mut view = ReduceView::from_app_state(ctx.state);
+            try_save_from_reduce_view(&mut view);
         }
         SideEffect::SpawnAgent(id) => {
             let repo_root = ctx.state.repo_root.clone();
