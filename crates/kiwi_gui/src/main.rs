@@ -2,6 +2,7 @@ mod app;
 mod bootstrap;
 mod chrome;
 mod cli;
+mod dock;
 mod runtime;
 mod services;
 mod theme;

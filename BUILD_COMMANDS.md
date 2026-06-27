@@ -17,6 +17,10 @@ cargo run -p kiwi
 # Build the desktop GUI (SPEC-021; requires a graphical session to run)
 cargo build -p kiwi_gui
 
+# Launch GUI via helper script (same args as kiwi-gui: path, --theme, --config)
+./scripts/launch-gui.sh .
+./scripts/launch-gui.sh --release -- --theme dracula /path/to/repo
+
 # Open GUI for current directory (loads ~/.config/kiwi/config.toml, .kiwi.toml, --theme/--config)
 cargo run -p kiwi_gui -- .
 
@@ -24,6 +28,10 @@ cargo run -p kiwi_gui -- .
 cargo run -p kiwi_gui -- --theme dracula /path/to/repo
 
 # Adjust base font scale via config ([gui.font] size = 16.0)
+
+# GUI dock (SPEC-022 #184): draggable tabs — Explorer, Git Status, Issues, Agent, Terminal
+# on first run. Drag tab edges to split; close tabs with the tab × button.
+# Default 3-region split layout and View menu arrive in #185; persistence in #186.
 
 # Run all workspace tests
 cargo test --workspace
