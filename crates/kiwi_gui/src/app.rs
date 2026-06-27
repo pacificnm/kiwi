@@ -65,11 +65,15 @@ impl KiwiApp {
     fn save_workspace(&mut self) {
         let persist = self.runtime.state.config.workspace.persist;
         let repo_root = self.runtime.state.repo_root.clone();
-        try_save_from_reduce_view(&ReduceView::from_app_state(&mut self.runtime.state));
+        {
+            let mut view = ReduceView::from_app_state(&mut self.runtime.state);
+            try_save_from_reduce_view(&mut view);
+        }
         try_merge_save_gui(
             &repo_root,
             persist,
             &snapshot_from_dock(self.dock.dock_state()),
+            &mut self.runtime.state.logs,
         );
         self.workspace_last_saved = Instant::now();
     }

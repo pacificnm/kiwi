@@ -18,5 +18,6 @@ pub fn save_workspace_from_state(state: &mut AppState) -> std::io::Result<()> {
 
 /// Persist current app state when `workspace.persist` is enabled (SPEC-017).
 pub fn try_save_workspace_from_state(state: &mut AppState) {
-    kiwi_core::workspace::try_save_from_reduce_view(&state.reduce_view());
+    let mut view = state.reduce_view();
+    kiwi_core::workspace::try_save_from_reduce_view(&mut view);
 }
