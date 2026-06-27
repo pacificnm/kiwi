@@ -150,27 +150,34 @@ impl AgentManager {
     }
 
     #[must_use]
-    pub fn active_session(&self) -> &ManagedAgentSession {
-        self.agents
-            .get(&self.active_agent)
-            .expect("active agent id must exist")
+    pub fn active_session(&self) -> Option<&ManagedAgentSession> {
+        self.agents.get(&self.active_agent)
     }
 
     #[must_use]
-    pub fn active_session_mut(&mut self) -> &mut ManagedAgentSession {
+    pub fn active_session_mut(&mut self) -> Option<&mut ManagedAgentSession> {
         let active = self.active_agent;
-        self.agents
-            .get_mut(&active)
-            .expect("active agent id must exist")
+        self.agents.get_mut(&active)
     }
 
     #[must_use]
     pub fn active_pty(&self) -> &AgentState {
-        &self.active_session().pty
+        self.active_session()
+            .or_else(|| self.agents.values().next())
+            .map(|s| &s.pty)
+            .expect("agent manager always has at least one session")
     }
 
     pub fn active_pty_mut(&mut self) -> &mut AgentState {
-        &mut self.active_session_mut().pty
+        let active = self.active_agent;
+        if self.agents.contains_key(&active) {
+            return &mut self.agents.get_mut(&active).expect("checked above").pty;
+        }
+        self.agents
+            .values_mut()
+            .next()
+            .map(|s| &mut s.pty)
+            .expect("agent manager always has at least one session")
     }
 
     pub fn session_id_at_index(&self, index: usize) -> Option<AgentId> {
@@ -243,7 +250,9 @@ impl AgentManager {
     }
 
     pub fn link_active_issue(&mut self, issue: IssueNumber) {
-        self.active_session_mut().linked_issue = Some(issue);
+        if let Some(session) = self.active_session_mut() {
+            session.linked_issue = Some(issue);
+        }
     }
 
     /// Status-bar label for the agent segment (ADR-017 future UX).
@@ -290,7 +299,7 @@ mod tests {
         let manager = AgentManager::with_initial_agent(sample_pty("cursor"));
         assert_eq!(manager.session_count(), 1);
         assert_eq!(manager.active_id(), AgentId::FIRST);
-        assert_eq!(manager.active_session().label, "cursor");
+        assert_eq!(manager.active_session().expect("session exists").label, "cursor");
     }
 
     #[test]
@@ -302,8 +311,8 @@ mod tests {
 
         assert_eq!(manager.session_count(), 2);
         assert_eq!(manager.active_id(), id);
-        assert_eq!(manager.active_session().label, "tests");
-        assert_eq!(manager.active_session().linked_issue, Some(42));
+        assert_eq!(manager.active_session().expect("session exists").label, "tests");
+        assert_eq!(manager.active_session().expect("session exists").linked_issue, Some(42));
     }
 
     #[test]
@@ -321,9 +330,9 @@ mod tests {
             .create_agent(Some("second".to_string()), None)
             .expect("create");
         manager.set_active(AgentId::FIRST).expect("switch");
-        assert_eq!(manager.active_session().label, "first");
+        assert_eq!(manager.active_session().expect("session exists").label, "first");
         manager.set_active(second).expect("switch back");
-        assert_eq!(manager.active_session().label, "second");
+        assert_eq!(manager.active_session().expect("session exists").label, "second");
     }
 
     #[test]
