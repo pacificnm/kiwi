@@ -34,7 +34,7 @@ pub fn navigation_sync_commands(state: &AppState, tab: KiwiTab) -> Vec<AppComman
         KiwiTab::Agent => {
             let mut commands = Vec::new();
             if state.navigation.main_tab != MainTab::Agent {
-                commands.push(AppCommand::Navigation(NavCommand::SelectMainTab(
+                commands.push(AppCommand::Navigation(NavCommand::SelectMainTabUnpaired(
                     MainTab::Agent,
                 )));
             }

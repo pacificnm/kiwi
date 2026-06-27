@@ -15,6 +15,8 @@ pub struct MenuBarAction {
     pub command_palette_requested: bool,
     pub shortcuts_help_requested: bool,
     pub about_requested: bool,
+    /// Dock tabs opened from the View menu this frame (need nav sync).
+    pub tabs_opened: Vec<KiwiTab>,
 }
 
 pub fn render_menu_bar(ctx: &Context, dock: &mut DockShell) -> MenuBarAction {
@@ -46,6 +48,7 @@ pub fn render_menu_bar(ctx: &Context, dock: &mut DockShell) -> MenuBarAction {
                         if ui.checkbox(&mut open, tab.title()).changed() {
                             if open {
                                 dock.show_tab(*tab);
+                                action.tabs_opened.push(*tab);
                             } else {
                                 dock.close_tab(*tab);
                             }

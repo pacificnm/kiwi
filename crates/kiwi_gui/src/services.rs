@@ -1,6 +1,9 @@
 //! Background service wiring and side-effect execution for the GUI.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 
 use kiwi_core::diff::spawn_file_diff_load;
 use kiwi_core::editor::{
@@ -16,6 +19,7 @@ use kiwi_core::github::{
     spawn_github_pr_list_load, spawn_github_pr_merge, spawn_github_repo_labels_load,
 };
 use kiwi_core::preview::spawn_preview_load;
+use kiwi_core::search::{spawn_search, DebounceTimer, SearchCancelHandle, SearchJob};
 use kiwi_core::state::{AppState, ReduceView};
 use kiwi_core::workspace::try_save_from_reduce_view;
 
@@ -24,10 +28,61 @@ use crate::pty::PtyRuntime;
 /// Maximum events processed per frame to avoid stalling egui.
 pub const MAX_EVENTS_PER_FRAME: usize = 64;
 
+/// Debounce/cancel state for background search jobs (SPEC-007).
+#[derive(Debug)]
+pub struct SearchRuntime {
+    pub debounce: DebounceTimer,
+    pub cancel: SearchCancelHandle,
+    pub live_generation: Arc<AtomicU64>,
+    /// Generation for which the debounce timer was last armed (avoids re-arming every frame).
+    armed_generation: Option<u64>,
+}
+
+impl Default for SearchRuntime {
+    fn default() -> Self {
+        Self {
+            debounce: DebounceTimer::default(),
+            cancel: SearchCancelHandle::default(),
+            live_generation: Arc::new(AtomicU64::new(0)),
+            armed_generation: None,
+        }
+    }
+}
+
+impl SearchRuntime {
+    pub fn sync_debounce(&mut self, state: &AppState) {
+        self.live_generation
+            .store(state.search.generation, Ordering::Relaxed);
+        if state.search.debounce_scheduled {
+            if self.armed_generation != Some(state.search.generation) {
+                let debounce = Duration::from_millis(state.config.search.debounce_ms);
+                self.debounce.schedule(debounce);
+                self.armed_generation = Some(state.search.generation);
+            }
+        } else {
+            self.armed_generation = None;
+        }
+    }
+
+    pub fn poll_debounce(&mut self) -> bool {
+        self.debounce.poll_ready()
+    }
+
+    pub fn debounce_pending(&self) -> bool {
+        self.debounce.remaining().is_some()
+    }
+
+    pub fn clear_debounce(&mut self) {
+        self.debounce.clear();
+        self.armed_generation = None;
+    }
+}
+
 pub struct ServiceContext<'a> {
     pub state: &'a mut AppState,
     pub events: &'a EventChannel,
     pub pty: &'a mut PtyRuntime,
+    pub search: &'a mut SearchRuntime,
 }
 
 /// Execute a batch of reducer side effects. Returns `true` when the app should quit.
@@ -218,11 +273,35 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
         }
         SideEffect::SpawnBranchList
         | SideEffect::SpawnBranchCheckout { .. }
-        | SideEffect::CancelSearch
-        | SideEffect::RunSearch { .. }
         | SideEffect::CopyToClipboard(_)
         | SideEffect::PasteFromClipboard
         | SideEffect::PersistUserTheme { .. } => {}
+        SideEffect::CancelSearch => {
+            ctx.search.cancel.cancel();
+            ctx.search.clear_debounce();
+            ctx.search
+                .live_generation
+                .store(ctx.state.search.generation, Ordering::Relaxed);
+        }
+        SideEffect::RunSearch {
+            mode,
+            query,
+            generation,
+        } => {
+            ctx.search.cancel.clear();
+            spawn_search(
+                SearchJob {
+                    mode,
+                    query,
+                    generation,
+                    repo_root: ctx.state.repo_root.clone(),
+                    rg_command: ctx.state.config.search.command.clone(),
+                },
+                ctx.events.sender(),
+                ctx.search.live_generation.clone(),
+                ctx.search.cancel.clone(),
+            );
+        }
     }
     false
 }
@@ -277,6 +356,7 @@ pub fn process_pending_events(
     state: &mut AppState,
     events: &mut EventChannel,
     pty: &mut PtyRuntime,
+    search: &mut SearchRuntime,
 ) -> (bool, usize) {
     let pending: Vec<AppEvent> = events
         .drain_coalesced()
@@ -292,6 +372,7 @@ pub fn process_pending_events(
             state,
             events,
             pty,
+            search,
         };
         if execute_gui_effects(&mut ctx, effects) {
             should_quit = true;
@@ -299,6 +380,7 @@ pub fn process_pending_events(
         }
     }
 
+    search.sync_debounce(state);
     (should_quit, count)
 }
 
@@ -337,6 +419,7 @@ mod tests {
         let mut state = test_state();
         let mut events = EventChannel::new();
         let mut pty = PtyRuntime::new();
+        let mut search = SearchRuntime::default();
 
         events
             .sender()
@@ -353,7 +436,7 @@ mod tests {
             })
             .expect("send");
 
-        let (quit, count) = process_pending_events(&mut state, &mut events, &mut pty);
+        let (quit, count) = process_pending_events(&mut state, &mut events, &mut pty, &mut search);
         assert!(!quit);
         assert_eq!(count, 1);
 
@@ -369,10 +452,12 @@ mod tests {
         state.workspace_meta.is_git_repo = false;
         let events = EventChannel::new();
         let mut pty = PtyRuntime::new();
+        let mut search = SearchRuntime::default();
         let mut ctx = ServiceContext {
             state: &mut state,
             events: &events,
             pty: &mut pty,
+            search: &mut search,
         };
 
         let quit = execute_gui_effects(&mut ctx, vec![SideEffect::SpawnGitRefresh]);
@@ -384,13 +469,72 @@ mod tests {
         let mut state = test_state();
         let events = EventChannel::new();
         let mut pty = PtyRuntime::new();
+        let mut search = SearchRuntime::default();
         let mut ctx = ServiceContext {
             state: &mut state,
             events: &events,
             pty: &mut pty,
+            search: &mut search,
         };
 
         let quit = execute_gui_effects(&mut ctx, vec![SideEffect::SpawnGitHubAuthCheck]);
+        assert!(!quit);
+    }
+
+    #[test]
+    fn sync_debounce_does_not_extend_timer_every_frame() {
+        use std::thread;
+        use std::time::Duration;
+
+        use kiwi_core::search::SearchState;
+
+        let mut state = test_state();
+        state.search = SearchState {
+            query: "main".to_string(),
+            generation: 1,
+            debounce_scheduled: true,
+            ..SearchState::default()
+        };
+        let mut search = SearchRuntime::default();
+        search.sync_debounce(&state);
+        assert!(search.debounce_pending());
+
+        thread::sleep(Duration::from_millis(50));
+        search.sync_debounce(&state);
+        thread::sleep(Duration::from_millis(160));
+        assert!(
+            search.poll_debounce(),
+            "timer should fire without being pushed forward by repeated sync"
+        );
+
+        state.search.debounce_scheduled = false;
+        search.sync_debounce(&state);
+        assert!(!search.debounce_pending());
+    }
+
+    #[test]
+    fn run_search_side_effect_does_not_quit() {
+        use kiwi_core::search::SearchMode;
+
+        let mut state = test_state();
+        let events = EventChannel::new();
+        let mut pty = PtyRuntime::new();
+        let mut search = SearchRuntime::default();
+        let mut ctx = ServiceContext {
+            state: &mut state,
+            events: &events,
+            pty: &mut pty,
+            search: &mut search,
+        };
+
+        let quit = execute_gui_effects(
+            &mut ctx,
+            vec![SideEffect::RunSearch {
+                mode: SearchMode::Files,
+                query: "main".to_string(),
+                generation: 1,
+            }],
+        );
         assert!(!quit);
     }
 
@@ -405,6 +549,7 @@ mod tests {
         state.navigation.focus = FocusTarget::Left;
         let events = EventChannel::new();
         let mut pty = PtyRuntime::new();
+        let mut search = SearchRuntime::default();
 
         let effects = kiwi_core::reducer::reduce(
             &mut ReduceView::from_app_state(&mut state),
@@ -420,6 +565,7 @@ mod tests {
                 state: &mut state,
                 events: &events,
                 pty: &mut pty,
+                search: &mut search,
             },
             effects,
         );

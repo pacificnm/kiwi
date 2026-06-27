@@ -68,7 +68,10 @@ impl NavigationState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NavCommand {
     SelectLeftTab(LeftNavTab),
+    /// Select main tab and apply SPEC-004 left-tab pairing (TUI / palette).
     SelectMainTab(MainTab),
+    /// Select main tab without changing the left tab (GUI dock tab clicks).
+    SelectMainTabUnpaired(MainTab),
     SetFocus(FocusTarget),
     NextFocus,
     PreviousFocus,
@@ -78,10 +81,12 @@ impl NavigationState {
     pub fn apply(&mut self, command: NavCommand) {
         match command {
             NavCommand::SelectLeftTab(tab) => self.left_tab = tab,
-            NavCommand::SelectMainTab(tab) => {
+            NavCommand::SelectMainTab(tab) | NavCommand::SelectMainTabUnpaired(tab) => {
                 self.main_tab = tab;
-                if let Some(left) = tab.paired_left_tab() {
-                    self.left_tab = left;
+                if matches!(command, NavCommand::SelectMainTab(_)) {
+                    if let Some(left) = tab.paired_left_tab() {
+                        self.left_tab = left;
+                    }
                 }
             }
             NavCommand::SetFocus(focus) => self.focus = focus,
@@ -164,6 +169,15 @@ mod tests {
 
         nav.apply(NavCommand::PreviousFocus);
         assert_eq!(nav.focus, FocusTarget::Shell);
+    }
+
+    #[test]
+    fn unpaired_main_tab_select_preserves_left_tab() {
+        let mut nav = NavigationState::default();
+        nav.apply(NavCommand::SelectLeftTab(LeftNavTab::Search));
+        nav.apply(NavCommand::SelectMainTabUnpaired(MainTab::Issues));
+        assert_eq!(nav.main_tab, MainTab::Issues);
+        assert_eq!(nav.left_tab, LeftNavTab::Search);
     }
 
     #[test]

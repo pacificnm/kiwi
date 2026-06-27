@@ -12,9 +12,10 @@ mod viewer;
 pub use context::{PanelContext, PtySurfaceState};
 pub use layout::initial_dock_state;
 pub use panels::{
-    collect_github_keyboard, collect_pty_input, explorer_keyboard_action,
-    git_diff_keyboard_action, git_status_keyboard_action, github_navigation_sync_commands,
-    navigation_sync_commands, PtyTarget,
+    collect_github_keyboard, collect_pty_input, collect_search_keyboard, explorer_keyboard_action,
+    git_diff_keyboard_action, git_status_keyboard_action,
+    global_search_focus_commands, global_search_focus_pressed, navigation_sync_commands,
+    preview_keyboard_action, PtyTarget,
 };
 pub use persistence::{restore_dock, snapshot_from_dock};
 pub use tab::KiwiTab;
@@ -51,7 +52,8 @@ impl DockShell {
         }
     }
 
-    pub fn render(&mut self, ui: &mut Ui, ctx: PanelContext<'_>) {
+    pub fn render(&mut self, ui: &mut Ui, mut ctx: PanelContext<'_>) {
+        ctx.focused_dock_tab = self.focused_tab();
         let mut viewer = KiwiTabViewer { ctx };
         DockArea::new(&mut self.dock_state)
             .style(Style::from_egui(ui.style().as_ref()))
@@ -73,8 +75,14 @@ impl DockShell {
         self.dock_state.find_main_surface_tab(&tab).is_some()
     }
 
+    pub fn ensure_tab(&mut self, tab: KiwiTab, focus: bool) {
+        let current = self.focused_tab();
+        self.actions_mut().ensure_tab(tab, focus, current);
+    }
+
     pub fn show_tab(&mut self, tab: KiwiTab) {
-        self.actions_mut().show_tab(tab);
+        let current = self.focused_tab();
+        self.actions_mut().show_tab(tab, current);
     }
 
     pub fn close_tab(&mut self, tab: KiwiTab) {

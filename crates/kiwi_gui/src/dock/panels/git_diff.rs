@@ -328,6 +328,7 @@ mod tests {
             theme: &theme,
             dispatch: &mut noop,
             pty_surface: &mut pty_surface,
+            focused_dock_tab: None,
         };
         assert_eq!(
             color_for_line_kind(&ctx, DiffLineKind::Addition),

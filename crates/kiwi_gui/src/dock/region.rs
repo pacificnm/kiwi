@@ -17,7 +17,9 @@ impl KiwiTab {
     #[must_use]
     pub const fn default_region(self) -> DockRegion {
         match self {
-            Self::Explorer | Self::GitStatus | Self::GitHubIssues => DockRegion::Left,
+            Self::Explorer | Self::GitStatus | Self::GitHubIssues | Self::Search => {
+                DockRegion::Left
+            }
             Self::Terminal => DockRegion::Bottom,
             Self::Agent
             | Self::Issues
@@ -25,7 +27,6 @@ impl KiwiTab {
             | Self::GitLog
             | Self::GitHubPrs
             | Self::Preview
-            | Self::Search
             | Self::Config
             | Self::Logs => DockRegion::Center,
         }
@@ -51,6 +52,7 @@ pub(crate) fn region_of_leaf(tree: &Tree<KiwiTab>, node: NodeIndex) -> DockRegio
     if leaf_contains(tree, node, KiwiTab::Explorer)
         || leaf_contains(tree, node, KiwiTab::GitStatus)
         || leaf_contains(tree, node, KiwiTab::GitHubIssues)
+        || leaf_contains(tree, node, KiwiTab::Search)
     {
         return DockRegion::Left;
     }
@@ -75,14 +77,21 @@ pub(crate) fn find_leaf_for_region(
     None
 }
 
-pub(crate) fn push_tab_to_leaf(tree: &mut Tree<KiwiTab>, node: NodeIndex, tab: KiwiTab) {
+pub(crate) fn push_tab_to_leaf(
+    tree: &mut Tree<KiwiTab>,
+    node: NodeIndex,
+    tab: KiwiTab,
+    focus_leaf: bool,
+) {
     use egui_dock::Node;
 
     match &mut tree[node] {
         Node::Leaf { tabs, active, .. } => {
-            *active = TabIndex(tabs.len());
             tabs.push(tab);
-            tree.set_focused_node(node);
+            if focus_leaf {
+                *active = TabIndex(tabs.len() - 1);
+                tree.set_focused_node(node);
+            }
         }
         _ => tree.push_to_first_leaf(tab),
     }
@@ -108,6 +117,8 @@ mod tests {
         assert_eq!(KiwiTab::Agent.default_region(), DockRegion::Center);
         assert_eq!(KiwiTab::Terminal.default_region(), DockRegion::Bottom);
         assert_eq!(KiwiTab::GitDiff.default_region(), DockRegion::Center);
+        assert_eq!(KiwiTab::Search.default_region(), DockRegion::Left);
+        assert_eq!(KiwiTab::Preview.default_region(), DockRegion::Center);
     }
 
     #[test]

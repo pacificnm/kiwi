@@ -1,6 +1,6 @@
 //! Post-bootstrap runtime: shared state, event channel, and background services.
 
-use kiwi_core::events::{AppEvent, EventChannel};
+use kiwi_core::events::{AppCommand, AppEvent, EventChannel};
 use kiwi_core::reducer::{
     agent_spawn_effects_if_needed, file_tree_startup_effects, workspace_restore_effects,
 };
@@ -11,12 +11,13 @@ use kiwi_core::workspace::{try_load_workspace_file, GuiWorkspaceSnapshot};
 
 use crate::bootstrap::GuiBootstrapContext;
 use crate::pty::PtyRuntime;
-use crate::services::{execute_gui_effects, process_pending_events, ServiceContext};
+use crate::services::{execute_gui_effects, process_pending_events, SearchRuntime, ServiceContext};
 
 pub struct GuiRuntime {
     pub state: AppState,
     pub events: EventChannel,
     pub pty: PtyRuntime,
+    search: SearchRuntime,
     _repo_watcher: Option<RepoWatcher>,
 }
 
@@ -76,6 +77,7 @@ impl GuiRuntime {
             state,
             events,
             pty,
+            search: SearchRuntime::default(),
             _repo_watcher: repo_watcher,
         };
 
@@ -103,14 +105,33 @@ impl GuiRuntime {
             state: &mut self.state,
             events: &self.events,
             pty: &mut self.pty,
+            search: &mut self.search,
         }
+    }
+
+    fn sync_search_debounce(&mut self) {
+        self.search.sync_debounce(&self.state);
+    }
+
+    pub fn search_debounce_pending(&self) -> bool {
+        self.search.debounce_pending()
+    }
+
+    pub fn poll_search_debounce(&mut self) -> bool {
+        if self.search.poll_debounce() {
+            let _ = self.dispatch_command(AppCommand::SearchExecute);
+            return true;
+        }
+        false
     }
 
     pub fn dispatch(&mut self, event: AppEvent) -> bool {
         let effects =
             kiwi_core::reducer::reduce(&mut ReduceView::from_app_state(&mut self.state), event);
         let mut ctx = self.service_context();
-        execute_gui_effects(&mut ctx, effects)
+        let quit = execute_gui_effects(&mut ctx, effects);
+        self.sync_search_debounce();
+        quit
     }
 
     /// Dispatch an [`AppCommand`] via the reducer. Returns `true` when the app should quit.
@@ -128,7 +149,14 @@ impl GuiRuntime {
     /// Returns `(should_quit, event_count)`.
     pub fn process_pending_events(&mut self) -> (bool, usize) {
         self.poll_agent_exits();
-        process_pending_events(&mut self.state, &mut self.events, &mut self.pty)
+        let (quit, count) = process_pending_events(
+            &mut self.state,
+            &mut self.events,
+            &mut self.pty,
+            &mut self.search,
+        );
+        self.sync_search_debounce();
+        (quit, count)
     }
 
     /// Propagate measured viewport dimensions to running PTY sessions.
@@ -203,6 +231,64 @@ mod tests {
         let snapshot = compute_status_bar(&runtime.state);
         assert_eq!(snapshot.root_name, "kiwi");
         assert_eq!(snapshot.branch, "no git");
+    }
+
+    #[test]
+    fn search_debounce_pipeline_finds_files_in_repo() {
+        use std::thread;
+        use std::time::Duration;
+
+        use kiwi_core::events::AppCommand;
+
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|p| p.parent())
+            .map(std::path::Path::to_path_buf)
+            .expect("workspace root");
+        let mut config = ResolvedConfig::default();
+        config.workspace.persist = false;
+        let mut runtime = GuiRuntime::build(GuiBootstrapContext {
+            repo_root: repo,
+            is_git_repo: true,
+            config,
+            theme: load_theme_with_capabilities(
+                &ResolvedConfig::default().theme,
+                TerminalCapabilities::TrueColor,
+            )
+            .expect("theme"),
+        })
+        .0;
+
+        runtime.dispatch_command(AppCommand::SearchSetQuery("Cargo.toml".to_string()));
+        assert!(runtime.state.search.debounce_scheduled);
+        assert!(runtime.search_debounce_pending());
+
+        thread::sleep(Duration::from_millis(250));
+        assert!(
+            runtime.poll_search_debounce(),
+            "debounce timer should fire SearchExecute"
+        );
+        assert!(runtime.state.search.running);
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while std::time::Instant::now() < deadline {
+            runtime.process_pending_events();
+            if !runtime.state.search.running {
+                break;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+
+        assert!(
+            !runtime.state.search.running,
+            "search should finish: error={:?}",
+            runtime.state.search.error
+        );
+        assert!(
+            !runtime.state.search.results.is_empty(),
+            "expected file hits for Cargo.toml, error={:?}",
+            runtime.state.search.error
+        );
     }
 
     #[test]
