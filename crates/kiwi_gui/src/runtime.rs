@@ -80,14 +80,19 @@ impl GuiRuntime {
         (runtime, gui_snapshot)
     }
 
-    pub fn dispatch(&mut self, event: AppEvent) {
+    pub fn dispatch(&mut self, event: AppEvent) -> bool {
         let effects =
             kiwi_core::reducer::reduce(&mut ReduceView::from_app_state(&mut self.state), event);
         let mut ctx = ServiceContext {
             state: &mut self.state,
             events: &self.events,
         };
-        execute_gui_effects(&mut ctx, effects);
+        execute_gui_effects(&mut ctx, effects)
+    }
+
+    /// Dispatch an [`AppCommand`] via the reducer. Returns `true` when the app should quit.
+    pub fn dispatch_command(&mut self, command: kiwi_core::events::AppCommand) -> bool {
+        self.dispatch(AppEvent::Command(command))
     }
 
     /// Returns `(should_quit, event_count)`.
