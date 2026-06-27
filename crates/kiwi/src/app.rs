@@ -1080,6 +1080,12 @@ impl App {
             return self.handle_github_context_menu_key(key);
         }
 
+        // Shell panel owns all input — no shortcuts are intercepted when the PTY is active.
+        // Overlays above (modal, label_picker, context_menu) and force-quit remain in effect.
+        if self.state.navigation.focus == FocusTarget::Shell && self.state.shell.running {
+            return self.handle_shell_key(key);
+        }
+
         if self.is_palette_open_key(key) {
             return self.dispatch(AppEvent::Command(AppCommand::PaletteOpen));
         }
@@ -1160,10 +1166,6 @@ impl App {
 
         if self.agent_input_active() {
             return self.handle_agent_key(key);
-        }
-
-        if self.state.navigation.focus == FocusTarget::Shell && self.state.shell.running {
-            return self.handle_shell_key(key);
         }
 
         if self.is_global_quit(key) {
@@ -1538,10 +1540,9 @@ impl App {
             return false;
         }
 
-        // PTY panes need `/` for paths (`cd /foo`, options, etc.).
-        if self.agent_input_active()
-            || (self.state.navigation.focus == FocusTarget::Shell && self.state.shell.running)
-        {
+        // Agent PTY needs `/` for paths (`cd /foo`, options, etc.).
+        // Shell PTY is already guarded before is_search_focus_key is ever called.
+        if self.agent_input_active() {
             return false;
         }
 
@@ -2580,7 +2581,7 @@ mod tests {
     }
 
     #[test]
-    fn diff_toggle_source_key_works_on_main_diff_tab_with_shell_focus() {
+    fn diff_keys_blocked_when_shell_focused() {
         use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
         use crate::diff::DiffSource;
@@ -2601,9 +2602,9 @@ mod tests {
             state: KeyEventState::NONE,
         };
 
-        assert!(!app.dispatch_key(key));
-        assert_eq!(app.state().diff.source, DiffSource::Staged);
-        assert!(app.state().diff.loading);
+        // Shell panel owns all input — diff shortcut 's' must not fire when shell is focused
+        app.dispatch_key(key);
+        assert_eq!(app.state().diff.source, DiffSource::Unstaged);
     }
 
     #[test]
@@ -2611,10 +2612,12 @@ mod tests {
         use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
         use crate::diff::DiffSource;
+        use crate::layout::FocusTarget;
         use crate::navigation::MainTab;
 
         let mut app = App::new(test_context());
         app.state_mut().navigation.main_tab = MainTab::Diff;
+        app.state_mut().navigation.focus = FocusTarget::Main;
         app.state_mut().diff.selected_path = Some("src/main.rs".to_string());
         app.state_mut().diff.source = DiffSource::Unstaged;
 
@@ -2634,10 +2637,12 @@ mod tests {
         use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
         use crate::git::{GitFileEntry, GitFileStatus};
+        use crate::layout::FocusTarget;
         use crate::navigation::MainTab;
 
         let mut app = App::new(test_context());
         app.state_mut().navigation.main_tab = MainTab::Diff;
+        app.state_mut().navigation.focus = FocusTarget::Main;
         app.state_mut().git.file_entries = vec![
             GitFileEntry {
                 path: "a.rs".to_string(),
