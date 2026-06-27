@@ -25,6 +25,7 @@ pub mod shell;
 pub mod state;
 pub mod status_bar;
 pub mod theme;
+pub mod util;
 pub mod watcher;
 pub mod workspace;
 

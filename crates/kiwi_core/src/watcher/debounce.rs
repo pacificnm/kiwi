@@ -2,6 +2,8 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+pub use crate::util::coalesce_paths;
+
 use super::paths::should_ignore_watch_path;
 
 #[derive(Debug, Clone)]
@@ -45,15 +47,6 @@ impl PathDebouncer {
     }
 }
 
-/// Deduplicates changed paths before emitting `FsChanged`.
-#[must_use]
-pub fn coalesce_paths(paths: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
-    paths
-        .into_iter()
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect()
-}
 
 #[cfg(test)]
 mod tests {

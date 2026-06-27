@@ -136,16 +136,7 @@ impl FileTreeState {
     }
 
     pub fn scroll_offset_for_row(&self, row_index: usize, viewport_rows: usize) -> usize {
-        if viewport_rows == 0 {
-            return 0;
-        }
-        if row_index < self.scroll_offset {
-            row_index
-        } else if row_index >= self.scroll_offset.saturating_add(viewport_rows) {
-            row_index.saturating_sub(viewport_rows.saturating_sub(1))
-        } else {
-            self.scroll_offset
-        }
+        crate::selection::scroll_offset_for_row(row_index, self.scroll_offset, viewport_rows)
     }
 
     pub fn row_at_viewport_index(&self, viewport_index: usize) -> Option<VisibleTreeRow> {

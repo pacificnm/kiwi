@@ -95,13 +95,7 @@ fn flush_pending(
     }
 }
 
-fn coalesce_paths(paths: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
-    paths
-        .into_iter()
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect()
-}
+use crate::util::coalesce_paths;
 
 #[cfg(test)]
 mod tests {

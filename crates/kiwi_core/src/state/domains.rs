@@ -319,28 +319,13 @@ impl AgentState {
     }
 
     pub fn scroll_by_lines(&mut self, line_delta: i32, visible_height: u16) {
-        if line_delta == 0 {
-            return;
-        }
-
-        let visible = usize::from(visible_height.max(1));
-        let line_count = self.scrollback.line_count();
-        let max_start = line_count.saturating_sub(visible);
-        let current = if self.follow_tail {
-            max_start
-        } else {
-            self.viewport_offset.min(max_start)
-        };
-
-        let new_offset = (current as i32 + line_delta).clamp(0, max_start as i32) as usize;
-
-        if new_offset >= max_start {
-            self.follow_tail = true;
-            self.viewport_offset = 0;
-        } else {
-            self.follow_tail = false;
-            self.viewport_offset = new_offset;
-        }
+        scroll_pane_by_lines(
+            &self.scrollback,
+            &mut self.viewport_offset,
+            &mut self.follow_tail,
+            line_delta,
+            visible_height,
+        );
     }
 }
 
@@ -414,28 +399,41 @@ impl ShellState {
     }
 
     pub fn scroll_by_lines(&mut self, line_delta: i32, visible_height: u16) {
-        if line_delta == 0 {
-            return;
-        }
+        scroll_pane_by_lines(
+            &self.scrollback,
+            &mut self.viewport_offset,
+            &mut self.follow_tail,
+            line_delta,
+            visible_height,
+        );
+    }
+}
 
-        let visible = usize::from(visible_height.max(1));
-        let line_count = self.scrollback.line_count();
-        let max_start = line_count.saturating_sub(visible);
-        let current = if self.follow_tail {
-            max_start
-        } else {
-            self.viewport_offset.min(max_start)
-        };
-
-        let new_offset = (current as i32 + line_delta).clamp(0, max_start as i32) as usize;
-
-        if new_offset >= max_start {
-            self.follow_tail = true;
-            self.viewport_offset = 0;
-        } else {
-            self.follow_tail = false;
-            self.viewport_offset = new_offset;
-        }
+fn scroll_pane_by_lines(
+    scrollback: &crate::shell::ScrollbackBuffer,
+    viewport_offset: &mut usize,
+    follow_tail: &mut bool,
+    line_delta: i32,
+    visible_height: u16,
+) {
+    if line_delta == 0 {
+        return;
+    }
+    let visible = usize::from(visible_height.max(1));
+    let line_count = scrollback.line_count();
+    let max_start = line_count.saturating_sub(visible);
+    let current = if *follow_tail {
+        max_start
+    } else {
+        (*viewport_offset).min(max_start)
+    };
+    let new_offset = (current as i32 + line_delta).clamp(0, max_start as i32) as usize;
+    if new_offset >= max_start {
+        *follow_tail = true;
+        *viewport_offset = 0;
+    } else {
+        *follow_tail = false;
+        *viewport_offset = new_offset;
     }
 }
 
