@@ -121,7 +121,16 @@ impl DiffState {
         self.is_binary = result.is_binary;
         self.error = result.error;
         self.lines = result.lines;
-        let max_offset = self.lines.len().saturating_sub(1);
+        self.clamp_scroll_to_viewport(1);
+    }
+
+    pub fn clamp_scroll_to_viewport(&mut self, viewport_rows: usize) {
+        if self.lines.is_empty() {
+            self.scroll_offset = 0;
+            return;
+        }
+        let viewport = viewport_rows.max(1);
+        let max_offset = self.lines.len().saturating_sub(viewport);
         if self.scroll_offset > max_offset {
             self.scroll_offset = max_offset;
         }

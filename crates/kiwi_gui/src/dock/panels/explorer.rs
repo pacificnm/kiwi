@@ -7,12 +7,11 @@ use kiwi_core::events::AppCommand;
 use kiwi_core::file_tree::{file_type_category, FileNode, FileTreeState, VisibleTreeRow};
 use kiwi_core::theme::SemanticRole;
 
+use super::layout::render_virtual_rows;
 use crate::dock::context::PanelContext;
 
 const ROW_HEIGHT: f32 = 18.0;
 const TREE_INDENT: f32 = 16.0;
-const MOUSE_SCROLL_LINES: i32 = 3;
-
 const FOLDER_EXPANDED: &str = "[▾]";
 const FOLDER_COLLAPSED: &str = "[▸]";
 const FOLDER_LOADING: &str = "[…]";
@@ -20,47 +19,46 @@ const FOLDER_ERROR: &str = "[!]";
 const FILE_ICON: &str = "   ";
 
 pub fn render(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
-    let viewport_rows = viewport_rows_for(ui);
-    ctx.state.viewport.file_tree_rows = viewport_rows;
-
-    let total_rows = ctx.state.file_tree.visible_rows().len();
-    let available = ui.available_size();
-    let response = ui.allocate_response(available, egui::Sense::click_and_drag());
-
-    if response.hovered() {
-        let scroll = ui.input(|input| input.smooth_scroll_delta.y);
-        if scroll != 0.0 {
-            let delta = if scroll > 0.0 {
-                MOUSE_SCROLL_LINES
-            } else {
-                -MOUSE_SCROLL_LINES
-            };
-            let _ = (ctx.dispatch)(AppCommand::FileTreeMoveSelection(delta));
-        }
-    }
-
-    if total_rows == 0 {
+    let visible = ctx.state.file_tree.visible_rows();
+    if visible.is_empty() {
         ui.label(
-            RichText::new("Empty tree").color(ctx.theme.role(SemanticRole::Muted)),
+            RichText::new("Open a repository to browse files")
+                .color(ctx.theme.role(SemanticRole::Muted)),
         );
         return;
     }
 
-    let rows: Vec<(VisibleTreeRow, FileNode)> = (0..viewport_rows)
-        .filter_map(|viewport_index| {
-            let row = ctx.state.file_tree.row_at_viewport_index(viewport_index)?;
+    let rows: Vec<(VisibleTreeRow, FileNode)> = visible
+        .into_iter()
+        .filter_map(|row| {
             let node = ctx.state.file_tree.nodes.get(&row.path)?.clone();
             Some((row, node))
         })
         .collect();
 
-    for (row, node) in rows {
-        render_row(ui, ctx, &row.path, row.depth, &node);
-    }
+    let mut scroll_offset = ctx.state.file_tree.scroll_offset;
+    let viewport_rows = render_virtual_rows(
+        ui,
+        ROW_HEIGHT,
+        rows.len(),
+        &mut scroll_offset,
+        |ui, row_index| {
+            let (row, node) = &rows[row_index];
+            render_row(ui, ctx, &row.path, row.depth, node);
+        },
+    );
+    ctx.state.file_tree.scroll_offset = scroll_offset;
+    ctx.state.viewport.file_tree_rows = viewport_rows;
+    ctx.state
+        .file_tree
+        .clamp_scroll_to_viewport(viewport_rows);
 }
 
 /// Keyboard shortcuts when the Explorer dock tab is focused ([`gui-keyboard-shortcuts.md`]).
-pub fn keyboard_action(ctx: &egui::Context, state: &kiwi_core::state::AppState) -> Option<AppCommand> {
+pub fn keyboard_action(
+    ctx: &egui::Context,
+    state: &kiwi_core::state::AppState,
+) -> Option<AppCommand> {
     if ctx.wants_keyboard_input() {
         return None;
     }
@@ -96,12 +94,13 @@ pub fn keyboard_action(ctx: &egui::Context, state: &kiwi_core::state::AppState) 
     None
 }
 
-fn viewport_rows_for(ui: &Ui) -> usize {
-    let height = ui.available_height().max(ROW_HEIGHT);
-    usize::try_from((height / ROW_HEIGHT).floor() as i64).unwrap_or(1).max(1)
-}
-
-fn render_row(ui: &mut Ui, ctx: &mut PanelContext<'_>, path: &PathBuf, depth: usize, node: &FileNode) {
+fn render_row(
+    ui: &mut Ui,
+    ctx: &mut PanelContext<'_>,
+    path: &PathBuf,
+    depth: usize,
+    node: &FileNode,
+) {
     let selected = ctx.state.file_tree.selected.as_ref() == Some(path);
     let indent = depth as f32 * TREE_INDENT;
     let glyph = row_glyph(&ctx.state.file_tree, node);
@@ -112,12 +111,13 @@ fn render_row(ui: &mut Ui, ctx: &mut PanelContext<'_>, path: &PathBuf, depth: us
         ui.set_min_height(ROW_HEIGHT);
         ui.add_space(indent);
         let icon = ui.add(
-            egui::Label::new(RichText::new(glyph).color(chrome_color).monospace())
-                .sense(if node.is_dir {
+            egui::Label::new(RichText::new(glyph).color(chrome_color).monospace()).sense(
+                if node.is_dir {
                     egui::Sense::click()
                 } else {
                     egui::Sense::hover()
-                }),
+                },
+            ),
         );
         if node.is_dir && icon.clicked() {
             if node.expanded {
@@ -241,7 +241,6 @@ mod tests {
     use kiwi_core::events::AppCommand;
     use kiwi_core::file_tree::{DirectoryEntry, FileTreeState};
     use kiwi_core::git::GitFileStatus;
-    use kiwi_core::git::GitFileStatus;
     use kiwi_core::state::{AppState, ViewportMetrics};
     use kiwi_core::theme::{load_theme_with_capabilities, SemanticRole, TerminalCapabilities};
 
@@ -310,8 +309,12 @@ mod tests {
         let (mut state, theme) = test_panel();
         state.file_tree = tree_with_readme();
         let path = state.file_tree.root.join("README.md");
-        state.file_tree.nodes.get_mut(&path).expect("readme").git_status =
-            Some(GitFileStatus::Modified);
+        state
+            .file_tree
+            .nodes
+            .get_mut(&path)
+            .expect("readme")
+            .git_status = Some(GitFileStatus::Modified);
 
         let mut noop = |_cmd: AppCommand| false;
         let node = state.file_tree.nodes.get(&path).expect("node").clone();
@@ -357,10 +360,7 @@ mod tests {
         let _ctx = panel_context(&mut state, &theme, &mut noop);
         assert_eq!(
             preview_selected_file(&state),
-            Some(AppCommand::PreviewFile {
-                path,
-                line: None
-            })
+            Some(AppCommand::PreviewFile { path, line: None })
         );
     }
 }

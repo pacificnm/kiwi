@@ -25,11 +25,11 @@ impl KiwiTab {
     #[must_use]
     pub const fn title(self) -> &'static str {
         match self {
-            Self::Explorer => "Explorer",
-            Self::GitStatus => "Git Status",
+            Self::Explorer => "Files",
+            Self::GitStatus => "Git",
             Self::GitDiff => "Diff",
             Self::GitLog => "Git Log",
-            Self::GitHubIssues => "Issues",
+            Self::GitHubIssues => "GH",
             Self::GitHubPrs => "Pull Requests",
             Self::Preview => "Preview",
             Self::Search => "Search",
@@ -103,5 +103,13 @@ mod tests {
         for tab in KiwiTab::all_variants() {
             assert!(tab.closable());
         }
+    }
+
+    #[test]
+    fn factory_tabs_include_explorer_git_and_agent() {
+        let tabs = KiwiTab::factory_tabs();
+        assert!(tabs.contains(&KiwiTab::Explorer));
+        assert!(tabs.contains(&KiwiTab::GitStatus));
+        assert!(tabs.contains(&KiwiTab::Agent));
     }
 }

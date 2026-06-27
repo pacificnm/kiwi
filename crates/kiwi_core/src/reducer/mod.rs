@@ -7,9 +7,9 @@ use crate::config::{project_has_theme_override, ThemeSettings};
 use crate::file_tree::ExpandAction;
 use crate::git::{
     adjacent_changed_file, branch_move_selection, branch_select_row, branch_selected_name,
-    build_panel_rows, changed_file_paths, ensure_branch_selection, ensure_git_selection,
-    git_move_selection, git_select_row, patch_git_file_entries, row_for_path, BranchEntry,
-    GitFileEntry,
+    build_panel_rows, changed_file_paths, clamp_git_scroll, ensure_branch_selection,
+    ensure_git_selection, git_move_selection, git_select_row, patch_git_file_entries,
+    row_for_path, BranchEntry, GitFileEntry,
 };
 use crate::github::{
     advance_pr_create_prompt, apply_label_picker_load, ensure_issue_selection, ensure_pr_selection,
@@ -1556,6 +1556,11 @@ fn reduce_git_status_updated(
         let file_patch = patch_git_file_entries(&mut state.git.file_entries, &file_entries);
         sync_git_status_patch_to_file_tree(state, &file_patch);
         ensure_git_selection(state.git, state.config.git.show_untracked);
+        clamp_git_scroll(
+            state.git,
+            git_viewport_rows(state).max(1),
+            state.config.git.show_untracked,
+        );
     }
 
     if let Some(path) = git_selected {

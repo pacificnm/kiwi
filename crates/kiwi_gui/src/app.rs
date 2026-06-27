@@ -11,7 +11,10 @@ use crate::chrome::{
     render_command_palette, render_menu_bar, render_reset_layout_modal, render_shortcuts_modal,
     render_status_bar,
 };
-use crate::dock::{explorer_keyboard_action, restore_dock, snapshot_from_dock, DockShell, KiwiTab, PanelContext};
+use crate::dock::{
+    explorer_keyboard_action, git_diff_keyboard_action, git_status_keyboard_action, restore_dock,
+    snapshot_from_dock, DockShell, KiwiTab, PanelContext,
+};
 use crate::navigation_bridge::sync_dock_from_navigation;
 use crate::runtime::GuiRuntime;
 use crate::theme::GuiTheme;
@@ -40,7 +43,7 @@ impl KiwiApp {
             .map(restore_dock)
             .map(DockShell::with_state)
             .unwrap_or_default();
-        Self {
+        let mut app = Self {
             runtime,
             gui_theme,
             dock,
@@ -48,7 +51,9 @@ impl KiwiApp {
             shortcuts_help_open: false,
             about_open: false,
             workspace_last_saved: Instant::now(),
-        }
+        };
+        app.sync_dock();
+        app
     }
 
     fn save_workspace(&mut self) {
@@ -105,11 +110,24 @@ impl KiwiApp {
             return self.runtime.dispatch(AppEvent::GitRefreshRequested);
         }
 
-        if self.dock.focused_tab() == Some(KiwiTab::Explorer)
-            && !self.runtime.state.palette.open
-        {
-            if let Some(command) = explorer_keyboard_action(ctx, &self.runtime.state) {
-                return self.dispatch_command(command);
+        if !self.runtime.state.palette.open {
+            match self.dock.focused_tab() {
+                Some(KiwiTab::Explorer) => {
+                    if let Some(command) = explorer_keyboard_action(ctx, &self.runtime.state) {
+                        return self.dispatch_command(command);
+                    }
+                }
+                Some(KiwiTab::GitStatus) => {
+                    if let Some(command) = git_status_keyboard_action(ctx, &self.runtime.state) {
+                        return self.dispatch_command(command);
+                    }
+                }
+                Some(KiwiTab::GitDiff) => {
+                    if let Some(command) = git_diff_keyboard_action(ctx, &self.runtime.state) {
+                        return self.dispatch_command(command);
+                    }
+                }
+                _ => {}
             }
         }
 
@@ -125,6 +143,9 @@ impl KiwiApp {
 impl eframe::App for KiwiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let (should_quit, event_count) = self.runtime.process_pending_events();
+        if event_count > 0 {
+            self.sync_dock();
+        }
         if should_quit {
             self.close_window(ctx);
             return;
@@ -158,6 +179,8 @@ impl eframe::App for KiwiApp {
             return;
         }
 
+        render_status_bar(ctx, &self.gui_theme, &self.runtime.state);
+
         egui::CentralPanel::default().show(ctx, |ui| {
             let mut pending_commands = Vec::new();
             let mut dispatch = |command: AppCommand| {
@@ -180,7 +203,6 @@ impl eframe::App for KiwiApp {
             }
         });
 
-        render_status_bar(ctx, &self.gui_theme, &self.runtime.state);
         render_reset_layout_modal(ctx, &mut self.reset_layout_prompt, &mut self.dock);
         render_shortcuts_modal(ctx, &mut self.shortcuts_help_open);
         render_about_modal(ctx, &mut self.about_open);
