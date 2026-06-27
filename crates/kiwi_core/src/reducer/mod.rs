@@ -2284,7 +2284,7 @@ fn diff_gutter_width(lines: &[crate::diff::DiffLine]) -> usize {
 
 fn max_lineno_width(values: impl Iterator<Item = u32>) -> usize {
     values
-        .map(|value| value.ilog10() as usize + 1)
+        .map(|value| value.checked_ilog10().unwrap_or(0) as usize + 1)
         .max()
         .unwrap_or(1)
 }
@@ -5316,5 +5316,40 @@ mod tests {
             },
         );
         assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn max_lineno_width_zero_does_not_panic() {
+        // git2 returns line number 0 for binary/synthetic hunks; must not panic
+        assert_eq!(max_lineno_width([0u32].into_iter()), 1);
+    }
+
+    #[test]
+    fn max_lineno_width_typical_values() {
+        assert_eq!(max_lineno_width([1u32].into_iter()), 1);
+        assert_eq!(max_lineno_width([9u32].into_iter()), 1);
+        assert_eq!(max_lineno_width([10u32].into_iter()), 2);
+        assert_eq!(max_lineno_width([99u32].into_iter()), 2);
+        assert_eq!(max_lineno_width([100u32].into_iter()), 3);
+        assert_eq!(max_lineno_width([1, 10, 100].into_iter()), 3);
+    }
+
+    #[test]
+    fn max_lineno_width_empty_returns_one() {
+        assert_eq!(max_lineno_width(std::iter::empty()), 1);
+    }
+
+    #[test]
+    fn diff_gutter_width_zero_linenos_do_not_panic() {
+        use crate::diff::{DiffLine, DiffLineKind};
+        let lines = vec![DiffLine {
+            kind: DiffLineKind::Context,
+            content: String::new(),
+            old_lineno: Some(0),
+            new_lineno: Some(0),
+        }];
+        // Must not panic; gutter width should be > 0 since linenos are present
+        let width = diff_gutter_width(&lines);
+        assert!(width > 0);
     }
 }
