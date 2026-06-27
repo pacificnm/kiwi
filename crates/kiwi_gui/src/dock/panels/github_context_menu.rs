@@ -2,9 +2,18 @@
 
 use egui::Ui;
 use kiwi_core::events::AppCommand;
-use kiwi_core::github::{
-    GhContextMenuAction, GhContextTarget, GUI_ISSUE_LIST_ACTIONS, GUI_PR_LIST_ACTIONS,
-};
+use kiwi_core::github::{GhContextMenuAction, GhContextTarget};
+
+const GUI_ISSUE_LIST_ACTIONS: [GhContextMenuAction; 3] = [
+    GhContextMenuAction::View,
+    GhContextMenuAction::CreateBranch,
+    GhContextMenuAction::SendToAgent,
+];
+
+const GUI_PR_LIST_ACTIONS: [GhContextMenuAction; 2] = [
+    GhContextMenuAction::View,
+    GhContextMenuAction::SendToAgent,
+];
 
 use super::github_common::{select_issue_commands, select_pr_commands};
 use crate::dock::context::PanelContext;

@@ -1,4 +1,5 @@
 mod actions;
+mod agent_prompts;
 mod auth;
 mod browser;
 mod command;
@@ -18,14 +19,13 @@ mod selection;
 mod types;
 
 pub use actions::{add_issue_labels, create_branch_from_issue, post_issue_comment};
+pub use agent_prompts::{
+    format_issue_agent_prompt, format_pr_agent_prompt, issue_body_excerpt_from_detail,
+};
 pub use auth::{check_github_auth, AUTH_LOGIN_URL, INSTALL_URL};
 pub use browser::{
     browser_target_kind, missing_browser_target_message, page_scroll_issue_detail,
     resolve_browser_target, scroll_issue_detail, GitHubBrowserKind,
-};
-pub use context_menu::{
-    format_issue_agent_prompt, format_pr_agent_prompt, issue_body_excerpt_from_detail,
-    GUI_ISSUE_LIST_ACTIONS, GUI_PR_LIST_ACTIONS,
 };
 pub use context_menu::{GhContextMenuAction, GhContextMenuState, GhContextTarget};
 pub use create_pr::create_pull_request;

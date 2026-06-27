@@ -1355,6 +1355,7 @@ mod tests {
             author: "pacificnm".to_string(),
             labels: vec!["epic-e14".to_string()],
             assignees: Vec::new(),
+            body: Some("Detailed body text".to_string()),
             display_lines: vec![
                 "#56 Issue detail view".to_string(),
                 "State: open · Author: pacificnm".to_string(),
