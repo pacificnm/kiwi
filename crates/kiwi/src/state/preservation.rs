@@ -43,9 +43,12 @@ mod tests {
     #[test]
     fn git_status_refresh_preserves_git_panel_scroll_and_selection() {
         let mut state = test_state();
+        // git_rows for a 120x40 terminal = 24. Use 50 entries so the list
+        // (50 files + 1 header = 51 rows) exceeds the viewport, making
+        // scroll_offset=12 a valid and reachable position (max_offset = 27).
         state.git.scroll_offset = 12;
         state.git.selected_path = Some("file5.rs".to_string());
-        state.git.file_entries = modified_entries("file", 20);
+        state.git.file_entries = modified_entries("file", 50);
 
         reduce(
             &mut state,
@@ -54,7 +57,7 @@ mod tests {
                 remote_repo: None,
                 ahead: 0,
                 behind: 0,
-                file_entries: modified_entries("file", 21),
+                file_entries: modified_entries("file", 51),
                 error: None,
             },
         );
