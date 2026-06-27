@@ -6,7 +6,7 @@ use kiwi_plugin_loader::{invoke_plugin_command, PluginInvokeOutcome};
 
 use crate::clipboard::resolve_copy_text_for_focus;
 use crate::editor::resolve_editor_target;
-use crate::events::SideEffect;
+use crate::events::{AgentEffect, FsEffect, GitEffect, GitHubEffect, SideEffect};
 use crate::github::{missing_browser_target_message, resolve_browser_target, LabelPickerState};
 use crate::navigation::{FocusTarget, LeftNavTab, MainTab, NavCommand};
 use crate::reducer::{
@@ -264,7 +264,7 @@ fn execute_builtin_command(state: &mut ReduceView<'_>, registry_index: usize) ->
                 return Vec::new();
             }
             state.set_dirty();
-            vec![SideEffect::RestartAgent(state.agent_manager.active_id())]
+            vec![SideEffect::Agent(AgentEffect::Restart(state.agent_manager.active_id()))]
         }
         PaletteAction::AgentNew => agent_new_effects(state),
         PaletteAction::AgentCycleNext => agent_cycle_effects(state, 1),
@@ -283,10 +283,10 @@ fn execute_builtin_command(state: &mut ReduceView<'_>, registry_index: usize) ->
                 return Vec::new();
             };
             state.set_dirty();
-            vec![SideEffect::LaunchEditor {
+            vec![SideEffect::Fs(FsEffect::LaunchEditor {
                 path: target.path,
                 line: target.line,
-            }]
+            })]
         }
         PaletteAction::ClipboardCopy => {
             clipboard_palette_effects_from_text(state, palette_clipboard_text, true)
@@ -459,7 +459,7 @@ fn github_issue_label_picker_effects(state: &mut ReduceView<'_>) -> Vec<SideEffe
     let existing_labels = issue_labels_for_number(state, number);
     state.github.label_picker = Some(LabelPickerState::new(number, existing_labels));
     state.set_dirty();
-    vec![SideEffect::SpawnGitHubRepoLabels]
+    vec![SideEffect::GitHub(GitHubEffect::SpawnRepoLabels)]
 }
 
 fn github_issue_create_branch_effects(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
@@ -481,7 +481,7 @@ fn github_issue_create_branch_effects(state: &mut ReduceView<'_>) -> Vec<SideEff
 
     state.github.issue_action_message = Some(format!("Creating branch for issue #{number}..."));
     state.set_dirty();
-    vec![SideEffect::SpawnGitHubIssueCreateBranch { number }]
+    vec![SideEffect::GitHub(GitHubEffect::SpawnIssueCreateBranch { number })]
 }
 
 fn github_open_in_browser_effects(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
@@ -505,7 +505,7 @@ fn github_open_in_browser_effects(state: &mut ReduceView<'_>) -> Vec<SideEffect>
     };
 
     state.set_dirty();
-    vec![SideEffect::SpawnGitHubOpenBrowser { target }]
+    vec![SideEffect::GitHub(GitHubEffect::SpawnOpenBrowser { target })]
 }
 
 fn github_pr_create_prompt_effects(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
@@ -560,7 +560,7 @@ fn github_pr_merge_effects(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
 
     state.github.issue_action_message = Some(format!("Merging pull request #{number}..."));
     state.set_dirty();
-    vec![SideEffect::SpawnGitHubPrMerge { number }]
+    vec![SideEffect::GitHub(GitHubEffect::SpawnPrMerge { number })]
 }
 
 fn selected_issue_number(state: &ReduceView<'_>) -> Option<u32> {
@@ -598,7 +598,7 @@ fn issue_labels_for_number(state: &ReduceView<'_>, number: u32) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::config::ResolvedConfig;
-    use crate::events::SideEffect;
+    use crate::events::{AgentEffect, FsEffect, GitEffect, GitHubEffect, SideEffect};
     use crate::navigation::FocusTarget;
     use crate::navigation::{MainTab, NavCommand};
     use crate::state::{AppState, ReduceView, ViewportMetrics};
@@ -658,7 +658,7 @@ mod tests {
             .position(|command| command.id == "git.refresh")
             .expect("git refresh");
         let effects = execute_command(&mut view(&mut state), index);
-        assert!(effects.contains(&SideEffect::SpawnGitRefresh));
+        assert!(effects.contains(&SideEffect::Git(GitEffect::SpawnRefresh)));
         assert!(effects.contains(&SideEffect::SaveWorkspace));
         assert!(state.git.loading);
         assert!(!state.palette.open);
@@ -672,7 +672,7 @@ mod tests {
             .position(|command| command.id == "github.refresh")
             .expect("github refresh");
         let effects = execute_command(&mut view(&mut state), index);
-        assert!(effects.contains(&SideEffect::SpawnGitHubAuthCheck));
+        assert!(effects.contains(&SideEffect::GitHub(GitHubEffect::SpawnAuthCheck)));
     }
 
     #[test]
@@ -716,10 +716,10 @@ mod tests {
             .position(|command| command.id == "editor.open")
             .expect("editor open");
         let effects = execute_command(&mut view(&mut state), index);
-        assert!(effects.contains(&SideEffect::LaunchEditor {
+        assert!(effects.contains(&SideEffect::Fs(FsEffect::LaunchEditor {
             path: std::path::PathBuf::from("src/main.rs"),
             line: Some(5),
-        }));
+        })));
     }
 
     #[test]
@@ -766,11 +766,11 @@ mod tests {
         assert!(!effects.iter().any(|effect| {
             matches!(
                 effect,
-                SideEffect::SpawnGitHubIssueComment { .. }
-                    | SideEffect::SpawnGitHubIssueList
-                    | SideEffect::SpawnGitHubPrList
-                    | SideEffect::SpawnGitHubIssueDetail { .. }
-                    | SideEffect::SpawnGitHubPrDetail { .. }
+                SideEffect::GitHub(GitHubEffect::SpawnIssueComment { .. })
+                    | SideEffect::GitHub(GitHubEffect::SpawnIssueList)
+                    | SideEffect::GitHub(GitHubEffect::SpawnPrList)
+                    | SideEffect::GitHub(GitHubEffect::SpawnIssueDetail { .. })
+                    | SideEffect::GitHub(GitHubEffect::SpawnPrDetail { .. })
             )
         }));
         assert!(state.palette.open);
@@ -794,9 +794,9 @@ mod tests {
         assert!(effects.iter().any(|effect| {
             matches!(
                 effect,
-                SideEffect::SpawnGitHubOpenBrowser {
+                SideEffect::GitHub(GitHubEffect::SpawnOpenBrowser {
                     target: crate::github::GitHubBrowserTarget::Issue(7)
-                }
+                })
             )
         }));
     }
@@ -812,7 +812,7 @@ mod tests {
             .expect("github issue label");
         let effects = execute_command(&mut view(&mut state), index);
         assert!(state.github.label_picker.is_some());
-        assert!(effects.contains(&SideEffect::SpawnGitHubRepoLabels));
+        assert!(effects.contains(&SideEffect::GitHub(GitHubEffect::SpawnRepoLabels)));
         assert!(!state.palette.open);
     }
 
@@ -829,7 +829,7 @@ mod tests {
         assert!(effects.iter().any(|effect| {
             matches!(
                 effect,
-                SideEffect::SpawnGitHubIssueCreateBranch { number: 7 }
+                SideEffect::GitHub(GitHubEffect::SpawnIssueCreateBranch { number: 7 })
             )
         }));
         assert!(state
@@ -861,7 +861,7 @@ mod tests {
         let effects = execute_command(&mut view(&mut state), index);
         assert!(effects
             .iter()
-            .any(|effect| matches!(effect, SideEffect::SpawnGitHubPrMerge { number: 17 })));
+            .any(|effect| matches!(effect, SideEffect::GitHub(GitHubEffect::SpawnPrMerge { number: 17 }))));
         assert!(state
             .github
             .issue_action_message
@@ -890,7 +890,7 @@ mod tests {
         let effects = execute_command(&mut view(&mut state), index);
         assert!(!effects
             .iter()
-            .any(|effect| matches!(effect, SideEffect::SpawnGitHubPrMerge { .. })));
+            .any(|effect| matches!(effect, SideEffect::GitHub(GitHubEffect::SpawnPrMerge { .. }))));
     }
 
     #[test]
@@ -904,7 +904,7 @@ mod tests {
         let effects = execute_command(&mut view(&mut state), index);
         assert!(!effects
             .iter()
-            .any(|effect| { matches!(effect, SideEffect::SpawnGitHubPrCreate { .. }) }));
+            .any(|effect| { matches!(effect, SideEffect::GitHub(GitHubEffect::SpawnPrCreate { .. })) }));
         assert!(state.palette.open);
         assert!(state.palette.prompt.is_some());
         assert_eq!(state.navigation.focus, FocusTarget::CommandPalette);

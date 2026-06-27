@@ -9,7 +9,10 @@ use kiwi_core::diff::spawn_file_diff_load;
 use kiwi_core::editor::{
     launch_gui_editor, prepare_editor_launch, run_terminal_editor, EditorLaunchMode,
 };
-use kiwi_core::events::{AppEvent, EventChannel, SideEffect};
+use kiwi_core::events::{
+    AgentEffect, AppEvent, EventChannel, FsEffect, GitEffect, GitHubEffect, SearchEffect,
+    ShellEffect, SideEffect,
+};
 use kiwi_core::file_tree::spawn_directory_load;
 use kiwi_core::git::spawn_git_refresh;
 use kiwi_core::github::{
@@ -101,208 +104,217 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
             ctx.pty.shutdown();
             return true;
         }
-        SideEffect::SpawnGitRefresh => {
-            if ctx.state.workspace_meta.is_git_repo {
-                spawn_git_refresh(
-                    ctx.state.repo_root.clone(),
-                    ctx.state.config.git.show_untracked,
-                    ctx.events.sender(),
-                );
-            }
-        }
-        SideEffect::LoadDirectoryChildren(path) => {
-            spawn_directory_load(path, ctx.events.sender());
-        }
-        SideEffect::LoadFileDiff { path, source } => {
-            spawn_file_diff_load(
-                ctx.state.repo_root.clone(),
-                path,
-                source,
-                ctx.state.config.diff.context_lines,
-                ctx.events.sender(),
-            );
-        }
-        SideEffect::LoadPreviewFile(path) => {
-            spawn_preview_load(
-                path,
-                ctx.state.config.preview.max_size_bytes,
-                ctx.events.sender(),
-            );
-        }
-        SideEffect::LaunchEditor { path, line } => {
-            spawn_editor_launch(
-                ctx.state.repo_root.clone(),
-                ctx.state.config.editor.clone(),
-                path,
-                line,
-                ctx.events.sender(),
-            );
-        }
         SideEffect::SaveWorkspace => {
             let mut view = ReduceView::from_app_state(ctx.state);
             try_save_from_reduce_view(&mut view);
         }
-        SideEffect::SpawnAgent(id) => {
-            let repo_root = ctx.state.repo_root.clone();
-            let agent_settings = ctx.state.config.agent.clone();
-            ctx.pty.spawn_agent(
-                id,
-                &repo_root,
-                &agent_settings,
-                ctx.state,
-                ctx.events.sender(),
-            );
-        }
-        SideEffect::RestartAgent(id) => {
-            let repo_root = ctx.state.repo_root.clone();
-            let config = ctx.state.config.clone();
-            ctx.pty.restart_agent(
-                id,
-                &repo_root,
-                &config,
-                ctx.state,
-                ctx.events.sender(),
-            );
-        }
-        SideEffect::WriteShell(data) => {
-            let _ = ctx.pty.write_shell(&data);
-        }
-        SideEffect::WriteAgent(data) => {
-            let id = ctx.state.agent_manager.active_id();
-            let _ = ctx.pty.write_agent(id, &data);
-        }
-        SideEffect::ResizeShell { cols, rows } => {
-            if ctx.pty.resize_shell(cols, rows) {
-                ctx.state.shell.apply_resize(cols, rows);
+        SideEffect::Git(effect) => match effect {
+            GitEffect::SpawnRefresh => {
+                if ctx.state.workspace_meta.is_git_repo {
+                    spawn_git_refresh(
+                        ctx.state.repo_root.clone(),
+                        ctx.state.config.git.show_untracked,
+                        ctx.events.sender(),
+                    );
+                }
             }
-        }
-        SideEffect::SpawnGitHubRefresh => {
-            // Reducer refresh path emits `SpawnGitHubAuthCheck`; keep for parity with TUI.
-        }
-        SideEffect::SpawnGitHubAuthCheck => {
-            spawn_github_auth_check(
-                ctx.state.config.github.command.clone(),
-                ctx.events.sender(),
-            );
-        }
-        SideEffect::SpawnGitHubIssueList => {
-            spawn_github_issue_list_load(
-                ctx.state.repo_root.clone(),
-                ctx.state.config.github.command.clone(),
-                ctx.events.sender(),
-            );
-        }
-        SideEffect::SpawnGitHubPrList => {
-            spawn_github_pr_list_load(
-                ctx.state.repo_root.clone(),
-                ctx.state.config.github.command.clone(),
-                ctx.events.sender(),
-            );
-        }
-        SideEffect::SpawnGitHubIssueDetail { number } => {
-            spawn_github_issue_detail_load(
-                ctx.state.repo_root.clone(),
-                ctx.state.config.github.command.clone(),
-                number,
-                ctx.events.sender(),
-            );
-        }
-        SideEffect::SpawnGitHubPrDetail { number } => {
-            spawn_github_pr_detail_load(
-                ctx.state.repo_root.clone(),
-                ctx.state.config.github.command.clone(),
-                number,
-                ctx.events.sender(),
-            );
-        }
-        SideEffect::SpawnGitHubIssueComment { number, body } => {
-            spawn_github_issue_comment(
-                ctx.state.repo_root.clone(),
-                ctx.state.config.github.command.clone(),
-                number,
-                body,
-                ctx.events.sender(),
-            );
-        }
-        SideEffect::SpawnGitHubIssueCreateBranch { number } => {
-            spawn_github_issue_create_branch(
-                ctx.state.repo_root.clone(),
-                ctx.state.config.github.command.clone(),
-                number,
-                ctx.events.sender(),
-            );
-        }
-        SideEffect::SpawnGitHubRepoLabels => {
-            spawn_github_repo_labels_load(
-                ctx.state.repo_root.clone(),
-                ctx.state.config.github.command.clone(),
-                ctx.events.sender(),
-            );
-        }
-        SideEffect::SpawnGitHubIssueLabelApply { number, labels } => {
-            spawn_github_issue_label_apply(
-                ctx.state.repo_root.clone(),
-                ctx.state.config.github.command.clone(),
-                number,
-                labels,
-                ctx.events.sender(),
-            );
-        }
-        SideEffect::SpawnGitHubOpenBrowser { target } => {
-            spawn_github_open_browser(
-                ctx.state.repo_root.clone(),
-                ctx.state.config.github.command.clone(),
-                target,
-                ctx.events.sender(),
-            );
-        }
-        SideEffect::SpawnGitHubPrCreate { request } => {
-            spawn_github_pr_create(
-                ctx.state.repo_root.clone(),
-                ctx.state.config.github.command.clone(),
-                request,
-                ctx.events.sender(),
-            );
-        }
-        SideEffect::SpawnGitHubPrMerge { number } => {
-            spawn_github_pr_merge(
-                ctx.state.repo_root.clone(),
-                ctx.state.config.github.command.clone(),
-                number,
-                ctx.events.sender(),
-            );
-        }
-        SideEffect::SpawnBranchList
-        | SideEffect::SpawnBranchCheckout { .. }
-        | SideEffect::CopyToClipboard(_)
-        | SideEffect::PasteFromClipboard
-        | SideEffect::PersistUserTheme { .. } => {}
-        SideEffect::CancelSearch => {
-            ctx.search.cancel.cancel();
-            ctx.search.clear_debounce();
-            ctx.search
-                .live_generation
-                .store(ctx.state.search.generation, Ordering::Relaxed);
-        }
-        SideEffect::RunSearch {
-            mode,
-            query,
-            generation,
-        } => {
-            ctx.search.cancel.clear();
-            spawn_search(
-                SearchJob {
-                    mode,
-                    query,
-                    generation,
-                    repo_root: ctx.state.repo_root.clone(),
-                    rg_command: ctx.state.config.search.command.clone(),
-                },
-                ctx.events.sender(),
-                ctx.search.live_generation.clone(),
-                ctx.search.cancel.clone(),
-            );
-        }
+            _ => {}
+        },
+        SideEffect::GitHub(effect) => match effect {
+            GitHubEffect::SpawnRefresh => {
+                // Reducer refresh path emits SpawnAuthCheck; keep for parity with TUI.
+            }
+            GitHubEffect::SpawnAuthCheck => {
+                spawn_github_auth_check(
+                    ctx.state.config.github.command.clone(),
+                    ctx.events.sender(),
+                );
+            }
+            GitHubEffect::SpawnIssueList => {
+                spawn_github_issue_list_load(
+                    ctx.state.repo_root.clone(),
+                    ctx.state.config.github.command.clone(),
+                    ctx.events.sender(),
+                );
+            }
+            GitHubEffect::SpawnPrList => {
+                spawn_github_pr_list_load(
+                    ctx.state.repo_root.clone(),
+                    ctx.state.config.github.command.clone(),
+                    ctx.events.sender(),
+                );
+            }
+            GitHubEffect::SpawnIssueDetail { number } => {
+                spawn_github_issue_detail_load(
+                    ctx.state.repo_root.clone(),
+                    ctx.state.config.github.command.clone(),
+                    number,
+                    ctx.events.sender(),
+                );
+            }
+            GitHubEffect::SpawnPrDetail { number } => {
+                spawn_github_pr_detail_load(
+                    ctx.state.repo_root.clone(),
+                    ctx.state.config.github.command.clone(),
+                    number,
+                    ctx.events.sender(),
+                );
+            }
+            GitHubEffect::SpawnIssueComment { number, body } => {
+                spawn_github_issue_comment(
+                    ctx.state.repo_root.clone(),
+                    ctx.state.config.github.command.clone(),
+                    number,
+                    body,
+                    ctx.events.sender(),
+                );
+            }
+            GitHubEffect::SpawnIssueCreateBranch { number } => {
+                spawn_github_issue_create_branch(
+                    ctx.state.repo_root.clone(),
+                    ctx.state.config.github.command.clone(),
+                    number,
+                    ctx.events.sender(),
+                );
+            }
+            GitHubEffect::SpawnRepoLabels => {
+                spawn_github_repo_labels_load(
+                    ctx.state.repo_root.clone(),
+                    ctx.state.config.github.command.clone(),
+                    ctx.events.sender(),
+                );
+            }
+            GitHubEffect::SpawnIssueLabelApply { number, labels } => {
+                spawn_github_issue_label_apply(
+                    ctx.state.repo_root.clone(),
+                    ctx.state.config.github.command.clone(),
+                    number,
+                    labels,
+                    ctx.events.sender(),
+                );
+            }
+            GitHubEffect::SpawnOpenBrowser { target } => {
+                spawn_github_open_browser(
+                    ctx.state.repo_root.clone(),
+                    ctx.state.config.github.command.clone(),
+                    target,
+                    ctx.events.sender(),
+                );
+            }
+            GitHubEffect::SpawnPrCreate { request } => {
+                spawn_github_pr_create(
+                    ctx.state.repo_root.clone(),
+                    ctx.state.config.github.command.clone(),
+                    request,
+                    ctx.events.sender(),
+                );
+            }
+            GitHubEffect::SpawnPrMerge { number } => {
+                spawn_github_pr_merge(
+                    ctx.state.repo_root.clone(),
+                    ctx.state.config.github.command.clone(),
+                    number,
+                    ctx.events.sender(),
+                );
+            }
+            _ => {}
+        },
+        SideEffect::Shell(effect) => match effect {
+            ShellEffect::Write(data) => {
+                let _ = ctx.pty.write_shell(&data);
+            }
+            ShellEffect::Resize { cols, rows } => {
+                if ctx.pty.resize_shell(cols, rows) {
+                    ctx.state.shell.apply_resize(cols, rows);
+                }
+            }
+            _ => {}
+        },
+        SideEffect::Agent(effect) => match effect {
+            AgentEffect::Spawn(id) => {
+                let repo_root = ctx.state.repo_root.clone();
+                let agent_settings = ctx.state.config.agent.clone();
+                ctx.pty.spawn_agent(
+                    id,
+                    &repo_root,
+                    &agent_settings,
+                    ctx.state,
+                    ctx.events.sender(),
+                );
+            }
+            AgentEffect::Restart(id) => {
+                let repo_root = ctx.state.repo_root.clone();
+                let config = ctx.state.config.clone();
+                ctx.pty.restart_agent(
+                    id,
+                    &repo_root,
+                    &config,
+                    ctx.state,
+                    ctx.events.sender(),
+                );
+            }
+            AgentEffect::Write(data) => {
+                let id = ctx.state.agent_manager.active_id();
+                let _ = ctx.pty.write_agent(id, &data);
+            }
+            _ => {}
+        },
+        SideEffect::Fs(effect) => match effect {
+            FsEffect::LoadDirectoryChildren(path) => {
+                spawn_directory_load(path, ctx.events.sender());
+            }
+            FsEffect::LoadPreviewFile(path) => {
+                spawn_preview_load(
+                    path,
+                    ctx.state.config.preview.max_size_bytes,
+                    ctx.events.sender(),
+                );
+            }
+            FsEffect::LoadFileDiff { path, source } => {
+                spawn_file_diff_load(
+                    ctx.state.repo_root.clone(),
+                    path,
+                    source,
+                    ctx.state.config.diff.context_lines,
+                    ctx.events.sender(),
+                );
+            }
+            FsEffect::LaunchEditor { path, line } => {
+                spawn_editor_launch(
+                    ctx.state.repo_root.clone(),
+                    ctx.state.config.editor.clone(),
+                    path,
+                    line,
+                    ctx.events.sender(),
+                );
+            }
+            _ => {}
+        },
+        SideEffect::Search(effect) => match effect {
+            SearchEffect::Cancel => {
+                ctx.search.cancel.cancel();
+                ctx.search.clear_debounce();
+                ctx.search
+                    .live_generation
+                    .store(ctx.state.search.generation, Ordering::Relaxed);
+            }
+            SearchEffect::Run { mode, query, generation } => {
+                ctx.search.cancel.clear();
+                spawn_search(
+                    SearchJob {
+                        mode,
+                        query,
+                        generation,
+                        repo_root: ctx.state.repo_root.clone(),
+                        rg_command: ctx.state.config.search.command.clone(),
+                    },
+                    ctx.events.sender(),
+                    ctx.search.live_generation.clone(),
+                    ctx.search.cancel.clone(),
+                );
+            }
+            _ => {}
+        },
         _ => {}
     }
     false
@@ -462,7 +474,7 @@ mod tests {
             search: &mut search,
         };
 
-        let quit = execute_gui_effects(&mut ctx, vec![SideEffect::SpawnGitRefresh]);
+        let quit = execute_gui_effects(&mut ctx, vec![SideEffect::Git(GitEffect::SpawnRefresh)]);
         assert!(!quit);
     }
 
@@ -479,7 +491,7 @@ mod tests {
             search: &mut search,
         };
 
-        let quit = execute_gui_effects(&mut ctx, vec![SideEffect::SpawnGitHubAuthCheck]);
+        let quit = execute_gui_effects(&mut ctx, vec![SideEffect::GitHub(GitHubEffect::SpawnAuthCheck)]);
         assert!(!quit);
     }
 
@@ -531,11 +543,11 @@ mod tests {
 
         let quit = execute_gui_effects(
             &mut ctx,
-            vec![SideEffect::RunSearch {
+            vec![SideEffect::Search(SearchEffect::Run {
                 mode: SearchMode::Files,
                 query: "main".to_string(),
                 generation: 1,
-            }],
+            })],
         );
         assert!(!quit);
     }
@@ -559,7 +571,7 @@ mod tests {
         );
         assert!(effects.iter().any(|effect| matches!(
             effect,
-            SideEffect::SpawnGitHubAuthCheck
+            SideEffect::GitHub(GitHubEffect::SpawnAuthCheck)
         )));
 
         let quit = execute_gui_effects(
