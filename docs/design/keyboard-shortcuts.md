@@ -26,7 +26,19 @@ When the shell has keyboard focus, `Ctrl+C` sends an interrupt to the running pr
 | `Ctrl+C` | Copy highlighted text (or pane fallback when nothing selected) |
 | `Ctrl+V` | Paste into agent, shell, palette, or search |
 
-Right-click context menu is planned as a follow-up.
+## GH list context menu (right click)
+
+Right-click an issue or PR row in the **GH** left pane (Issues or PRs hub) to open an action menu. See [mouse-interaction.md](./mouse-interaction.md) for full mouse behavior.
+
+| Action | Result |
+|--------|--------|
+| Right click | Open context menu on GH issue/PR list row (selects row) |
+| Left click (menu open) | Activate highlighted item, or dismiss if outside menu |
+| `Esc` | Dismiss menu |
+| `j` / `k` or `Up` / `Down` | Move menu highlight |
+| `Enter` | Execute highlighted action |
+
+Issue rows: **View**, **Create Branch**, **Comment**, **Add Labels**, **Open in Browser**, **Send To Agent**. PR rows: **View**, **Merge into main** (when mergeable), **Open in Browser**, **Send To Agent**.
 
 ## Clipboard
 
@@ -165,6 +177,7 @@ Pair **GH** left (`Alt+3`) with **Issues** main (`2`) or **PRs** main (`4`). Use
 | `j` / `k` | Issue list navigation (GH left, Issues hub) or scroll detail (Issues main, main focus) |
 | `PgUp` / `PgDn` | Page scroll issue detail (Issues main, main focus) |
 | `Enter` | Open selected issue in Issues main tab |
+| Right click | Open context menu on GH issue/PR list row (see **GH list context menu** above) |
 | Command palette | **GitHub: Comment on Issue** — prompt for comment text (`Enter` posts) |
 | Command palette | **GitHub: Add Labels to Issue** — multi-select overlay (`Space` toggle, `Enter` apply, `Esc` cancel) |
 | Command palette | **GitHub: Open in Browser** — opens selected issue or PR via `gh view --web` |

@@ -112,11 +112,53 @@ impl GhContextMenuState {
 }
 
 #[must_use]
-pub fn format_issue_agent_prompt(number: u32, title: &str) -> String {
-    format!(
+pub fn format_issue_agent_prompt(number: u32, title: &str, body_excerpt: Option<&str>) -> String {
+    let mut prompt = format!(
         "Please help me work on GitHub issue #{number}: {title}\n\n\
          Review the issue context and suggest an implementation approach.\n"
-    )
+    );
+
+    if let Some(body) = body_excerpt.filter(|text| !text.trim().is_empty()) {
+        prompt.push_str("\nIssue description:\n");
+        prompt.push_str(body.trim());
+        prompt.push('\n');
+    }
+
+    prompt
+}
+
+const BODY_EXCERPT_MAX_CHARS: usize = 400;
+
+/// Extract a truncated issue body from loaded detail display lines, if present.
+#[must_use]
+pub fn issue_body_excerpt_from_detail(detail: &crate::github::IssueDetail) -> Option<String> {
+    let body_start = detail
+        .display_lines
+        .iter()
+        .position(|line| line.as_str() == "— Body —")?
+        .saturating_add(2);
+    let body_end = detail.display_lines[body_start..]
+        .iter()
+        .position(|line| line.starts_with("— Comments"))?;
+    let text = detail.display_lines[body_start..body_start.saturating_add(body_end)]
+        .join("\n")
+        .trim()
+        .to_string();
+
+    if text.is_empty() || text == "(empty)" {
+        return None;
+    }
+
+    Some(truncate_excerpt(&text, BODY_EXCERPT_MAX_CHARS))
+}
+
+fn truncate_excerpt(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+
+    let truncated: String = text.chars().take(max_chars).collect();
+    format!("{truncated}…")
 }
 
 #[must_use]
@@ -163,9 +205,65 @@ mod tests {
 
     #[test]
     fn format_issue_agent_prompt_uses_title() {
-        let prompt = format_issue_agent_prompt(42, "Add context menu");
+        let prompt = format_issue_agent_prompt(42, "Add context menu", None);
         assert!(prompt.contains("#42"));
         assert!(prompt.contains("Add context menu"));
+    }
+
+    #[test]
+    fn format_issue_agent_prompt_includes_body_excerpt() {
+        let prompt = format_issue_agent_prompt(42, "Add context menu", Some("Fix GH list UX"));
+        assert!(prompt.contains("Issue description:"));
+        assert!(prompt.contains("Fix GH list UX"));
+    }
+
+    #[test]
+    fn issue_body_excerpt_from_detail_skips_empty_body() {
+        use crate::github::{IssueDetail, IssueState};
+
+        let detail = IssueDetail {
+            number: 1,
+            title: "Test".to_string(),
+            state: IssueState::Open,
+            author: "dev".to_string(),
+            labels: Vec::new(),
+            assignees: Vec::new(),
+            display_lines: vec![
+                "#1 Test".to_string(),
+                "— Body —".to_string(),
+                String::new(),
+                "(empty)".to_string(),
+                String::new(),
+                "— Comments —".to_string(),
+            ],
+        };
+        assert!(issue_body_excerpt_from_detail(&detail).is_none());
+    }
+
+    #[test]
+    fn issue_body_excerpt_from_detail_truncates_long_body() {
+        use crate::github::{IssueDetail, IssueState};
+
+        let body = "a".repeat(500);
+        let detail = IssueDetail {
+            number: 1,
+            title: "Test".to_string(),
+            state: IssueState::Open,
+            author: "dev".to_string(),
+            labels: Vec::new(),
+            assignees: Vec::new(),
+            display_lines: vec![
+                "#1 Test".to_string(),
+                "— Body —".to_string(),
+                String::new(),
+                body,
+                String::new(),
+                "— Comments —".to_string(),
+            ],
+        };
+        let excerpt = issue_body_excerpt_from_detail(&detail).expect("excerpt");
+        assert!(excerpt.ends_with('…'));
+        assert!(excerpt.chars().count() <= BODY_EXCERPT_MAX_CHARS + 1);
     }
 
     #[test]
