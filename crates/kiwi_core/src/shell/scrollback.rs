@@ -44,7 +44,8 @@ impl ScrollbackBuffer {
     }
 
     pub fn line_count(&self) -> usize {
-        self.lines_for_display(true).len()
+        let total = self.history.len() + self.screen.len();
+        total.saturating_sub(self.trailing_empty_count(true))
     }
 
     #[must_use]
@@ -53,11 +54,11 @@ impl ScrollbackBuffer {
         // the agent CLI) usually send ?25l; Kiwi still draws a focused-pane overlay
         // at the emulated cursor position tracked from PTY output and typed input.
         let line_index = self.history.len() + self.cursor_row;
-        let lines = self.lines_for_display(include_pending);
-        if line_index >= lines.len() {
+        let count = (self.history.len() + self.screen.len())
+            .saturating_sub(self.trailing_empty_count(include_pending));
+        if line_index >= count {
             return None;
         }
-
         Some((line_index, self.cursor_col))
     }
 
@@ -128,30 +129,49 @@ impl ScrollbackBuffer {
             return Vec::new();
         }
 
-        let lines = self.lines_for_display(include_pending);
+        let count = (self.history.len() + self.screen.len())
+            .saturating_sub(self.trailing_empty_count(include_pending));
 
-        lines
-            .into_iter()
+        self.history
+            .iter()
+            .chain(self.screen.iter())
+            .take(count)
             .skip(start)
             .take(visible_height)
-            .map(|line| truncate_ansi_line(&line, max_width))
+            .map(|line| truncate_ansi_line(line, max_width))
             .collect()
     }
 
-    fn lines_for_display(&self, include_pending: bool) -> Vec<String> {
-        let mut lines = self.history.clone();
-        lines.extend(self.screen.clone());
-        while let Some(last) = lines.last() {
-            if !last.is_empty() {
+    fn trailing_empty_count(&self, include_pending: bool) -> usize {
+        let h_len = self.history.len();
+        let total = h_len + self.screen.len();
+        let mut count = 0;
+        for combined_idx in (0..total).rev() {
+            let line = if combined_idx < h_len {
+                &self.history[combined_idx]
+            } else {
+                &self.screen[combined_idx - h_len]
+            };
+            if !line.is_empty() {
                 break;
             }
-            let last_index = lines.len() - 1;
-            if include_pending && last_index == self.cursor_row && self.cursor_col > 0 {
+            if include_pending && combined_idx == self.cursor_row && self.cursor_col > 0 {
                 break;
             }
-            lines.pop();
+            count += 1;
         }
-        lines
+        count
+    }
+
+    fn lines_for_display(&self, include_pending: bool) -> Vec<String> {
+        let total = self.history.len() + self.screen.len();
+        let count = total.saturating_sub(self.trailing_empty_count(include_pending));
+        self.history
+            .iter()
+            .chain(self.screen.iter())
+            .take(count)
+            .cloned()
+            .collect()
     }
 
     fn current_line(&self) -> Option<String> {
@@ -603,6 +623,17 @@ mod tests {
         assert_eq!(buffer.line_count(), 2);
         assert_eq!(buffer.lines_for_display(false)[0], "hello");
         assert_eq!(buffer.lines_for_display(false)[1], "world");
+    }
+
+    #[test]
+    fn line_count_excludes_trailing_blank_screen_rows() {
+        // A trailing newline leaves a blank screen row at the cursor position.
+        // line_count() and viewport_lines() must not include it.
+        let mut buffer = ScrollbackBuffer::new();
+        buffer.append_bytes(b"alpha\nbeta\n");
+        assert_eq!(buffer.line_count(), 2);
+        let lines = buffer.viewport_lines(0, 10, 80, false);
+        assert_eq!(lines, vec!["alpha".to_string(), "beta".to_string()]);
     }
 
     #[test]
