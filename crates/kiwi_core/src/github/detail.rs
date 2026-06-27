@@ -112,6 +112,7 @@ fn parse_issue_detail_json(bytes: &[u8]) -> Result<IssueDetail, String> {
         author: draft.author,
         labels: draft.labels,
         assignees: draft.assignees,
+        body: if draft.body.trim().is_empty() { None } else { Some(draft.body) },
         display_lines,
     })
 }

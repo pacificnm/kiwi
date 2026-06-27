@@ -121,7 +121,7 @@ pub fn reduce_command(state: &mut ReduceView<'_>, command: AppCommand) -> Vec<Si
             apply_navigation(state, nav);
             let mut effects = agent_spawn_effects_if_needed(state);
             effects.extend(github_first_access_effects(state));
-            effects.extend(github_issue_list_access_effects(state, false));
+            effects.extend(github_issue_list_effects(state, false));
             effects.extend(github_pr_list_access_effects(state, false));
             effects.extend(github_issue_detail_access_effects(state, false));
             effects.extend(github_pr_detail_access_effects(state, false));
@@ -347,7 +347,7 @@ pub fn workspace_restore_effects(state: &mut ReduceView<'_>) -> Vec<SideEffect> 
     let mut effects = workspace_expand_pending_effects(state);
     workspace_apply_pending_selection(state);
     effects.extend(github_first_access_effects(state));
-    effects.extend(github_issue_list_access_effects(state, false));
+    effects.extend(github_issue_list_effects(state, false));
     effects.extend(github_pr_list_access_effects(state, false));
     effects.extend(branch_list_access_effects(state, false));
     effects
@@ -459,13 +459,6 @@ pub fn github_issue_list_effects(state: &mut ReduceView<'_>, force: bool) -> Vec
     state.github.issues_error = None;
     state.set_dirty();
     vec![SideEffect::SpawnGitHubIssueList]
-}
-
-pub fn github_issue_list_access_effects(
-    state: &mut ReduceView<'_>,
-    force: bool,
-) -> Vec<SideEffect> {
-    github_issue_list_effects(state, force)
 }
 
 pub fn github_pr_list_effects(state: &mut ReduceView<'_>, force: bool) -> Vec<SideEffect> {
@@ -3698,7 +3691,7 @@ mod tests {
             assignees: Vec::new(),
         }];
 
-        let effects = super::github_issue_list_access_effects(
+        let effects = super::github_issue_list_effects(
             &mut ReduceView::from_app_state(&mut state),
             false,
         );
@@ -3775,6 +3768,7 @@ mod tests {
                         author: "pacificnm".to_string(),
                         labels: Vec::new(),
                         assignees: Vec::new(),
+                        body: None,
                         display_lines: vec!["#56 Issue detail view".to_string()],
                     }),
                     error: None,
@@ -3806,6 +3800,7 @@ mod tests {
             author: "user".to_string(),
             labels: Vec::new(),
             assignees: Vec::new(),
+            body: None,
             display_lines: (0..100).map(|index| format!("line {index}")).collect(),
         });
 

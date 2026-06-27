@@ -340,6 +340,7 @@ mod tests {
             author: "user".to_string(),
             labels: vec![],
             assignees: vec![],
+            body: None,
             display_lines: (0..20)
                 .map(|i| {
                     if i == 0 {

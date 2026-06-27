@@ -118,6 +118,7 @@ pub struct IssueDetail {
     pub author: String,
     pub labels: Vec<String>,
     pub assignees: Vec<String>,
+    pub body: Option<String>,
     pub display_lines: Vec<String>,
 }
 
