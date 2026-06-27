@@ -144,10 +144,6 @@ fn map_git2_status(status: Status) -> Option<GitFileStatus> {
     {
         return Some(GitFileStatus::Modified);
     }
-    if status.is_wt_new() {
-        return Some(GitFileStatus::Untracked);
-    }
-
     None
 }
 

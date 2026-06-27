@@ -697,12 +697,6 @@ fn reduce_github_issues_loaded(
         }
     }
 
-    if state.navigation.main_tab == MainTab::Prs {
-        if let Some(number) = selected_pr_number(state.github) {
-            return github_pr_detail_effects(state, number, true);
-        }
-    }
-
     Vec::new()
 }
 
@@ -807,7 +801,6 @@ fn reduce_github_open_selected(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
                 return Vec::new();
             };
 
-            state.github.left_pane = GitHubLeftPane::Issues;
             state
                 .navigation
                 .apply(NavCommand::SelectMainTab(MainTab::Issues));
@@ -822,7 +815,6 @@ fn reduce_github_open_selected(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
                 return Vec::new();
             };
 
-            state.github.left_pane = GitHubLeftPane::Prs;
             state
                 .navigation
                 .apply(NavCommand::SelectMainTab(MainTab::Prs));
@@ -3631,6 +3623,71 @@ mod tests {
         assert_eq!(state.github.issues.len(), 1);
         assert_eq!(state.github.selected_issue, Some(55));
         assert!(state.github.issues_loaded_at.is_some());
+    }
+
+    #[test]
+    fn github_issues_loaded_does_not_trigger_pr_detail_on_prs_tab() {
+        // Regression: reduce_github_issues_loaded previously branched on
+        // MainTab::Prs and could emit SpawnGitHubPrDetail when issues finished
+        // loading while the user was viewing PRs.
+        use crate::github::{Issue, IssueListLoadResult, IssueState, PrState, PullRequest};
+
+        let mut state = test_state();
+        state.navigation.main_tab = MainTab::Prs;
+        state.github.selected_pr = Some(42);
+        state.github.prs = vec![PullRequest {
+            number: 42,
+            title: "Some PR".to_string(),
+            state: PrState::Open,
+            author: "octocat".to_string(),
+            is_draft: false,
+        }];
+
+        let effects = run_reduce(
+            &mut state,
+            AppEvent::GitHubIssuesLoaded {
+                result: IssueListLoadResult {
+                    issues: vec![Issue {
+                        number: 1,
+                        title: "Some issue".to_string(),
+                        state: IssueState::Open,
+                        labels: Vec::new(),
+                        assignees: Vec::new(),
+                    }],
+                    error: None,
+                },
+            },
+        );
+
+        let has_pr_detail = effects.iter().any(|e| {
+            matches!(e, SideEffect::SpawnGitHubPrDetail { .. })
+        });
+        assert!(!has_pr_detail, "issues-loaded must not spawn PR detail effects");
+    }
+
+    #[test]
+    fn github_open_selected_does_not_mutate_left_pane_on_issues() {
+        // Regression: reduce_github_open_selected previously reassigned
+        // left_pane = Issues inside the Issues arm — a no-op that implied
+        // the arm handled other pane states. Verify left_pane is unchanged.
+        use crate::github::{Issue, IssueState};
+
+        let mut state = test_state();
+        state.github.left_pane = GitHubLeftPane::Issues;
+        state.github.selected_issue = Some(7);
+        state.github.issues = vec![Issue {
+            number: 7,
+            title: "Test".to_string(),
+            state: IssueState::Open,
+            labels: Vec::new(),
+            assignees: Vec::new(),
+        }];
+        state.github.auth_ok = true;
+
+        run_reduce(&mut state, AppEvent::Command(AppCommand::GitHubOpenSelected));
+
+        assert_eq!(state.github.left_pane, GitHubLeftPane::Issues);
+        assert_eq!(state.navigation.main_tab, MainTab::Issues);
     }
 
     #[test]
