@@ -111,6 +111,19 @@ impl GhContextMenuState {
     }
 }
 
+/// GUI GitHub list context menu (#194): issue row actions.
+pub const GUI_ISSUE_LIST_ACTIONS: [GhContextMenuAction; 3] = [
+    GhContextMenuAction::View,
+    GhContextMenuAction::CreateBranch,
+    GhContextMenuAction::SendToAgent,
+];
+
+/// GUI GitHub list context menu (#194): PR row actions.
+pub const GUI_PR_LIST_ACTIONS: [GhContextMenuAction; 2] = [
+    GhContextMenuAction::View,
+    GhContextMenuAction::SendToAgent,
+];
+
 #[must_use]
 pub fn format_issue_agent_prompt(number: u32, title: &str, body_excerpt: Option<&str>) -> String {
     let mut prompt = format!(
@@ -201,6 +214,13 @@ mod tests {
         assert!(!menu.items.contains(&GhContextMenuAction::CreateBranch));
         assert!(!menu.items.contains(&GhContextMenuAction::Comment));
         assert!(menu.items.contains(&GhContextMenuAction::OpenInBrowser));
+    }
+
+    #[test]
+    fn gui_issue_list_actions_match_v1_spec() {
+        assert_eq!(GUI_ISSUE_LIST_ACTIONS.len(), 3);
+        assert!(GUI_ISSUE_LIST_ACTIONS.contains(&GhContextMenuAction::CreateBranch));
+        assert!(!GUI_PR_LIST_ACTIONS.contains(&GhContextMenuAction::CreateBranch));
     }
 
     #[test]

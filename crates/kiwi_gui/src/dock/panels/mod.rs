@@ -6,6 +6,7 @@ mod explorer;
 mod git_diff;
 mod git_status;
 mod github_common;
+mod github_context_menu;
 mod github_input;
 mod github_left;
 mod github_prs;

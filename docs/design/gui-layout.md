@@ -66,7 +66,8 @@ Proportions are hints; egui_dock stores actual splits in persistence.
 
 ### GitHub Issues / PRs
 
-- Master-detail within panel or split: list left, detail right when width allows
+- List in **GitHub Issues** left dock tab; detail in center **Issues** / **GitHub PRs** tabs
+- Right-click a list row for **View**, **Create Branch** (issues only), or **Send To Agent** (parity with TUI #193)
 - Replaces TUI pattern of GH left nav + Issues main tab
 
 ### Terminal / Agent
