@@ -6,7 +6,7 @@ use kiwi_plugin_loader::{invoke_plugin_command, PluginInvokeOutcome};
 
 use crate::clipboard::resolve_copy_text_for_focus;
 use crate::editor::resolve_editor_target;
-use crate::events::{AgentEffect, FsEffect, GitEffect, GitHubEffect, SideEffect};
+use crate::events::{AgentEffect, FsEffect, GitHubEffect, SideEffect};
 use crate::github::{missing_browser_target_message, resolve_browser_target, LabelPickerState};
 use crate::navigation::{FocusTarget, LeftNavTab, MainTab, NavCommand};
 use crate::reducer::{
