@@ -31,11 +31,11 @@ pub fn primary_tab_for_navigation(
 }
 
 #[must_use]
-fn kiwi_tab_for_left(left: LeftNavTab, main: MainTab, gh_pane: GitHubLeftPane) -> Option<KiwiTab> {
+fn kiwi_tab_for_left(left: LeftNavTab, _main: MainTab, _gh_pane: GitHubLeftPane) -> Option<KiwiTab> {
     match left {
         LeftNavTab::Files => Some(KiwiTab::Explorer),
         LeftNavTab::Git => Some(KiwiTab::GitStatus),
-        LeftNavTab::Gh => kiwi_tab_for_main(main, gh_pane).or(Some(KiwiTab::GitHubIssues)),
+        LeftNavTab::Gh => Some(KiwiTab::GitHubIssues),
         LeftNavTab::Search => Some(KiwiTab::Search),
     }
 }
@@ -44,7 +44,7 @@ fn kiwi_tab_for_left(left: LeftNavTab, main: MainTab, gh_pane: GitHubLeftPane) -
 fn kiwi_tab_for_main(main: MainTab, _gh_pane: GitHubLeftPane) -> Option<KiwiTab> {
     match main {
         MainTab::Agent => Some(KiwiTab::Agent),
-        MainTab::Issues => Some(KiwiTab::GitHubIssues),
+        MainTab::Issues => Some(KiwiTab::Issues),
         MainTab::Prs => Some(KiwiTab::GitHubPrs),
         MainTab::Branches => Some(KiwiTab::GitHubIssues),
         MainTab::Diff => Some(KiwiTab::GitDiff),
@@ -89,11 +89,23 @@ mod tests {
     }
 
     #[test]
-    fn goto_issues_opens_github_issues() {
+    fn goto_issues_opens_issues_detail_tab() {
         let nav = nav_with(&[
             NavCommand::SelectLeftTab(LeftNavTab::Gh),
             NavCommand::SelectMainTab(MainTab::Issues),
             NavCommand::SetFocus(FocusTarget::Main),
+        ]);
+        assert_eq!(
+            primary_tab_for_navigation(&nav, GitHubLeftPane::Issues),
+            Some(KiwiTab::Issues)
+        );
+    }
+
+    #[test]
+    fn gh_left_focus_opens_github_list_tab() {
+        let nav = nav_with(&[
+            NavCommand::SelectLeftTab(LeftNavTab::Gh),
+            NavCommand::SetFocus(FocusTarget::Left),
         ]);
         assert_eq!(
             primary_tab_for_navigation(&nav, GitHubLeftPane::Issues),

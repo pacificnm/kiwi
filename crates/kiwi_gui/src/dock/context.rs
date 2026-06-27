@@ -13,9 +13,6 @@ pub struct PtySurfaceState {
 }
 
 /// Inputs available to dock panels.
-///
-/// Domain state changes must go through [`Self::dispatch`]. Panels may update
-/// [`AppState::viewport`] row counts for keyboard scroll clamping.
 pub struct PanelContext<'a> {
     pub state: &'a mut AppState,
     pub theme: &'a GuiTheme,

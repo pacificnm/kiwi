@@ -12,6 +12,7 @@ pub enum KiwiTab {
     GitDiff,
     GitLog,
     GitHubIssues,
+    Issues,
     GitHubPrs,
     Preview,
     Search,
@@ -30,7 +31,8 @@ impl KiwiTab {
             Self::GitDiff => "Diff",
             Self::GitLog => "Git Log",
             Self::GitHubIssues => "GH",
-            Self::GitHubPrs => "Pull Requests",
+            Self::Issues => "Issues",
+            Self::GitHubPrs => "PRs",
             Self::Preview => "Preview",
             Self::Search => "Search",
             Self::Terminal => "Terminal",
@@ -54,6 +56,7 @@ impl KiwiTab {
             Self::GitDiff,
             Self::GitLog,
             Self::GitHubIssues,
+            Self::Issues,
             Self::GitHubPrs,
             Self::Preview,
             Self::Search,
@@ -84,7 +87,7 @@ mod tests {
     #[test]
     fn all_variants_have_unique_titles() {
         let variants = KiwiTab::all_variants();
-        assert_eq!(variants.len(), 12);
+        assert_eq!(variants.len(), 13);
         let mut titles = variants.iter().map(|tab| tab.title()).collect::<Vec<_>>();
         titles.sort_unstable();
         titles.dedup();

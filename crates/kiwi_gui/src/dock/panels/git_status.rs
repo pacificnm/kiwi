@@ -202,7 +202,7 @@ mod tests {
     use kiwi_core::theme::{load_theme_with_capabilities, SemanticRole, TerminalCapabilities};
 
     use super::*;
-    use crate::dock::PtySurfaceState;
+    use crate::dock::{PtySurfaceState};
     use crate::theme::GuiTheme;
 
     fn test_panel() -> (AppState, GuiTheme) {

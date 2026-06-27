@@ -9,6 +9,12 @@ use kiwi_core::editor::{
 use kiwi_core::events::{AppEvent, EventChannel, SideEffect};
 use kiwi_core::file_tree::spawn_directory_load;
 use kiwi_core::git::spawn_git_refresh;
+use kiwi_core::github::{
+    spawn_github_auth_check, spawn_github_issue_comment, spawn_github_issue_create_branch,
+    spawn_github_issue_detail_load, spawn_github_issue_label_apply, spawn_github_issue_list_load,
+    spawn_github_open_browser, spawn_github_pr_create, spawn_github_pr_detail_load,
+    spawn_github_pr_list_load, spawn_github_pr_merge, spawn_github_repo_labels_load,
+};
 use kiwi_core::preview::spawn_preview_load;
 use kiwi_core::state::{AppState, ReduceView};
 use kiwi_core::workspace::try_save_from_reduce_view;
@@ -114,25 +120,108 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
                 ctx.state.shell.apply_resize(cols, rows);
             }
         }
+        SideEffect::SpawnGitHubRefresh => {
+            // Reducer refresh path emits `SpawnGitHubAuthCheck`; keep for parity with TUI.
+        }
+        SideEffect::SpawnGitHubAuthCheck => {
+            spawn_github_auth_check(
+                ctx.state.config.github.command.clone(),
+                ctx.events.sender(),
+            );
+        }
+        SideEffect::SpawnGitHubIssueList => {
+            spawn_github_issue_list_load(
+                ctx.state.repo_root.clone(),
+                ctx.state.config.github.command.clone(),
+                ctx.events.sender(),
+            );
+        }
+        SideEffect::SpawnGitHubPrList => {
+            spawn_github_pr_list_load(
+                ctx.state.repo_root.clone(),
+                ctx.state.config.github.command.clone(),
+                ctx.events.sender(),
+            );
+        }
+        SideEffect::SpawnGitHubIssueDetail { number } => {
+            spawn_github_issue_detail_load(
+                ctx.state.repo_root.clone(),
+                ctx.state.config.github.command.clone(),
+                number,
+                ctx.events.sender(),
+            );
+        }
+        SideEffect::SpawnGitHubPrDetail { number } => {
+            spawn_github_pr_detail_load(
+                ctx.state.repo_root.clone(),
+                ctx.state.config.github.command.clone(),
+                number,
+                ctx.events.sender(),
+            );
+        }
+        SideEffect::SpawnGitHubIssueComment { number, body } => {
+            spawn_github_issue_comment(
+                ctx.state.repo_root.clone(),
+                ctx.state.config.github.command.clone(),
+                number,
+                body,
+                ctx.events.sender(),
+            );
+        }
+        SideEffect::SpawnGitHubIssueCreateBranch { number } => {
+            spawn_github_issue_create_branch(
+                ctx.state.repo_root.clone(),
+                ctx.state.config.github.command.clone(),
+                number,
+                ctx.events.sender(),
+            );
+        }
+        SideEffect::SpawnGitHubRepoLabels => {
+            spawn_github_repo_labels_load(
+                ctx.state.repo_root.clone(),
+                ctx.state.config.github.command.clone(),
+                ctx.events.sender(),
+            );
+        }
+        SideEffect::SpawnGitHubIssueLabelApply { number, labels } => {
+            spawn_github_issue_label_apply(
+                ctx.state.repo_root.clone(),
+                ctx.state.config.github.command.clone(),
+                number,
+                labels,
+                ctx.events.sender(),
+            );
+        }
+        SideEffect::SpawnGitHubOpenBrowser { target } => {
+            spawn_github_open_browser(
+                ctx.state.repo_root.clone(),
+                ctx.state.config.github.command.clone(),
+                target,
+                ctx.events.sender(),
+            );
+        }
+        SideEffect::SpawnGitHubPrCreate { request } => {
+            spawn_github_pr_create(
+                ctx.state.repo_root.clone(),
+                ctx.state.config.github.command.clone(),
+                request,
+                ctx.events.sender(),
+            );
+        }
+        SideEffect::SpawnGitHubPrMerge { number } => {
+            spawn_github_pr_merge(
+                ctx.state.repo_root.clone(),
+                ctx.state.config.github.command.clone(),
+                number,
+                ctx.events.sender(),
+            );
+        }
         SideEffect::SpawnBranchList
         | SideEffect::SpawnBranchCheckout { .. }
-        | SideEffect::SpawnGitHubRefresh
         | SideEffect::CancelSearch
         | SideEffect::RunSearch { .. }
         | SideEffect::CopyToClipboard(_)
         | SideEffect::PasteFromClipboard
-        | SideEffect::SpawnGitHubAuthCheck
-        | SideEffect::SpawnGitHubIssueList
-        | SideEffect::SpawnGitHubPrList
-        | SideEffect::SpawnGitHubIssueDetail { .. }
-        | SideEffect::SpawnGitHubPrDetail { .. }
-        | SideEffect::SpawnGitHubIssueComment { .. }
-        | SideEffect::SpawnGitHubIssueCreateBranch { .. }
-        | SideEffect::SpawnGitHubRepoLabels
-        | SideEffect::SpawnGitHubIssueLabelApply { .. }
-        | SideEffect::SpawnGitHubOpenBrowser { .. }
-        | SideEffect::SpawnGitHubPrCreate { .. }
-        | SideEffect::SpawnGitHubPrMerge { .. }
         | SideEffect::PersistUserTheme { .. } => {}
     }
     false
@@ -288,5 +377,53 @@ mod tests {
 
         let quit = execute_gui_effects(&mut ctx, vec![SideEffect::SpawnGitRefresh]);
         assert!(!quit);
+    }
+
+    #[test]
+    fn spawn_github_auth_check_effect_does_not_quit() {
+        let mut state = test_state();
+        let events = EventChannel::new();
+        let mut pty = PtyRuntime::new();
+        let mut ctx = ServiceContext {
+            state: &mut state,
+            events: &events,
+            pty: &mut pty,
+        };
+
+        let quit = execute_gui_effects(&mut ctx, vec![SideEffect::SpawnGitHubAuthCheck]);
+        assert!(!quit);
+    }
+
+    #[test]
+    fn github_refresh_via_command_reaches_auth_check_side_effect() {
+        use kiwi_core::events::AppCommand;
+        use kiwi_core::navigation::{FocusTarget, LeftNavTab, MainTab};
+
+        let mut state = test_state();
+        state.navigation.left_tab = LeftNavTab::Gh;
+        state.navigation.main_tab = MainTab::Issues;
+        state.navigation.focus = FocusTarget::Left;
+        let events = EventChannel::new();
+        let mut pty = PtyRuntime::new();
+
+        let effects = kiwi_core::reducer::reduce(
+            &mut ReduceView::from_app_state(&mut state),
+            AppEvent::Command(AppCommand::GitHubRefresh),
+        );
+        assert!(effects.iter().any(|effect| matches!(
+            effect,
+            SideEffect::SpawnGitHubAuthCheck
+        )));
+
+        let quit = execute_gui_effects(
+            &mut ServiceContext {
+                state: &mut state,
+                events: &events,
+                pty: &mut pty,
+            },
+            effects,
+        );
+        assert!(!quit);
+        assert!(state.github.loading);
     }
 }
