@@ -29,9 +29,10 @@ cargo run -p kiwi_gui -- --theme dracula /path/to/repo
 
 # Adjust base font scale via config ([gui.font] size = 16.0)
 
-# GUI dock (SPEC-022 #184): draggable tabs — Explorer, Git Status, Issues, Agent, Terminal
-# on first run. Drag tab edges to split; close tabs with the tab × button.
-# Default 3-region split layout and View menu arrive in #185; persistence in #186.
+# GUI dock (SPEC-022 #185): ADR-022 default layout — left stack (Explorer, Git Status,
+# Issues), center Agent, bottom Terminal. View menu toggles tabs; Reset Layout restores
+# factory defaults. Drag tab edges to split; close tabs with the tab × button.
+# Layout persistence across restarts arrives in #186.
 
 # Run all workspace tests
 cargo test --workspace

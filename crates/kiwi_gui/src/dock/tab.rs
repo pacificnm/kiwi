@@ -5,7 +5,6 @@
 
 /// Dock panel tab key for [`egui_dock::DockState`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[allow(dead_code)] // non-factory variants open via View menu (#185) and drag-add
 pub enum KiwiTab {
     Explorer,
     GitStatus,
@@ -47,7 +46,6 @@ impl KiwiTab {
 
     /// All tab variants (SPEC-022 tab metadata table).
     #[must_use]
-    #[allow(dead_code)] // View menu tab picker (#185)
     pub const fn all_variants() -> &'static [Self] {
         &[
             Self::Explorer,
@@ -65,7 +63,7 @@ impl KiwiTab {
         ]
     }
 
-    /// Tabs opened on first run before persistence (#185 adds split layout).
+    /// Factory-default open tabs (ADR-022); used by layout and tests.
     #[must_use]
     pub const fn factory_tabs() -> &'static [Self] {
         &[
