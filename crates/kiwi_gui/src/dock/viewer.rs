@@ -19,7 +19,7 @@ impl TabViewer for KiwiTabViewer<'_> {
     }
 
     fn ui(&mut self, ui: &mut Ui, tab: &mut Self::Tab) {
-        render_panel(*tab, ui, &self.ctx);
+        render_panel(*tab, ui, &mut self.ctx);
     }
 
     fn closeable(&mut self, tab: &mut Self::Tab) -> bool {

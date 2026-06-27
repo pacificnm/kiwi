@@ -11,13 +11,14 @@ mod viewer;
 
 pub use context::PanelContext;
 pub use layout::initial_dock_state;
+pub use panels::explorer_keyboard_action;
 pub use persistence::{restore_dock, snapshot_from_dock};
 pub use tab::KiwiTab;
 
 use std::collections::HashMap;
 
 use egui::Ui;
-use egui_dock::{DockArea, DockState, Style};
+use egui_dock::{DockArea, DockState, Node, Style};
 
 use actions::TabActions;
 use region::DockRegion;
@@ -51,6 +52,16 @@ impl DockShell {
         DockArea::new(&mut self.dock_state)
             .style(Style::from_egui(ui.style().as_ref()))
             .show_inside(ui, &mut viewer);
+    }
+
+    /// Active tab in the focused dock leaf, if any.
+    #[must_use]
+    pub fn focused_tab(&self) -> Option<KiwiTab> {
+        let (surface, node_index) = self.dock_state.focused_leaf()?;
+        match &self.dock_state[surface][node_index] {
+            Node::Leaf { tabs, active, .. } => tabs.get(active.0).copied(),
+            _ => None,
+        }
     }
 
     #[must_use]
