@@ -114,13 +114,21 @@ impl FileTreeState {
     }
 
     pub fn move_selection(&mut self, delta: i32, viewport_rows: usize) {
-        self.ensure_selection();
         let rows = self.visible_rows();
         if rows.is_empty() {
+            self.selected = None;
             return;
         }
 
-        let current = self.selected_row_index().unwrap_or(0);
+        if self.selected.is_none() {
+            self.selected = Some(rows[0].path.clone());
+        }
+
+        let current = self
+            .selected
+            .as_ref()
+            .and_then(|sel| rows.iter().position(|row| &row.path == sel))
+            .unwrap_or(0);
         let len = rows.len() as i32;
         let next = (current as i32 + delta).clamp(0, len - 1) as usize;
         self.selected = Some(rows[next].path.clone());

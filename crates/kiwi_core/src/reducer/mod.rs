@@ -261,7 +261,8 @@ pub fn apply_navigation(state: &mut ReduceView<'_>, command: NavCommand) {
         state.file_tree.ensure_selection();
     }
     if state.navigation.left_tab == LeftNavTab::Git {
-        ensure_git_selection(state.git, state.config.git.show_untracked);
+        let git_rows = build_panel_rows(&state.git.file_entries, state.config.git.show_untracked);
+        ensure_git_selection(state.git, &git_rows);
     }
     if state.navigation.main_tab == MainTab::Branches {
         ensure_branch_selection(state.branches);
@@ -1600,12 +1601,9 @@ fn reduce_git_status_updated(
         state.git.remote_repo = remote_repo;
         let file_patch = patch_git_file_entries(&mut state.git.file_entries, &file_entries);
         sync_git_status_patch_to_file_tree(state, &file_patch);
-        ensure_git_selection(state.git, state.config.git.show_untracked);
-        clamp_git_scroll(
-            state.git,
-            git_viewport_rows(state).max(1),
-            state.config.git.show_untracked,
-        );
+        let git_rows = build_panel_rows(&state.git.file_entries, state.config.git.show_untracked);
+        ensure_git_selection(state.git, &git_rows);
+        clamp_git_scroll(state.git, &git_rows, git_viewport_rows(state).max(1));
     }
 
     if let Some(path) = git_selected {
@@ -2100,16 +2098,16 @@ fn reduce_git_move_selection(state: &mut ReduceView<'_>, delta: i32) -> Vec<Side
     }
 
     let viewport_rows = git_viewport_rows(state);
-    let show_untracked = state.config.git.show_untracked;
-    git_move_selection(state.git, delta, viewport_rows, show_untracked);
+    let rows = build_panel_rows(&state.git.file_entries, state.config.git.show_untracked);
+    git_move_selection(state.git, &rows, delta, viewport_rows);
     state.set_dirty();
     Vec::new()
 }
 
 fn reduce_git_select(state: &mut ReduceView<'_>, index: usize) -> Vec<SideEffect> {
     let viewport_rows = git_viewport_rows(state);
-    let show_untracked = state.config.git.show_untracked;
-    git_select_row(state.git, index, viewport_rows, show_untracked);
+    let rows = build_panel_rows(&state.git.file_entries, state.config.git.show_untracked);
+    git_select_row(state.git, &rows, index, viewport_rows);
     state.set_dirty();
     Vec::new()
 }
@@ -2128,10 +2126,9 @@ fn reduce_git_open_selected(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
 
 fn sync_git_selection_for_path(state: &mut ReduceView<'_>, path: &str) {
     let viewport_rows = git_viewport_rows(state);
-    let show_untracked = state.config.git.show_untracked;
-    let rows = build_panel_rows(&state.git.file_entries, show_untracked);
+    let rows = build_panel_rows(&state.git.file_entries, state.config.git.show_untracked);
     if let Some(row) = row_for_path(&rows, path) {
-        git_select_row(state.git, row, viewport_rows, show_untracked);
+        git_select_row(state.git, &rows, row, viewport_rows);
     } else {
         state.git.selected_path = Some(path.to_string());
     }
