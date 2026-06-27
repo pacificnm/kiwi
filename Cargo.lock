@@ -804,6 +804,7 @@ dependencies = [
  "duplicate",
  "egui",
  "paste",
+ "serde",
 ]
 
 [[package]]
@@ -1601,6 +1602,8 @@ dependencies = [
  "egui",
  "egui_dock",
  "kiwi_core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

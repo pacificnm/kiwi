@@ -5,6 +5,7 @@ use kiwi_core::reducer::file_tree_startup_effects;
 use kiwi_core::state::{AppState, ReduceView, ViewportMetrics};
 use kiwi_core::theme::TerminalCapabilities;
 use kiwi_core::watcher::RepoWatcher;
+use kiwi_core::workspace::{try_load_workspace_file, GuiWorkspaceSnapshot};
 
 use crate::bootstrap::GuiBootstrapContext;
 use crate::services::{execute_gui_effects, process_pending_events, ServiceContext};
@@ -16,7 +17,7 @@ pub struct GuiRuntime {
 }
 
 impl GuiRuntime {
-    pub fn build(context: GuiBootstrapContext) -> Self {
+    pub fn build(context: GuiBootstrapContext) -> (Self, Option<GuiWorkspaceSnapshot>) {
         let GuiBootstrapContext {
             repo_root,
             is_git_repo,
@@ -27,12 +28,21 @@ impl GuiRuntime {
         let mut state = AppState::from_startup(
             repo_root.clone(),
             is_git_repo,
-            config,
+            config.clone(),
             theme,
             TerminalCapabilities::TrueColor,
             ViewportMetrics::default(),
         );
         let events = EventChannel::new();
+
+        let mut gui_snapshot = None;
+        if state.config.workspace.persist {
+            if let Some(file) = try_load_workspace_file(&repo_root) {
+                file.tui
+                    .apply_to_reduce_view(&mut ReduceView::from_app_state(&mut state));
+                gui_snapshot = file.gui;
+            }
+        }
 
         let repo_watcher = match RepoWatcher::spawn(
             repo_root,
@@ -67,7 +77,7 @@ impl GuiRuntime {
             runtime.dispatch(AppEvent::GitRefreshRequested);
         }
 
-        runtime
+        (runtime, gui_snapshot)
     }
 
     pub fn dispatch(&mut self, event: AppEvent) {
@@ -110,7 +120,8 @@ mod tests {
                 TerminalCapabilities::TrueColor,
             )
             .expect("theme"),
-        });
+        })
+        .0;
 
         let snapshot = compute_status_bar(&runtime.state);
         assert_eq!(snapshot.root_name, "kiwi");
@@ -128,7 +139,8 @@ mod tests {
                 TerminalCapabilities::TrueColor,
             )
             .expect("theme"),
-        });
+        })
+        .0;
 
         runtime.dispatch(AppEvent::GitStatusUpdated {
             branch: Some("feature/test".to_string()),

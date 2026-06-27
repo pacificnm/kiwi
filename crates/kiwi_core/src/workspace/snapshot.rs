@@ -9,7 +9,8 @@ use crate::github::GitHubLeftPane;
 use crate::navigation::{FocusTarget, LeftNavTab, MainTab};
 use crate::state::{ReduceView, MAX_PALETTE_HISTORY_ENTRIES};
 
-pub const WORKSPACE_SCHEMA_VERSION: u32 = 1;
+pub const WORKSPACE_SCHEMA_VERSION: u32 = 2;
+pub const WORKSPACE_SCHEMA_VERSION_V1: u32 = 1;
 
 const DIFF_SCROLL_PREFIX: &str = "diff:";
 const DIFF_H_SCROLL_PREFIX: &str = "diff_h:";
@@ -29,7 +30,39 @@ pub mod scroll_view {
     pub const GITHUB_PR_DETAIL: &str = "github.pr_detail";
 }
 
-/// Serializable workspace state for a single repository (SPEC-017, ADR-016).
+/// TUI workspace fields (SPEC-017, ADR-016).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TuiWorkspaceSnapshot {
+    pub left_nav_tab: String,
+    pub main_tab: String,
+    pub focus: String,
+    pub left_width: u8,
+    pub expanded_paths: Vec<String>,
+    pub selected_path: Option<String>,
+    #[serde(default)]
+    pub scroll_positions: HashMap<String, usize>,
+    #[serde(default, alias = "palette_history")]
+    pub command_palette_history: Vec<String>,
+}
+
+/// GUI dock persistence payload (ADR-022). `dock_layout` is opaque egui_dock JSON.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GuiWorkspaceSnapshot {
+    pub dock_layout: serde_json::Value,
+    #[serde(default)]
+    pub open_tabs: Vec<String>,
+}
+
+/// On-disk workspace file (schema v2): independent TUI and GUI sections.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceFile {
+    pub schema_version: u32,
+    pub tui: TuiWorkspaceSnapshot,
+    #[serde(default)]
+    pub gui: Option<GuiWorkspaceSnapshot>,
+}
+
+/// Legacy flat snapshot and TUI view wrapper (SPEC-017).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkspaceSnapshot {
     pub schema_version: u32,
@@ -45,10 +78,9 @@ pub struct WorkspaceSnapshot {
     pub command_palette_history: Vec<String>,
 }
 
-impl Default for WorkspaceSnapshot {
+impl Default for TuiWorkspaceSnapshot {
     fn default() -> Self {
         Self {
-            schema_version: WORKSPACE_SCHEMA_VERSION,
             left_nav_tab: LeftNavTab::default().label().to_string(),
             main_tab: MainTab::default().label().to_string(),
             focus: focus_label(FocusTarget::Main).to_string(),
@@ -61,12 +93,70 @@ impl Default for WorkspaceSnapshot {
     }
 }
 
-impl WorkspaceSnapshot {
+impl Default for WorkspaceFile {
+    fn default() -> Self {
+        Self {
+            schema_version: WORKSPACE_SCHEMA_VERSION,
+            tui: TuiWorkspaceSnapshot::default(),
+            gui: None,
+        }
+    }
+}
+
+impl From<TuiWorkspaceSnapshot> for WorkspaceSnapshot {
+    fn from(tui: TuiWorkspaceSnapshot) -> Self {
+        Self {
+            schema_version: WORKSPACE_SCHEMA_VERSION,
+            left_nav_tab: tui.left_nav_tab,
+            main_tab: tui.main_tab,
+            focus: tui.focus,
+            left_width: tui.left_width,
+            expanded_paths: tui.expanded_paths,
+            selected_path: tui.selected_path,
+            scroll_positions: tui.scroll_positions,
+            command_palette_history: tui.command_palette_history,
+        }
+    }
+}
+
+impl From<WorkspaceSnapshot> for TuiWorkspaceSnapshot {
+    fn from(snapshot: WorkspaceSnapshot) -> Self {
+        Self {
+            left_nav_tab: snapshot.left_nav_tab,
+            main_tab: snapshot.main_tab,
+            focus: snapshot.focus,
+            left_width: snapshot.left_width,
+            expanded_paths: snapshot.expanded_paths,
+            selected_path: snapshot.selected_path,
+            scroll_positions: snapshot.scroll_positions,
+            command_palette_history: snapshot.command_palette_history,
+        }
+    }
+}
+
+impl WorkspaceFile {
     #[must_use]
-    pub fn is_compatible(&self) -> bool {
-        self.schema_version == WORKSPACE_SCHEMA_VERSION
+    pub fn from_v1(snapshot: WorkspaceSnapshot) -> Self {
+        Self {
+            schema_version: WORKSPACE_SCHEMA_VERSION,
+            tui: snapshot.into(),
+            gui: None,
+        }
     }
 
+    #[must_use]
+    pub fn tui_snapshot(&self) -> WorkspaceSnapshot {
+        WorkspaceSnapshot::from(self.tui.clone())
+    }
+}
+
+impl Default for WorkspaceSnapshot {
+    fn default() -> Self {
+        TuiWorkspaceSnapshot::default().into()
+    }
+}
+
+impl TuiWorkspaceSnapshot {
     #[must_use]
     pub fn from_reduce_view(view: &ReduceView<'_>) -> Self {
         let repo_root = view.repo_root.as_path();
@@ -124,7 +214,6 @@ impl WorkspaceSnapshot {
             .map(|path| rel_path_string(repo_root, path));
 
         Self {
-            schema_version: WORKSPACE_SCHEMA_VERSION,
             left_nav_tab: view.navigation.left_tab.label().to_string(),
             main_tab: view.navigation.main_tab.label().to_string(),
             focus: focus_label(view.navigation.focus).to_string(),
@@ -174,6 +263,23 @@ impl WorkspaceSnapshot {
         sync_github_left_pane(view);
         view.palette.history = trim_history(self.command_palette_history.clone());
         view.set_dirty();
+    }
+}
+
+impl WorkspaceSnapshot {
+    #[must_use]
+    pub fn is_compatible(&self) -> bool {
+        self.schema_version == WORKSPACE_SCHEMA_VERSION
+            || self.schema_version == WORKSPACE_SCHEMA_VERSION_V1
+    }
+
+    #[must_use]
+    pub fn from_reduce_view(view: &ReduceView<'_>) -> Self {
+        TuiWorkspaceSnapshot::from_reduce_view(view).into()
+    }
+
+    pub fn apply_to_reduce_view(&self, view: &mut ReduceView<'_>) {
+        TuiWorkspaceSnapshot::from(self.clone()).apply_to_reduce_view(view);
     }
 }
 
