@@ -6,6 +6,7 @@ use egui_dock::TabViewer;
 use super::context::PanelContext;
 use super::panels::render_panel;
 use super::tab::KiwiTab;
+use crate::navigation_bridge::navigation_commands_for_dock_tab;
 
 pub struct KiwiTabViewer<'a> {
     pub ctx: PanelContext<'a>,
@@ -20,6 +21,14 @@ impl TabViewer for KiwiTabViewer<'_> {
 
     fn id(&mut self, tab: &mut Self::Tab) -> Id {
         Id::new(format!("kiwi_tab_{tab:?}"))
+    }
+
+    fn on_tab_button(&mut self, tab: &mut Self::Tab, response: &egui::Response) {
+        if response.clicked() {
+            for command in navigation_commands_for_dock_tab(*tab) {
+                let _ = (self.ctx.dispatch)(command);
+            }
+        }
     }
 
     fn ui(&mut self, ui: &mut Ui, tab: &mut Self::Tab) {

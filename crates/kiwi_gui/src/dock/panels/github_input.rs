@@ -11,24 +11,35 @@ use kiwi_core::state::AppState;
 use super::github_common::{select_issue_commands, select_pr_commands};
 use crate::dock::tab::KiwiTab;
 
-/// Sync TUI navigation state when a GitHub dock tab is visible (list fetch gating in core).
+/// Sync TUI navigation state when a GitHub dock tab is focused (list fetch gating in core).
 pub fn navigation_sync_commands(state: &AppState, tab: KiwiTab) -> Vec<AppCommand> {
     match tab {
-        KiwiTab::GitHubIssues | KiwiTab::Issues => github_issues_sync_commands(state),
-        KiwiTab::GitHubPrs => github_prs_sync_commands(state),
+        KiwiTab::GitHubIssues => github_issues_list_sync_commands(state),
+        KiwiTab::Issues => github_issues_detail_sync_commands(state),
+        KiwiTab::GitHubPrs => github_prs_detail_sync_commands(state),
         _ => Vec::new(),
     }
 }
 
-fn github_issues_sync_commands(state: &AppState) -> Vec<AppCommand> {
+fn github_issues_list_sync_commands(state: &AppState) -> Vec<AppCommand> {
     let mut commands = Vec::new();
     if state.navigation.left_tab != LeftNavTab::Gh {
         commands.push(AppCommand::Navigation(NavCommand::SelectLeftTab(
             LeftNavTab::Gh,
         )));
     }
+    if state.github.left_pane != GitHubLeftPane::Issues {
+        commands.push(AppCommand::GitHubSelectLeftPane(
+            GitHubLeftPane::Issues,
+        ));
+    }
+    commands
+}
+
+fn github_issues_detail_sync_commands(state: &AppState) -> Vec<AppCommand> {
+    let mut commands = Vec::new();
     if state.navigation.main_tab != MainTab::Issues {
-        commands.push(AppCommand::Navigation(NavCommand::SelectMainTab(
+        commands.push(AppCommand::Navigation(NavCommand::SelectMainTabUnpaired(
             MainTab::Issues,
         )));
     }
@@ -40,20 +51,15 @@ fn github_issues_sync_commands(state: &AppState) -> Vec<AppCommand> {
     commands
 }
 
-fn github_prs_sync_commands(state: &AppState) -> Vec<AppCommand> {
+fn github_prs_detail_sync_commands(state: &AppState) -> Vec<AppCommand> {
     let mut commands = Vec::new();
     if state.navigation.main_tab != MainTab::Prs {
-        commands.push(AppCommand::Navigation(NavCommand::SelectMainTab(
+        commands.push(AppCommand::Navigation(NavCommand::SelectMainTabUnpaired(
             MainTab::Prs,
         )));
     }
     if state.github.left_pane != GitHubLeftPane::Prs {
         commands.push(AppCommand::GitHubSelectLeftPane(GitHubLeftPane::Prs));
-    }
-    if state.navigation.left_tab != LeftNavTab::Gh {
-        commands.push(AppCommand::Navigation(NavCommand::SelectLeftTab(
-            LeftNavTab::Gh,
-        )));
     }
     commands
 }
@@ -209,7 +215,7 @@ mod tests {
     }
 
     #[test]
-    fn github_issues_sync_selects_gh_left_and_issues_pane() {
+    fn github_issues_list_sync_selects_gh_left_and_issues_pane() {
         let mut state = test_state();
         state.github.left_pane = GitHubLeftPane::Prs;
         let commands = navigation_sync_commands(&state, KiwiTab::GitHubIssues);
@@ -217,9 +223,10 @@ mod tests {
             cmd,
             AppCommand::Navigation(NavCommand::SelectLeftTab(LeftNavTab::Gh))
         )));
-        assert!(commands.iter().any(|cmd| matches!(
+        assert!(!commands.iter().any(|cmd| matches!(
             cmd,
-            AppCommand::Navigation(NavCommand::SelectMainTab(MainTab::Issues))
+            AppCommand::Navigation(NavCommand::SelectMainTab(_))
+                | AppCommand::Navigation(NavCommand::SelectMainTabUnpaired(_))
         )));
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
@@ -228,12 +235,18 @@ mod tests {
     }
 
     #[test]
-    fn issues_tab_uses_same_nav_sync_as_gh_list() {
-        let state = test_state();
-        assert_eq!(
-            navigation_sync_commands(&state, KiwiTab::Issues),
-            navigation_sync_commands(&state, KiwiTab::GitHubIssues)
-        );
+    fn issues_detail_sync_preserves_left_tab() {
+        let mut state = test_state();
+        state.navigation.left_tab = LeftNavTab::Search;
+        let commands = navigation_sync_commands(&state, KiwiTab::Issues);
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            AppCommand::Navigation(NavCommand::SelectMainTabUnpaired(MainTab::Issues))
+        )));
+        assert!(!commands.iter().any(|cmd| matches!(
+            cmd,
+            AppCommand::Navigation(NavCommand::SelectLeftTab(_))
+        )));
     }
 
     #[test]

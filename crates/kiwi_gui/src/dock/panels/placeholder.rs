@@ -17,6 +17,8 @@ pub fn render_placeholder(ui: &mut Ui, tab: KiwiTab, ctx: &mut PanelContext<'_>)
         KiwiTab::GitHubIssues => return super::github_left::render(ui, ctx),
         KiwiTab::Issues => return super::issues_detail::render(ui, ctx),
         KiwiTab::GitHubPrs => return super::github_prs::render(ui, ctx),
+        KiwiTab::Search => return super::search::render(ui, ctx),
+        KiwiTab::Preview => return super::preview::render(ui, ctx),
         _ => {}
     }
 
@@ -113,6 +115,7 @@ mod tests {
             theme: &theme,
             dispatch: &mut noop,
             pty_surface: &mut pty_surface,
+            focused_dock_tab: None,
         };
         assert!(state_hint(KiwiTab::Terminal, &mut ctx).is_none());
         assert!(state_hint(KiwiTab::Agent, &mut ctx).is_none());
@@ -128,6 +131,7 @@ mod tests {
             theme: &theme,
             dispatch: &mut noop,
             pty_surface: &mut pty_surface,
+            focused_dock_tab: None,
         };
         let hint = state_hint(KiwiTab::Explorer, &mut ctx).expect("hint");
         assert!(hint.contains("Root:"));
@@ -143,6 +147,7 @@ mod tests {
             theme: &theme,
             dispatch: &mut noop,
             pty_surface: &mut pty_surface,
+            focused_dock_tab: None,
         };
         for tab in KiwiTab::all_variants() {
             if matches!(tab, KiwiTab::Terminal | KiwiTab::Agent) {

@@ -15,8 +15,11 @@ use crate::theme::GuiTheme;
 pub const LIST_ROW_HEIGHT: f32 = 18.0;
 pub const DETAIL_ROW_HEIGHT: f32 = 16.0;
 
-/// Dispatch nav sync on render (list fetch gating in core).
+/// Dispatch nav sync only when this dock tab has egui_dock focus.
 pub fn sync_github_navigation(ctx: &mut PanelContext<'_>, tab: KiwiTab) {
+    if !ctx.is_dock_tab_focused(tab) {
+        return;
+    }
     for command in super::github_input::navigation_sync_commands(ctx.state, tab) {
         let _ = (ctx.dispatch)(command);
     }
@@ -114,7 +117,7 @@ pub fn pr_state_color(theme: &GuiTheme, state: PrState) -> Color32 {
 pub fn select_issue_commands(row_index: usize) -> [AppCommand; 3] {
     [
         AppCommand::GitHubSelectIssue(row_index),
-        AppCommand::Navigation(NavCommand::SelectMainTab(MainTab::Issues)),
+        AppCommand::Navigation(NavCommand::SelectMainTabUnpaired(MainTab::Issues)),
         AppCommand::Navigation(NavCommand::SetFocus(FocusTarget::Main)),
     ]
 }
@@ -123,7 +126,7 @@ pub fn select_issue_commands(row_index: usize) -> [AppCommand; 3] {
 pub fn select_pr_commands(row_index: usize) -> [AppCommand; 3] {
     [
         AppCommand::GitHubSelectPr(row_index),
-        AppCommand::Navigation(NavCommand::SelectMainTab(MainTab::Prs)),
+        AppCommand::Navigation(NavCommand::SelectMainTabUnpaired(MainTab::Prs)),
         AppCommand::Navigation(NavCommand::SetFocus(FocusTarget::Main)),
     ]
 }
@@ -212,7 +215,7 @@ mod tests {
         )));
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            AppCommand::Navigation(NavCommand::SelectMainTab(MainTab::Issues))
+            AppCommand::Navigation(NavCommand::SelectMainTabUnpaired(MainTab::Issues))
         )));
         assert!(commands.iter().any(|cmd| matches!(
             cmd,

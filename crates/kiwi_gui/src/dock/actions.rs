@@ -38,9 +38,17 @@ impl TabActions<'_> {
             .remove_tab((SurfaceIndex::main(), node, tab_index));
     }
 
-    pub fn show_tab(&mut self, tab: KiwiTab) {
+    /// Open `tab` in its default (or last-known) region; focus it only when `focus` is true.
+    pub fn ensure_tab(
+        &mut self,
+        tab: KiwiTab,
+        focus: bool,
+        current_focus: Option<KiwiTab>,
+    ) {
         if self.is_open(tab) {
-            self.focus_tab(tab);
+            if focus && current_focus != Some(tab) {
+                self.focus_tab(tab);
+            }
             return;
         }
 
@@ -51,9 +59,11 @@ impl TabActions<'_> {
             .unwrap_or_else(|| tab.default_region());
 
         if let Some(node) = find_leaf_for_region(self.dock_state, region) {
-            push_tab_to_leaf(self.dock_state.main_surface_mut(), node, tab);
-            if let Some((node, tab_index)) = self.dock_state.find_main_surface_tab(&tab) {
-                focus_tab(self.dock_state, (node, tab_index));
+            push_tab_to_leaf(self.dock_state.main_surface_mut(), node, tab, focus);
+            if focus {
+                if let Some((node, tab_index)) = self.dock_state.find_main_surface_tab(&tab) {
+                    focus_tab(self.dock_state, (node, tab_index));
+                }
             }
             return;
         }
@@ -61,12 +71,16 @@ impl TabActions<'_> {
         self.dock_state.push_to_focused_leaf(tab);
     }
 
+    pub fn show_tab(&mut self, tab: KiwiTab, current_focus: Option<KiwiTab>) {
+        self.ensure_tab(tab, true, current_focus);
+    }
+
     #[allow(dead_code)] // unit tests
     pub fn toggle_tab(&mut self, tab: KiwiTab) {
         if self.is_open(tab) {
             self.close_tab(tab);
         } else {
-            self.show_tab(tab);
+            self.show_tab(tab, None);
         }
     }
 }
@@ -75,6 +89,7 @@ impl TabActions<'_> {
 mod tests {
     use super::*;
     use crate::dock::layout::initial_dock_state;
+    use crate::dock::DockShell;
 
     #[test]
     fn close_and_reopen_git_status_in_left_region() {
@@ -89,7 +104,7 @@ mod tests {
         actions.close_tab(KiwiTab::GitStatus);
         assert!(!actions.is_open(KiwiTab::GitStatus));
 
-        actions.show_tab(KiwiTab::GitStatus);
+        actions.show_tab(KiwiTab::GitStatus, None);
         assert!(actions.is_open(KiwiTab::GitStatus));
 
         let left = find_leaf_for_region(&dock, DockRegion::Left).expect("left leaf");
@@ -109,7 +124,7 @@ mod tests {
         };
 
         assert!(!actions.is_open(KiwiTab::GitDiff));
-        actions.show_tab(KiwiTab::GitDiff);
+        actions.show_tab(KiwiTab::GitDiff, None);
         assert!(actions.is_open(KiwiTab::GitDiff));
 
         let center = find_leaf_for_region(&dock, DockRegion::Center).expect("center leaf");
@@ -117,6 +132,37 @@ mod tests {
             .find_main_surface_tab(&KiwiTab::GitDiff)
             .expect("diff open");
         assert_eq!(node, center);
+    }
+
+    #[test]
+    fn ensure_tab_opens_search_in_left_leaf() {
+        let mut dock = initial_dock_state();
+        let mut last_region = HashMap::new();
+        let mut actions = TabActions {
+            dock_state: &mut dock,
+            last_region: &mut last_region,
+        };
+
+        assert!(!actions.is_open(KiwiTab::Search));
+        actions.ensure_tab(KiwiTab::Search, true, None);
+        assert!(actions.is_open(KiwiTab::Search));
+
+        let left = find_leaf_for_region(&dock, DockRegion::Left).expect("left leaf");
+        let (node, _) = dock
+            .find_main_surface_tab(&KiwiTab::Search)
+            .expect("search open");
+        assert_eq!(node, left);
+    }
+
+    #[test]
+    fn ensure_tab_without_focus_leaves_active_tab_unchanged() {
+        let mut shell = DockShell::new();
+        shell.ensure_tab(KiwiTab::Agent, true);
+        assert_eq!(shell.focused_tab(), Some(KiwiTab::Agent));
+
+        shell.ensure_tab(KiwiTab::GitDiff, false);
+        assert!(shell.is_tab_open(KiwiTab::GitDiff));
+        assert_eq!(shell.focused_tab(), Some(KiwiTab::Agent));
     }
 
     #[test]

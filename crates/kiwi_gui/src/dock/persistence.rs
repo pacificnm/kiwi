@@ -55,7 +55,7 @@ fn ensure_factory_tabs(mut dock: DockState<KiwiTab>) -> DockState<KiwiTab> {
         }
         let region = tab.default_region();
         if let Some(node) = find_leaf_for_region(&dock, region) {
-            push_tab_to_leaf(dock.main_surface_mut(), node, tab);
+            push_tab_to_leaf(dock.main_surface_mut(), node, tab, false);
         } else {
             dock.push_to_focused_leaf(tab);
         }

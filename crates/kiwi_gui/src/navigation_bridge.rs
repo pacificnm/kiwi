@@ -1,23 +1,73 @@
 //! Maps TUI [`NavigationState`] to GUI [`KiwiTab`] dock actions (SPEC-022 / #187).
 
+use kiwi_core::events::AppCommand;
 use kiwi_core::github::GitHubLeftPane;
-use kiwi_core::navigation::{FocusTarget, LeftNavTab, MainTab, NavigationState};
+use kiwi_core::navigation::{FocusTarget, LeftNavTab, MainTab, NavCommand, NavigationState};
 
 use crate::dock::{DockShell, KiwiTab};
 
-/// Open and focus dock tab(s) that correspond to the current navigation focus.
+/// Navigation commands to apply when the user selects a dock tab.
+#[must_use]
+pub fn navigation_commands_for_dock_tab(tab: KiwiTab) -> Vec<AppCommand> {
+    match tab {
+        KiwiTab::Explorer => left_focus(LeftNavTab::Files),
+        KiwiTab::GitStatus => left_focus(LeftNavTab::Git),
+        KiwiTab::GitHubIssues => left_focus(LeftNavTab::Gh),
+        KiwiTab::Search => left_focus(LeftNavTab::Search),
+        KiwiTab::Agent => main_focus(MainTab::Agent),
+        KiwiTab::Issues => main_focus(MainTab::Issues),
+        KiwiTab::GitHubPrs => main_focus(MainTab::Prs),
+        KiwiTab::GitDiff => main_focus(MainTab::Diff),
+        KiwiTab::Preview => main_focus(MainTab::Preview),
+        KiwiTab::Logs => main_focus(MainTab::Logs),
+        KiwiTab::Config => main_focus(MainTab::Settings),
+        KiwiTab::Terminal => vec![AppCommand::Navigation(NavCommand::SetFocus(
+            FocusTarget::Shell,
+        ))],
+        KiwiTab::GitLog => Vec::new(),
+    }
+}
+
+fn left_focus(left: LeftNavTab) -> Vec<AppCommand> {
+    vec![
+        AppCommand::Navigation(NavCommand::SelectLeftTab(left)),
+        AppCommand::Navigation(NavCommand::SetFocus(FocusTarget::Left)),
+    ]
+}
+
+fn main_focus(main: MainTab) -> Vec<AppCommand> {
+    vec![
+        AppCommand::Navigation(NavCommand::SelectMainTabUnpaired(main)),
+        AppCommand::Navigation(NavCommand::SetFocus(FocusTarget::Main)),
+    ]
+}
+
+/// Ensure the dock tab for the focused region is open; do not manage the other region.
 pub fn sync_dock_from_navigation(
     dock: &mut DockShell,
     nav: &NavigationState,
     gh_pane: GitHubLeftPane,
 ) {
-    let Some(tab) = primary_tab_for_navigation(nav, gh_pane) else {
-        return;
-    };
-    dock.show_tab(tab);
+    match nav.focus {
+        FocusTarget::Shell => {
+            dock.ensure_tab(KiwiTab::Terminal, true);
+        }
+        FocusTarget::CommandPalette => {}
+        FocusTarget::Left => {
+            if let Some(tab) = kiwi_tab_for_left(nav.left_tab, nav.main_tab, gh_pane) {
+                dock.ensure_tab(tab, true);
+            }
+        }
+        FocusTarget::Main => {
+            if let Some(tab) = kiwi_tab_for_main(nav.main_tab, gh_pane) {
+                dock.ensure_tab(tab, true);
+            }
+        }
+    }
 }
 
 #[must_use]
+#[allow(dead_code)] // navigation helper; covered by unit tests
 pub fn primary_tab_for_navigation(
     nav: &NavigationState,
     gh_pane: GitHubLeftPane,
@@ -138,6 +188,19 @@ mod tests {
     }
 
     #[test]
+    fn search_dock_tab_sets_left_focus() {
+        let commands = navigation_commands_for_dock_tab(KiwiTab::Search);
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            AppCommand::Navigation(NavCommand::SelectLeftTab(LeftNavTab::Search))
+        )));
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            AppCommand::Navigation(NavCommand::SetFocus(FocusTarget::Left))
+        )));
+    }
+
+    #[test]
     fn sync_dock_opens_expected_tab() {
         let nav = nav_with(&[
             NavCommand::SelectMainTab(MainTab::Logs),
@@ -149,5 +212,30 @@ mod tests {
 
         sync_dock_from_navigation(&mut dock, &nav, GitHubLeftPane::Issues);
         assert!(dock.is_tab_open(KiwiTab::Logs));
+    }
+
+    #[test]
+    fn issues_dock_tab_uses_unpaired_main_select() {
+        let commands = navigation_commands_for_dock_tab(KiwiTab::Issues);
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            AppCommand::Navigation(NavCommand::SelectMainTabUnpaired(MainTab::Issues))
+        )));
+    }
+
+    #[test]
+    fn left_focus_only_opens_left_region_tab() {
+        let nav = nav_with(&[
+            NavCommand::SelectMainTabUnpaired(MainTab::Issues),
+            NavCommand::SelectLeftTab(LeftNavTab::Search),
+            NavCommand::SetFocus(FocusTarget::Left),
+        ]);
+        let mut dock = DockShell::new();
+        dock.close_tab(KiwiTab::Search);
+        assert!(!dock.is_tab_open(KiwiTab::Search));
+
+        sync_dock_from_navigation(&mut dock, &nav, GitHubLeftPane::Issues);
+        assert!(dock.is_tab_open(KiwiTab::Search));
+        assert_eq!(dock.focused_tab(), Some(KiwiTab::Search));
     }
 }

@@ -233,6 +233,7 @@ mod tests {
             theme,
             dispatch,
             pty_surface,
+            focused_dock_tab: None,
         }
     }
 

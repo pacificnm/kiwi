@@ -13,12 +13,13 @@ use crate::chrome::{
     render_status_bar,
 };
 use crate::dock::{
-    collect_github_keyboard, collect_pty_input, explorer_keyboard_action,
-    git_diff_keyboard_action, git_status_keyboard_action, github_navigation_sync_commands,
-    navigation_sync_commands, restore_dock, snapshot_from_dock, DockShell, KiwiTab, PanelContext,
+    collect_github_keyboard, collect_pty_input, collect_search_keyboard, explorer_keyboard_action,
+    git_diff_keyboard_action, git_status_keyboard_action,
+    global_search_focus_commands, global_search_focus_pressed, navigation_sync_commands,
+    preview_keyboard_action, restore_dock, snapshot_from_dock, DockShell, KiwiTab, PanelContext,
     PtySurfaceState, PtyTarget,
 };
-use crate::navigation_bridge::sync_dock_from_navigation;
+use crate::navigation_bridge::{navigation_commands_for_dock_tab, sync_dock_from_navigation};
 use crate::runtime::GuiRuntime;
 use crate::theme::GuiTheme;
 
@@ -84,8 +85,11 @@ impl KiwiApp {
     }
 
     fn dispatch_command(&mut self, command: AppCommand) -> bool {
+        let nav_before = self.runtime.state.navigation.clone();
         let quit = self.runtime.dispatch_command(command);
-        self.sync_dock();
+        if self.runtime.state.navigation != nav_before {
+            self.sync_dock();
+        }
         quit
     }
 
@@ -147,6 +151,19 @@ impl KiwiApp {
         false
     }
 
+    fn handle_search_input(&mut self, ctx: &egui::Context) -> bool {
+        if self.dock.focused_tab() != Some(KiwiTab::Search) {
+            return false;
+        }
+
+        for command in collect_search_keyboard(ctx, &self.runtime.state) {
+            if self.dispatch_command(command) {
+                return true;
+            }
+        }
+        false
+    }
+
     fn handle_github_input(&mut self, ctx: &egui::Context) -> bool {
         let Some(tab) = self.dock.focused_tab() else {
             return false;
@@ -156,10 +173,6 @@ impl KiwiApp {
             KiwiTab::GitHubIssues | KiwiTab::Issues | KiwiTab::GitHubPrs
         ) {
             return false;
-        }
-
-        for command in github_navigation_sync_commands(&self.runtime.state, tab) {
-            let _ = self.dispatch_command(command);
         }
 
         for command in collect_github_keyboard(ctx, tab, &self.runtime.state) {
@@ -191,10 +204,22 @@ impl KiwiApp {
                 Some(KiwiTab::GitHubIssues) | Some(KiwiTab::Issues) | Some(KiwiTab::GitHubPrs) => {
                     let _ = self.dispatch_command(AppCommand::GitHubRefresh);
                 }
+                Some(KiwiTab::Search) => {
+                    if !self.runtime.state.search.query.is_empty() {
+                        let _ = self.dispatch_command(AppCommand::SearchExecute);
+                    }
+                }
                 _ => {
                     let _ = self.runtime.dispatch(AppEvent::GitRefreshRequested);
                 }
             }
+        }
+
+        if global_search_focus_pressed(ctx) {
+            for command in global_search_focus_commands() {
+                let _ = self.dispatch_command(command);
+            }
+            return false;
         }
 
         if !self.runtime.state.palette.open {
@@ -214,6 +239,11 @@ impl KiwiApp {
                         return self.dispatch_command(command);
                     }
                 }
+                Some(KiwiTab::Preview) => {
+                    if let Some(command) = preview_keyboard_action(ctx, &self.runtime.state) {
+                        return self.dispatch_command(command);
+                    }
+                }
                 _ => {}
             }
         }
@@ -230,8 +260,9 @@ impl KiwiApp {
 
 impl eframe::App for KiwiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let nav_before = self.runtime.state.navigation.clone();
         let (should_quit, event_count) = self.runtime.process_pending_events();
-        if event_count > 0 {
+        if self.runtime.state.navigation != nav_before {
             self.sync_dock();
         }
         if should_quit {
@@ -262,6 +293,11 @@ impl eframe::App for KiwiApp {
         if menu_action.about_requested {
             self.about_open = true;
         }
+        for tab in menu_action.tabs_opened {
+            for command in navigation_commands_for_dock_tab(tab) {
+                let _ = self.dispatch_command(command);
+            }
+        }
         if menu_action.quit_requested && self.dispatch_command(AppCommand::Quit) {
             self.close_window(ctx);
             return;
@@ -283,6 +319,7 @@ impl eframe::App for KiwiApp {
                     theme: &self.gui_theme,
                     dispatch: &mut dispatch,
                     pty_surface: &mut pty_surface,
+                    focused_dock_tab: None,
                 },
             );
             for command in pending_commands {
@@ -293,6 +330,10 @@ impl eframe::App for KiwiApp {
             }
             self.runtime.sync_pty_resize_from_viewport();
             if self.handle_github_input(ctx) {
+                self.close_window(ctx);
+                return;
+            }
+            if self.handle_search_input(ctx) {
                 self.close_window(ctx);
                 return;
             }
@@ -314,6 +355,13 @@ impl eframe::App for KiwiApp {
         }
 
         self.poll_workspace_save();
+
+        if self.runtime.search_debounce_pending() {
+            ctx.request_repaint();
+        }
+        if self.runtime.poll_search_debounce() {
+            // `poll_search_debounce` dispatches `SearchExecute` when the timer fires.
+        }
 
         if event_count > 0 || self.runtime.state.dirty {
             ctx.request_repaint();
