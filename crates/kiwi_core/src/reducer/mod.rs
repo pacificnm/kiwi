@@ -213,7 +213,6 @@ use self::workspace::preview_file_unchanged;
 pub fn reduce(state: &mut ReduceView<'_>, event: AppEvent) -> Vec<SideEffect> {
     match event {
         AppEvent::Command(command) => reduce_command(state, command),
-        AppEvent::TerminalResize { .. } => Vec::new(),
         AppEvent::GitRefreshRequested => reduce_git_refresh_requested(state),
         AppEvent::GitStatusUpdated {
             branch,

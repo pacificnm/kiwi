@@ -7,9 +7,6 @@ use crate::state::{AppCommand, AppEvent, AppState, SideEffect};
 
 pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
     match event {
-        AppEvent::TerminalResize { width, height } => {
-            reducer_tui::reduce_terminal_resize(state, width, height)
-        }
         AppEvent::Command(command) => reduce_command(state, command),
         other => {
             let effects = core::reduce(&mut state.reduce_view(), other.clone());
@@ -17,6 +14,10 @@ pub fn reduce(state: &mut AppState, event: AppEvent) -> Vec<SideEffect> {
             effects
         }
     }
+}
+
+pub fn terminal_resize_effects(state: &mut AppState, width: u16, height: u16) -> Vec<SideEffect> {
+    reducer_tui::reduce_terminal_resize(state, width, height)
 }
 
 fn reduce_command(state: &mut AppState, command: AppCommand) -> Vec<SideEffect> {

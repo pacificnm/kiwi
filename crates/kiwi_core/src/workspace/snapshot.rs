@@ -228,12 +228,18 @@ impl TuiWorkspaceSnapshot {
     pub fn apply_to_reduce_view(&self, view: &mut ReduceView<'_>) {
         if let Some(left_tab) = parse_left_nav_tab(&self.left_nav_tab) {
             view.navigation.left_tab = left_tab;
+        } else {
+            eprintln!("workspace: unrecognized left_nav_tab {:?}, ignoring", self.left_nav_tab);
         }
         if let Some(main_tab) = parse_main_tab(&self.main_tab) {
             view.navigation.main_tab = main_tab;
+        } else {
+            eprintln!("workspace: unrecognized main_tab {:?}, ignoring", self.main_tab);
         }
         if let Some(focus) = parse_focus(&self.focus) {
             view.navigation.focus = focus;
+        } else {
+            eprintln!("workspace: unrecognized focus {:?}, ignoring", self.focus);
         }
 
         view.config.app.left_width = self.left_width;

@@ -22,4 +22,5 @@ pub use event::{AppCommand, AppEvent, SideEffect};
 pub use reducer::agent_spawn_effects_if_needed;
 pub use reducer::file_tree_startup_effects;
 pub use reducer::reduce;
+pub use reducer::terminal_resize_effects;
 pub use reducer::workspace_restore_effects;

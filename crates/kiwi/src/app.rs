@@ -38,8 +38,8 @@ use crate::selection::{hit_test_text, SelectionPane};
 use crate::shell::{encode_key, ShellOutputReader, ShellSession};
 use crate::shutdown;
 use crate::state::{
-    agent_spawn_effects_if_needed, file_tree_startup_effects, reduce, workspace_restore_effects,
-    AppCommand, AppEvent, AppState, EventChannel, SideEffect,
+    agent_spawn_effects_if_needed, file_tree_startup_effects, reduce, terminal_resize_effects,
+    workspace_restore_effects, AppCommand, AppEvent, AppState, EventChannel, SideEffect,
 };
 use crate::ui::{
     branch_interaction_at, draw_frame, file_tree_interaction_at, git_interaction_at,
@@ -703,7 +703,10 @@ impl App {
     fn handle_terminal_event(&mut self, event: Event) -> bool {
         match event {
             Event::Resize(width, height) => {
-                self.dispatch(AppEvent::TerminalResize { width, height })
+                let effects = terminal_resize_effects(&mut self.state, width, height);
+                let quit = self.execute_effects(effects);
+                self.sync_search_debounce();
+                quit
             }
             Event::Key(key) => {
                 if key.kind != KeyEventKind::Press {

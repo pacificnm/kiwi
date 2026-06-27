@@ -22,10 +22,6 @@ pub use channel::{EventChannel, EventSender, EVENT_CHANNEL_CAPACITY};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppEvent {
     Command(AppCommand),
-    TerminalResize {
-        width: u16,
-        height: u16,
-    },
     GitRefreshRequested,
     #[cfg_attr(not(test), allow(dead_code))]
     GitStatusUpdated {
