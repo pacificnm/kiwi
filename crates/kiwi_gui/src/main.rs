@@ -1,10 +1,14 @@
 mod app;
 mod bootstrap;
+mod chrome;
 mod cli;
+mod runtime;
+mod services;
 mod theme;
 
 use bootstrap::{init, window_title, GuiBootstrapContext};
 use cli::Cli;
+use runtime::GuiRuntime;
 
 fn main() {
     let cli = Cli::parse_args();
@@ -23,6 +27,7 @@ fn main() {
 
 fn run_gui(context: GuiBootstrapContext) -> eframe::Result<()> {
     let title = window_title(&context.repo_root);
+    let runtime = GuiRuntime::build(context);
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(title)
@@ -35,7 +40,7 @@ fn run_gui(context: GuiBootstrapContext) -> eframe::Result<()> {
     eframe::run_native(
         "kiwi-gui",
         native_options,
-        Box::new(move |cc| Ok(Box::new(app::KiwiApp::new(cc, context)))),
+        Box::new(move |cc| Ok(Box::new(app::KiwiApp::new(cc, runtime)))),
     )
 }
 

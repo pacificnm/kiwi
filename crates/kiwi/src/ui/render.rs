@@ -290,7 +290,8 @@ mod tests {
     use crate::theme::loader::load_theme_with_capabilities;
 
     use crate::state::{reduce, AppEvent};
-    use crate::ui::status_bar::{compute_status_bar, display_width, format_status_line};
+    use crate::ui::status_bar::compute_status_bar;
+    use kiwi_core::status_bar::{display_width, format_status_line};
 
     use super::*;
 
