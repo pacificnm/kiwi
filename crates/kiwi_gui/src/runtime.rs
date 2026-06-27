@@ -1,7 +1,7 @@
 //! Post-bootstrap runtime: shared state, event channel, and background services.
 
 use kiwi_core::events::{AppEvent, EventChannel};
-use kiwi_core::reducer::file_tree_startup_effects;
+use kiwi_core::reducer::{file_tree_startup_effects, workspace_restore_effects};
 use kiwi_core::state::{AppState, ReduceView, ViewportMetrics};
 use kiwi_core::theme::TerminalCapabilities;
 use kiwi_core::watcher::RepoWatcher;
@@ -67,11 +67,15 @@ impl GuiRuntime {
 
         let file_tree_effects =
             file_tree_startup_effects(&mut ReduceView::from_app_state(&mut runtime.state));
+        let workspace_effects =
+            workspace_restore_effects(&mut ReduceView::from_app_state(&mut runtime.state));
+
         let mut ctx = ServiceContext {
             state: &mut runtime.state,
             events: &runtime.events,
         };
         execute_gui_effects(&mut ctx, file_tree_effects);
+        execute_gui_effects(&mut ctx, workspace_effects);
 
         if runtime.state.workspace_meta.is_git_repo {
             runtime.dispatch(AppEvent::GitRefreshRequested);

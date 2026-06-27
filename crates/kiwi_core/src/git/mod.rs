@@ -27,7 +27,7 @@ pub use repository::{
     GitRepoSnapshot,
 };
 pub use selection::{
-    ensure_git_selection, git_move_selection, git_row_at_viewport, git_select_row,
-    git_selected_row_index,
+    clamp_git_scroll, ensure_git_selection, git_move_selection, git_row_at_viewport,
+    git_select_row, git_selected_row_index,
 };
 pub use status::{GitFileEntry, GitFileStatus};

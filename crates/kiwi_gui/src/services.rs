@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use kiwi_core::diff::spawn_file_diff_load;
 use kiwi_core::editor::{
     launch_gui_editor, prepare_editor_launch, run_terminal_editor, EditorLaunchMode,
 };
@@ -45,6 +46,15 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
         SideEffect::LoadDirectoryChildren(path) => {
             spawn_directory_load(path, ctx.events.sender());
         }
+        SideEffect::LoadFileDiff { path, source } => {
+            spawn_file_diff_load(
+                ctx.state.repo_root.clone(),
+                path,
+                source,
+                ctx.state.config.diff.context_lines,
+                ctx.events.sender(),
+            );
+        }
         SideEffect::LoadPreviewFile(path) => {
             spawn_preview_load(
                 path,
@@ -72,7 +82,6 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
         | SideEffect::WriteShell(_)
         | SideEffect::WriteAgent(_)
         | SideEffect::ResizeShell { .. }
-        | SideEffect::LoadFileDiff { .. }
         | SideEffect::CancelSearch
         | SideEffect::RunSearch { .. }
         | SideEffect::CopyToClipboard(_)

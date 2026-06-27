@@ -11,7 +11,7 @@ mod viewer;
 
 pub use context::PanelContext;
 pub use layout::initial_dock_state;
-pub use panels::explorer_keyboard_action;
+pub use panels::{explorer_keyboard_action, git_diff_keyboard_action, git_status_keyboard_action};
 pub use persistence::{restore_dock, snapshot_from_dock};
 pub use tab::KiwiTab;
 

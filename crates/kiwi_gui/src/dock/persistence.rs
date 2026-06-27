@@ -4,6 +4,7 @@ use egui_dock::DockState;
 use kiwi_core::workspace::GuiWorkspaceSnapshot;
 
 use super::layout::initial_dock_state;
+use super::region::{find_leaf_for_region, push_tab_to_leaf};
 use super::tab::KiwiTab;
 
 /// Serialize the current dock tree for workspace storage.
@@ -26,22 +27,40 @@ pub fn snapshot_from_dock(dock: &DockState<KiwiTab>) -> GuiWorkspaceSnapshot {
 /// Restore dock tree from persisted GUI workspace data; falls back to factory layout.
 #[must_use]
 pub fn restore_dock(gui: &GuiWorkspaceSnapshot) -> DockState<KiwiTab> {
-    if gui.dock_layout.is_null() {
+    let dock = if gui.dock_layout.is_null() {
         eprintln!("workspace: missing gui dock layout; using default layout");
-        return initial_dock_state();
-    }
+        initial_dock_state()
+    } else {
+        match serde_json::from_value::<DockState<KiwiTab>>(gui.dock_layout.clone()) {
+            Ok(dock) if dock.iter_all_tabs().next().is_some() => dock,
+            Ok(_) => {
+                eprintln!("workspace: empty gui dock layout; using default layout");
+                initial_dock_state()
+            }
+            Err(err) => {
+                eprintln!("workspace: failed to restore gui dock layout: {err}");
+                initial_dock_state()
+            }
+        }
+    };
 
-    match serde_json::from_value::<DockState<KiwiTab>>(gui.dock_layout.clone()) {
-        Ok(dock) if dock.iter_all_tabs().next().is_some() => dock,
-        Ok(_) => {
-            eprintln!("workspace: empty gui dock layout; using default layout");
-            initial_dock_state()
+    ensure_factory_tabs(dock)
+}
+
+/// Re-open any factory-default tabs missing from a persisted layout (ADR-022).
+fn ensure_factory_tabs(mut dock: DockState<KiwiTab>) -> DockState<KiwiTab> {
+    for &tab in KiwiTab::factory_tabs() {
+        if dock.find_main_surface_tab(&tab).is_some() {
+            continue;
         }
-        Err(err) => {
-            eprintln!("workspace: failed to restore gui dock layout: {err}");
-            initial_dock_state()
+        let region = tab.default_region();
+        if let Some(node) = find_leaf_for_region(&dock, region) {
+            push_tab_to_leaf(dock.main_surface_mut(), node, tab);
+        } else {
+            dock.push_to_focused_leaf(tab);
         }
     }
+    dock
 }
 
 fn tab_storage_name(tab: KiwiTab) -> String {
@@ -76,6 +95,33 @@ mod tests {
         };
         let restored = restore_dock(&gui);
         assert_eq!(tabs_in_dock(&restored).len(), KiwiTab::factory_tabs().len());
+    }
+
+    #[test]
+    fn restored_layout_merges_missing_factory_tabs() {
+        use egui_dock::Node;
+
+        use crate::dock::region::{find_leaf_for_region, DockRegion};
+
+        let mut dock = initial_dock_state();
+        let left = find_leaf_for_region(&dock, DockRegion::Left).expect("left");
+        let gh_index = match &dock.main_surface()[left] {
+            Node::Leaf { tabs, .. } => tabs
+                .iter()
+                .position(|tab| *tab == KiwiTab::GitHubIssues)
+                .expect("gh tab"),
+            _ => panic!("left node is leaf"),
+        };
+        dock.remove_tab((
+            egui_dock::SurfaceIndex::main(),
+            left,
+            egui_dock::TabIndex(gh_index),
+        ));
+        assert!(dock.find_main_surface_tab(&KiwiTab::GitHubIssues).is_none());
+
+        let snapshot = snapshot_from_dock(&dock);
+        let restored = restore_dock(&snapshot);
+        assert!(restored.find_main_surface_tab(&KiwiTab::GitHubIssues).is_some());
     }
 
     #[test]

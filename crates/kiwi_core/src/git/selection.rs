@@ -4,6 +4,20 @@ use super::panel::{
     build_panel_rows, path_for_row, row_for_path, scroll_offset_for_row, selectable_row_indices,
 };
 
+pub fn clamp_git_scroll(state: &mut GitState, viewport_rows: usize, show_untracked: bool) {
+    let rows = build_panel_rows(&state.file_entries, show_untracked);
+    let total = rows.len();
+    if total == 0 {
+        state.scroll_offset = 0;
+        return;
+    }
+    let viewport = viewport_rows.max(1);
+    let max_offset = total.saturating_sub(viewport);
+    if state.scroll_offset > max_offset {
+        state.scroll_offset = max_offset;
+    }
+}
+
 pub fn ensure_git_selection(state: &mut GitState, show_untracked: bool) {
     let rows = build_panel_rows(&state.file_entries, show_untracked);
     let selectable = selectable_row_indices(&rows);
@@ -81,4 +95,24 @@ pub fn git_row_at_viewport(
 pub fn git_selected_row_index(state: &GitState, show_untracked: bool) -> Option<usize> {
     let path = state.selected_path.as_deref()?;
     row_for_path(&build_panel_rows(&state.file_entries, show_untracked), path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::git::{GitFileEntry, GitFileStatus};
+
+    #[test]
+    fn clamp_git_scroll_reduces_stale_offset() {
+        let mut state = GitState {
+            scroll_offset: 20,
+            file_entries: vec![GitFileEntry {
+                path: "src/main.rs".to_string(),
+                status: GitFileStatus::Modified,
+            }],
+            ..GitState::default()
+        };
+        clamp_git_scroll(&mut state, 5, true);
+        assert_eq!(state.scroll_offset, 0);
+    }
 }
