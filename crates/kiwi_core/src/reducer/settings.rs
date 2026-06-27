@@ -25,7 +25,7 @@ use crate::settings::{ensure_settings_selection, settings_move_selection, settin
 use crate::state::{PalettePrompt, ReduceView};
 use crate::theme::load_theme_with_capabilities;
 
-use crate::events::{AppCommand, AppEvent, SideEffect};
+use crate::events::{AppCommand, AppEvent, FsEffect, SideEffect};
 
 pub(super) fn reduce_open_editor(
     state: &mut ReduceView<'_>,
@@ -33,7 +33,7 @@ pub(super) fn reduce_open_editor(
     line: Option<u32>,
 ) -> Vec<SideEffect> {
     state.set_dirty();
-    vec![SideEffect::LaunchEditor { path, line }]
+    vec![SideEffect::Fs(FsEffect::LaunchEditor { path, line })]
 }
 
 pub(super) fn reduce_editor_launched(

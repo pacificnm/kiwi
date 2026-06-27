@@ -18,7 +18,10 @@ pub use domains::{
     ShellState, StatusBarState, WorkspaceMeta,
 };
 pub use domains::{LogLevel, PluginPaletteCommand, PluginsState};
-pub use event::{AppCommand, AppEvent, SideEffect};
+pub use event::{
+    AgentEffect, AppCommand, AppEvent, FsEffect, GitEffect, GitHubEffect, SearchEffect,
+    ShellEffect, SideEffect,
+};
 pub use reducer::agent_spawn_effects_if_needed;
 pub use reducer::file_tree_startup_effects;
 pub use reducer::reduce;

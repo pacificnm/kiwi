@@ -28,7 +28,7 @@ use crate::settings::{ensure_settings_selection, settings_move_selection, settin
 use crate::state::{PalettePrompt, ReduceView};
 use crate::theme::load_theme_with_capabilities;
 
-use crate::events::{AppCommand, AppEvent, SideEffect};
+use crate::events::{AppCommand, AppEvent, GitEffect, SideEffect};
 
 pub fn git_refresh_effects(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
     if !state.workspace_meta.is_git_repo || state.git.loading {
@@ -37,7 +37,7 @@ pub fn git_refresh_effects(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
 
     state.set_dirty();
     state.git.loading = true;
-    vec![SideEffect::SpawnGitRefresh]
+    vec![SideEffect::Git(GitEffect::SpawnRefresh)]
 }
 
 pub fn branch_list_access_effects(state: &mut ReduceView<'_>, force: bool) -> Vec<SideEffect> {
@@ -60,7 +60,7 @@ pub fn branch_list_access_effects(state: &mut ReduceView<'_>, force: bool) -> Ve
     state.branches.loading = true;
     state.branches.error = None;
     state.set_dirty();
-    vec![SideEffect::SpawnBranchList]
+    vec![SideEffect::Git(GitEffect::SpawnBranchList)]
 }
 
 pub fn branch_checkout_effects(state: &mut ReduceView<'_>, branch_name: String) -> Vec<SideEffect> {
@@ -75,7 +75,7 @@ pub fn branch_checkout_effects(state: &mut ReduceView<'_>, branch_name: String) 
     state.branches.checkout_loading = true;
     state.branches.checkout_error = None;
     state.set_dirty();
-    vec![SideEffect::SpawnBranchCheckout { name: branch_name }]
+    vec![SideEffect::Git(GitEffect::SpawnBranchCheckout { name: branch_name })]
 }
 
 pub(super) fn reduce_git_refresh_requested(state: &mut ReduceView<'_>) -> Vec<SideEffect> {

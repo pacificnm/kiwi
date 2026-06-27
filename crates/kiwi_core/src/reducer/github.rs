@@ -28,7 +28,7 @@ use crate::settings::{ensure_settings_selection, settings_move_selection, settin
 use crate::state::{PalettePrompt, ReduceView};
 use crate::theme::load_theme_with_capabilities;
 
-use crate::events::{AppCommand, AppEvent, SideEffect};
+use crate::events::{AgentEffect, AppCommand, AppEvent, GitHubEffect, SideEffect};
 
 pub fn github_refresh_effects(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
     state.set_dirty();
@@ -38,7 +38,7 @@ pub fn github_refresh_effects(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
     state.github.prs_loaded_at = None;
     clear_issue_detail_cache(state.github);
     clear_pr_detail_cache(state.github);
-    vec![SideEffect::SpawnGitHubAuthCheck]
+    vec![SideEffect::GitHub(GitHubEffect::SpawnAuthCheck)]
 }
 
 pub fn github_first_access_effects(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
@@ -52,7 +52,7 @@ pub fn github_first_access_effects(state: &mut ReduceView<'_>) -> Vec<SideEffect
 
     state.github.loading = true;
     state.set_dirty();
-    vec![SideEffect::SpawnGitHubAuthCheck]
+    vec![SideEffect::GitHub(GitHubEffect::SpawnAuthCheck)]
 }
 
 pub fn github_issue_list_effects(state: &mut ReduceView<'_>, force: bool) -> Vec<SideEffect> {
@@ -75,7 +75,7 @@ pub fn github_issue_list_effects(state: &mut ReduceView<'_>, force: bool) -> Vec
     state.github.issues_loading = true;
     state.github.issues_error = None;
     state.set_dirty();
-    vec![SideEffect::SpawnGitHubIssueList]
+    vec![SideEffect::GitHub(GitHubEffect::SpawnIssueList)]
 }
 
 pub fn github_pr_list_effects(state: &mut ReduceView<'_>, force: bool) -> Vec<SideEffect> {
@@ -98,7 +98,7 @@ pub fn github_pr_list_effects(state: &mut ReduceView<'_>, force: bool) -> Vec<Si
     state.github.prs_loading = true;
     state.github.prs_error = None;
     state.set_dirty();
-    vec![SideEffect::SpawnGitHubPrList]
+    vec![SideEffect::GitHub(GitHubEffect::SpawnPrList)]
 }
 
 pub fn github_pr_list_access_effects(state: &mut ReduceView<'_>, force: bool) -> Vec<SideEffect> {
@@ -182,7 +182,7 @@ pub(super) fn github_pr_detail_effects(
     state.github.pr_detail_number = Some(number);
     state.set_dirty();
 
-    vec![SideEffect::SpawnGitHubPrDetail { number }]
+    vec![SideEffect::GitHub(GitHubEffect::SpawnPrDetail { number })]
 }
 
 pub(super) fn selected_issue_number(github: &crate::state::GitHubState) -> Option<u32> {
@@ -221,7 +221,7 @@ pub(super) fn github_issue_detail_effects(
     state.github.issue_detail_number = Some(number);
     state.set_dirty();
 
-    vec![SideEffect::SpawnGitHubIssueDetail { number }]
+    vec![SideEffect::GitHub(GitHubEffect::SpawnIssueDetail { number })]
 }
 
 pub(super) fn github_surface_active(state: &ReduceView<'_>) -> bool {
@@ -686,7 +686,7 @@ pub(super) fn reduce_github_label_picker_apply(state: &mut ReduceView<'_>) -> Ve
     picker.applying = true;
     picker.error = None;
     state.set_dirty();
-    vec![SideEffect::SpawnGitHubIssueLabelApply { number, labels }]
+    vec![SideEffect::GitHub(GitHubEffect::SpawnIssueLabelApply { number, labels })]
 }
 
 pub(super) fn reduce_github_label_picker_cancel(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
@@ -880,7 +880,7 @@ pub(super) fn github_issue_create_branch_effects(
 
     state.github.issue_action_message = Some(format!("Creating branch for issue #{number}..."));
     state.set_dirty();
-    vec![SideEffect::SpawnGitHubIssueCreateBranch { number }]
+    vec![SideEffect::GitHub(GitHubEffect::SpawnIssueCreateBranch { number })]
 }
 
 pub(super) fn github_issue_comment_prompt_effects(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
@@ -929,7 +929,7 @@ pub(super) fn github_issue_label_picker_effects(state: &mut ReduceView<'_>) -> V
     let existing_labels = issue_labels_for_number(state.github, number);
     state.github.label_picker = Some(LabelPickerState::new(number, existing_labels));
     state.set_dirty();
-    vec![SideEffect::SpawnGitHubRepoLabels]
+    vec![SideEffect::GitHub(GitHubEffect::SpawnRepoLabels)]
 }
 
 pub(super) fn github_open_in_browser_effects(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
@@ -953,7 +953,7 @@ pub(super) fn github_open_in_browser_effects(state: &mut ReduceView<'_>) -> Vec<
     };
 
     state.set_dirty();
-    vec![SideEffect::SpawnGitHubOpenBrowser { target }]
+    vec![SideEffect::GitHub(GitHubEffect::SpawnOpenBrowser { target })]
 }
 
 pub(super) fn github_pr_merge_effects(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
@@ -984,7 +984,7 @@ pub(super) fn github_pr_merge_effects(state: &mut ReduceView<'_>) -> Vec<SideEff
 
     state.github.issue_action_message = Some(format!("Merging pull request #{number}..."));
     state.set_dirty();
-    vec![SideEffect::SpawnGitHubPrMerge { number }]
+    vec![SideEffect::GitHub(GitHubEffect::SpawnPrMerge { number })]
 }
 
 pub(super) fn issue_labels_for_number(github: &crate::state::GitHubState, number: u32) -> Vec<String> {
@@ -1057,7 +1057,7 @@ pub(super) fn github_send_prompt_to_agent_effects(
     state.set_dirty();
 
     let mut effects = agent_spawn_effects_if_needed(state);
-    effects.push(SideEffect::WriteAgent(prompt.into_bytes()));
+    effects.push(SideEffect::Agent(AgentEffect::Write(prompt.into_bytes())));
     effects
 }
 
@@ -1112,7 +1112,7 @@ pub(super) fn reduce_github_open_in_browser(state: &mut ReduceView<'_>) -> Vec<S
     };
 
     state.set_dirty();
-    vec![SideEffect::SpawnGitHubOpenBrowser { target }]
+    vec![SideEffect::GitHub(GitHubEffect::SpawnOpenBrowser { target })]
 }
 
 pub(super) fn reduce_github_open_browser_completed(

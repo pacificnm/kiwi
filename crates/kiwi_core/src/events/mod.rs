@@ -258,76 +258,77 @@ pub enum AppCommand {
 
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SideEffect {
-    Quit,
-    SpawnGitRefresh,
+pub enum GitEffect {
+    SpawnRefresh,
     SpawnBranchList,
-    SpawnBranchCheckout {
-        name: String,
-    },
+    SpawnBranchCheckout { name: String },
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GitHubEffect {
     #[cfg_attr(not(test), allow(dead_code))]
-    SpawnGitHubRefresh,
-    SpawnAgent(AgentId),
-    RestartAgent(AgentId),
-    WriteShell(Vec<u8>),
-    WriteAgent(Vec<u8>),
-    ResizeShell {
-        cols: u16,
-        rows: u16,
-    },
-    SaveWorkspace,
+    SpawnRefresh,
+    SpawnAuthCheck,
+    SpawnIssueList,
+    SpawnPrList,
+    SpawnIssueDetail { number: u32 },
+    SpawnPrDetail { number: u32 },
+    SpawnIssueComment { number: u32, body: String },
+    SpawnIssueCreateBranch { number: u32 },
+    SpawnRepoLabels,
+    SpawnIssueLabelApply { number: u32, labels: Vec<String> },
+    SpawnOpenBrowser { target: GitHubBrowserTarget },
+    SpawnPrCreate { request: PrCreateRequest },
+    SpawnPrMerge { number: u32 },
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShellEffect {
+    Write(Vec<u8>),
+    Resize { cols: u16, rows: u16 },
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AgentEffect {
+    Spawn(AgentId),
+    Restart(AgentId),
+    Write(Vec<u8>),
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FsEffect {
     LoadDirectoryChildren(PathBuf),
     LoadPreviewFile(PathBuf),
-    LoadFileDiff {
-        path: String,
-        source: DiffSource,
-    },
-    CancelSearch,
-    RunSearch {
-        mode: SearchMode,
-        query: String,
-        generation: u64,
-    },
+    LoadFileDiff { path: String, source: DiffSource },
     #[cfg_attr(not(test), allow(dead_code))]
-    LaunchEditor {
-        path: PathBuf,
-        line: Option<u32>,
-    },
+    LaunchEditor { path: PathBuf, line: Option<u32> },
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SearchEffect {
+    Cancel,
+    Run { mode: SearchMode, query: String, generation: u64 },
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SideEffect {
+    Quit,
+    SaveWorkspace,
+    PersistUserTheme { name: String },
     CopyToClipboard(String),
     PasteFromClipboard,
-    SpawnGitHubAuthCheck,
-    SpawnGitHubIssueList,
-    SpawnGitHubPrList,
-    SpawnGitHubIssueDetail {
-        number: u32,
-    },
-    SpawnGitHubPrDetail {
-        number: u32,
-    },
-    SpawnGitHubIssueComment {
-        number: u32,
-        body: String,
-    },
-    SpawnGitHubIssueCreateBranch {
-        number: u32,
-    },
-    SpawnGitHubRepoLabels,
-    SpawnGitHubIssueLabelApply {
-        number: u32,
-        labels: Vec<String>,
-    },
-    SpawnGitHubOpenBrowser {
-        target: GitHubBrowserTarget,
-    },
-    SpawnGitHubPrCreate {
-        request: PrCreateRequest,
-    },
-    SpawnGitHubPrMerge {
-        number: u32,
-    },
-    PersistUserTheme {
-        name: String,
-    },
+    Git(GitEffect),
+    GitHub(GitHubEffect),
+    Shell(ShellEffect),
+    Agent(AgentEffect),
+    Fs(FsEffect),
+    Search(SearchEffect),
 }
 
 impl AppCommand {

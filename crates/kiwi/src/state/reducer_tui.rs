@@ -2,7 +2,7 @@ use crate::clipboard::{pty_paste_bytes, resolve_copy_text, resolve_paste_target,
 use crate::commands::refresh_matches;
 use crate::layout::compute_layout;
 use crate::selection::{SelectionPane, TextPosition};
-use crate::state::{AppCommand, AppEvent, AppState, SideEffect};
+use crate::state::{AgentEffect, AppCommand, AppEvent, AppState, ShellEffect, SideEffect};
 use crate::theme::ThemePalette;
 
 use kiwi_core::navigation::{FocusTarget, LeftNavTab};
@@ -32,7 +32,7 @@ pub fn reduce_terminal_resize(state: &mut AppState, width: u16, height: u16) -> 
     }
 
     state.shell.apply_resize(cols, rows);
-    vec![SideEffect::ResizeShell { cols, rows }]
+    vec![SideEffect::Shell(ShellEffect::Resize { cols, rows })]
 }
 
 pub fn reduce_clipboard_copy(state: &mut AppState) -> Vec<SideEffect> {
@@ -81,8 +81,8 @@ pub fn reduce_paste_text(state: &mut AppState, text: String) -> Vec<SideEffect> 
             query.push_str(&text);
             core::reduce_command(&mut state.reduce_view(), AppCommand::SearchSetQuery(query))
         }
-        PasteTarget::ShellPty => vec![SideEffect::WriteShell(pty_paste_bytes(&text))],
-        PasteTarget::AgentPty => vec![SideEffect::WriteAgent(pty_paste_bytes(&text))],
+        PasteTarget::ShellPty => vec![SideEffect::Shell(ShellEffect::Write(pty_paste_bytes(&text)))],
+        PasteTarget::AgentPty => vec![SideEffect::Agent(AgentEffect::Write(pty_paste_bytes(&text)))],
         PasteTarget::Unsupported => {
             state
                 .notifications

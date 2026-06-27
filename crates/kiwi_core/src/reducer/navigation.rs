@@ -25,7 +25,7 @@ use crate::settings::{ensure_settings_selection, settings_move_selection, settin
 use crate::state::{PalettePrompt, ReduceView};
 use crate::theme::load_theme_with_capabilities;
 
-use crate::events::{AppCommand, AppEvent, SideEffect};
+use crate::events::{AppCommand, AppEvent, GitHubEffect, SideEffect};
 
 pub fn apply_navigation(state: &mut ReduceView<'_>, command: NavCommand) {
     let before = state.navigation.clone();
@@ -173,7 +173,7 @@ pub(super) fn reduce_palette_prompt_submit(
 
             state.navigation.focus = state.palette.close();
             state.set_dirty();
-            vec![SideEffect::SpawnGitHubIssueComment { number, body }]
+            vec![SideEffect::GitHub(GitHubEffect::SpawnIssueComment { number, body })]
         }
         PalettePrompt::GitHubPrCreate(prompt) => {
             let input = state.palette.input.clone();
@@ -187,7 +187,7 @@ pub(super) fn reduce_palette_prompt_submit(
                 Ok(PrCreatePromptAdvance::Submit(request)) => {
                     state.navigation.focus = state.palette.close();
                     state.set_dirty();
-                    vec![SideEffect::SpawnGitHubPrCreate { request }]
+                    vec![SideEffect::GitHub(GitHubEffect::SpawnPrCreate { request })]
                 }
                 Err(message) => {
                     state.notifications.show_toast(message);

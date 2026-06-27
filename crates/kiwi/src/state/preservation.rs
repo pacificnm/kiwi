@@ -15,7 +15,7 @@ mod tests {
         AgentState, BranchState, CommandPaletteState, DiffState, GitHubState, GitState,
         PluginsState, ShellState, StatusBarState, WorkspaceMeta,
     };
-    use crate::state::{reduce, AppEvent, AppState, SideEffect};
+    use crate::state::{reduce, AppEvent, AppState, FsEffect, SideEffect};
     use crate::theme::capabilities::TerminalCapabilities;
     use crate::theme::load_theme_with_capabilities;
 
@@ -240,7 +240,7 @@ mod tests {
                 paths: vec![root.join("src/new.rs")],
             },
         );
-        assert!(effects.contains(&SideEffect::LoadDirectoryChildren(root.join("src"))));
+        assert!(effects.contains(&SideEffect::Fs(FsEffect::LoadDirectoryChildren(root.join("src")))));
 
         reduce(
             &mut state,

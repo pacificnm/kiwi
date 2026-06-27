@@ -25,7 +25,7 @@ use crate::settings::{ensure_settings_selection, settings_move_selection, settin
 use crate::state::{PalettePrompt, ReduceView};
 use crate::theme::load_theme_with_capabilities;
 
-use crate::events::{AppCommand, AppEvent, SideEffect};
+use crate::events::{AgentEffect, AppCommand, AppEvent, SideEffect};
 
 pub fn agent_spawn_effects_if_needed(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
     if state.navigation.main_tab != MainTab::Agent {
@@ -57,7 +57,7 @@ pub(super) fn agent_spawn_effects_for(
     }
 
     state.set_dirty();
-    vec![SideEffect::SpawnAgent(id)]
+    vec![SideEffect::Agent(AgentEffect::Spawn(id))]
 }
 
 pub(super) fn reduce_agent_output(
@@ -102,7 +102,7 @@ pub(super) fn reduce_agent_new(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
     match state.agent_manager.create_agent(None, linked_issue) {
         Ok(id) => {
             state.set_dirty();
-            vec![SideEffect::SpawnAgent(id)]
+            vec![SideEffect::Agent(AgentEffect::Spawn(id))]
         }
         Err(crate::agent::AgentManagerError::AtCapacity) => {
             state
@@ -150,7 +150,7 @@ pub(super) fn reduce_agent_restart(state: &mut ReduceView<'_>) -> Vec<SideEffect
     }
 
     state.set_dirty();
-    vec![SideEffect::RestartAgent(state.agent_manager.active_id())]
+    vec![SideEffect::Agent(AgentEffect::Restart(state.agent_manager.active_id()))]
 }
 
 pub(super) fn reduce_agent_scroll(state: &mut ReduceView<'_>, delta: i32) -> Vec<SideEffect> {

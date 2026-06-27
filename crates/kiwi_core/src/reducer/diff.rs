@@ -27,7 +27,7 @@ use crate::settings::{ensure_settings_selection, settings_move_selection, settin
 use crate::state::{PalettePrompt, ReduceView};
 use crate::theme::load_theme_with_capabilities;
 
-use crate::events::{AppCommand, AppEvent, SideEffect};
+use crate::events::{AppCommand, AppEvent, FsEffect, SideEffect};
 
 pub fn diff_select_file_effects(state: &mut ReduceView<'_>, path: String) -> Vec<SideEffect> {
     if state.diff.selected_path.as_deref() == Some(path.as_str()) {
@@ -38,7 +38,7 @@ pub fn diff_select_file_effects(state: &mut ReduceView<'_>, path: String) -> Vec
     state.diff.begin_load(path.clone());
     sync_git_selection_for_path(state, &path);
     state.set_dirty();
-    vec![SideEffect::LoadFileDiff { path, source }]
+    vec![SideEffect::Fs(FsEffect::LoadFileDiff { path, source })]
 }
 
 pub(super) fn reduce_diff_select_file(state: &mut ReduceView<'_>, path: String) -> Vec<SideEffect> {
@@ -89,7 +89,7 @@ pub fn diff_set_source_effects(
     state.diff.source = source;
     state.diff.begin_source_reload();
     state.set_dirty();
-    vec![SideEffect::LoadFileDiff { path, source }]
+    vec![SideEffect::Fs(FsEffect::LoadFileDiff { path, source })]
 }
 
 pub(super) fn reduce_diff_set_source(

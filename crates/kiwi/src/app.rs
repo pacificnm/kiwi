@@ -39,7 +39,8 @@ use crate::shell::{encode_key, ShellOutputReader, ShellSession};
 use crate::shutdown;
 use crate::state::{
     agent_spawn_effects_if_needed, file_tree_startup_effects, reduce, terminal_resize_effects,
-    workspace_restore_effects, AppCommand, AppEvent, AppState, EventChannel, SideEffect,
+    workspace_restore_effects, AgentEffect, AppCommand, AppEvent, AppState, EventChannel,
+    FsEffect, GitEffect, GitHubEffect, SearchEffect, ShellEffect, SideEffect,
 };
 use crate::ui::{
     branch_interaction_at, draw_frame, file_tree_interaction_at, git_interaction_at,
@@ -466,194 +467,8 @@ impl App {
         for effect in effects {
             match effect {
                 SideEffect::Quit => return true,
-                SideEffect::SpawnGitRefresh => {
-                    if self.state.workspace_meta.is_git_repo {
-                        spawn_git_refresh(
-                            self.state.repo_root.clone(),
-                            self.state.config.git.show_untracked,
-                            self.events.sender(),
-                        );
-                    }
-                }
-                SideEffect::SpawnBranchList => {
-                    if self.state.workspace_meta.is_git_repo {
-                        spawn_branch_list(self.state.repo_root.clone(), self.events.sender());
-                    }
-                }
-                SideEffect::SpawnBranchCheckout { name } => {
-                    if self.state.workspace_meta.is_git_repo {
-                        spawn_branch_checkout(
-                            self.state.repo_root.clone(),
-                            name,
-                            self.events.sender(),
-                        );
-                    }
-                }
-                SideEffect::SpawnGitHubRefresh => {
-                    // Issue/PR list refresh will enqueue events in later milestones.
-                }
-                SideEffect::SpawnGitHubAuthCheck => {
-                    spawn_github_auth_check(
-                        self.state.config.github.command.clone(),
-                        self.events.sender(),
-                    );
-                }
-                SideEffect::SpawnGitHubIssueList => {
-                    spawn_github_issue_list_load(
-                        self.state.repo_root.clone(),
-                        self.state.config.github.command.clone(),
-                        self.events.sender(),
-                    );
-                }
-                SideEffect::SpawnGitHubPrList => {
-                    spawn_github_pr_list_load(
-                        self.state.repo_root.clone(),
-                        self.state.config.github.command.clone(),
-                        self.events.sender(),
-                    );
-                }
-                SideEffect::SpawnGitHubIssueDetail { number } => {
-                    spawn_github_issue_detail_load(
-                        self.state.repo_root.clone(),
-                        self.state.config.github.command.clone(),
-                        number,
-                        self.events.sender(),
-                    );
-                }
-                SideEffect::SpawnGitHubPrDetail { number } => {
-                    spawn_github_pr_detail_load(
-                        self.state.repo_root.clone(),
-                        self.state.config.github.command.clone(),
-                        number,
-                        self.events.sender(),
-                    );
-                }
-                SideEffect::SpawnGitHubIssueComment { number, body } => {
-                    spawn_github_issue_comment(
-                        self.state.repo_root.clone(),
-                        self.state.config.github.command.clone(),
-                        number,
-                        body,
-                        self.events.sender(),
-                    );
-                }
-                SideEffect::SpawnGitHubIssueCreateBranch { number } => {
-                    spawn_github_issue_create_branch(
-                        self.state.repo_root.clone(),
-                        self.state.config.github.command.clone(),
-                        number,
-                        self.events.sender(),
-                    );
-                }
-                SideEffect::SpawnGitHubRepoLabels => {
-                    spawn_github_repo_labels_load(
-                        self.state.repo_root.clone(),
-                        self.state.config.github.command.clone(),
-                        self.events.sender(),
-                    );
-                }
-                SideEffect::SpawnGitHubIssueLabelApply { number, labels } => {
-                    spawn_github_issue_label_apply(
-                        self.state.repo_root.clone(),
-                        self.state.config.github.command.clone(),
-                        number,
-                        labels,
-                        self.events.sender(),
-                    );
-                }
-                SideEffect::SpawnGitHubOpenBrowser { target } => {
-                    spawn_github_open_browser(
-                        self.state.repo_root.clone(),
-                        self.state.config.github.command.clone(),
-                        target,
-                        self.events.sender(),
-                    );
-                }
-                SideEffect::SpawnGitHubPrCreate { request } => {
-                    spawn_github_pr_create(
-                        self.state.repo_root.clone(),
-                        self.state.config.github.command.clone(),
-                        request,
-                        self.events.sender(),
-                    );
-                }
-                SideEffect::SpawnGitHubPrMerge { number } => {
-                    spawn_github_pr_merge(
-                        self.state.repo_root.clone(),
-                        self.state.config.github.command.clone(),
-                        number,
-                        self.events.sender(),
-                    );
-                }
-                SideEffect::SpawnAgent(id) => {
-                    self.spawn_agent(id);
-                }
-                SideEffect::RestartAgent(id) => {
-                    self.restart_agent(id);
-                }
-                SideEffect::WriteShell(data) => {
-                    if let Some(shell) = self.shell.as_mut() {
-                        let _ = shell.write(&data);
-                    }
-                }
-                SideEffect::WriteAgent(data) => {
-                    let id = self.state.agent_manager.active_id();
-                    let _ = self.agent_runtime.write(id, &data);
-                }
-                SideEffect::ResizeShell { cols, rows } => {
-                    if let Some(shell) = self.shell.as_mut() {
-                        let _ = shell.resize(cols, rows);
-                    }
-                }
                 SideEffect::SaveWorkspace => {
                     self.save_workspace();
-                }
-                SideEffect::LaunchEditor { path, line } => {
-                    self.pending_editor_launch = Some(PendingEditorLaunch { path, line });
-                }
-                SideEffect::LoadDirectoryChildren(path) => {
-                    spawn_directory_load(path, self.events.sender());
-                }
-                SideEffect::LoadPreviewFile(path) => {
-                    spawn_preview_load(
-                        path,
-                        self.state.config.preview.max_size_bytes,
-                        self.events.sender(),
-                    );
-                }
-                SideEffect::LoadFileDiff { path, source } => {
-                    spawn_file_diff_load(
-                        self.state.repo_root.clone(),
-                        path,
-                        source,
-                        self.state.config.diff.context_lines,
-                        self.events.sender(),
-                    );
-                }
-                SideEffect::CancelSearch => {
-                    self.search_cancel.cancel();
-                    self.search_debounce.clear();
-                    self.search_live_generation
-                        .store(self.state.search.generation, Ordering::Relaxed);
-                }
-                SideEffect::RunSearch {
-                    mode,
-                    query,
-                    generation,
-                } => {
-                    self.search_cancel.clear();
-                    spawn_search(
-                        SearchJob {
-                            mode,
-                            query,
-                            generation,
-                            repo_root: self.state.repo_root.clone(),
-                            rg_command: self.state.config.search.command.clone(),
-                        },
-                        self.events.sender(),
-                        self.search_live_generation.clone(),
-                        self.search_cancel.clone(),
-                    );
                 }
                 SideEffect::CopyToClipboard(text) => {
                     if let Err(err) = self.clipboard.write_text(&text) {
@@ -694,6 +509,206 @@ impl App {
                         }
                     }
                 }
+                SideEffect::Git(effect) => match effect {
+                    GitEffect::SpawnRefresh => {
+                        if self.state.workspace_meta.is_git_repo {
+                            spawn_git_refresh(
+                                self.state.repo_root.clone(),
+                                self.state.config.git.show_untracked,
+                                self.events.sender(),
+                            );
+                        }
+                    }
+                    GitEffect::SpawnBranchList => {
+                        if self.state.workspace_meta.is_git_repo {
+                            spawn_branch_list(self.state.repo_root.clone(), self.events.sender());
+                        }
+                    }
+                    GitEffect::SpawnBranchCheckout { name } => {
+                        if self.state.workspace_meta.is_git_repo {
+                            spawn_branch_checkout(
+                                self.state.repo_root.clone(),
+                                name,
+                                self.events.sender(),
+                            );
+                        }
+                    }
+                    _ => {}
+                },
+                SideEffect::GitHub(effect) => match effect {
+                    GitHubEffect::SpawnRefresh => {
+                        // Issue/PR list refresh will enqueue events in later milestones.
+                    }
+                    GitHubEffect::SpawnAuthCheck => {
+                        spawn_github_auth_check(
+                            self.state.config.github.command.clone(),
+                            self.events.sender(),
+                        );
+                    }
+                    GitHubEffect::SpawnIssueList => {
+                        spawn_github_issue_list_load(
+                            self.state.repo_root.clone(),
+                            self.state.config.github.command.clone(),
+                            self.events.sender(),
+                        );
+                    }
+                    GitHubEffect::SpawnPrList => {
+                        spawn_github_pr_list_load(
+                            self.state.repo_root.clone(),
+                            self.state.config.github.command.clone(),
+                            self.events.sender(),
+                        );
+                    }
+                    GitHubEffect::SpawnIssueDetail { number } => {
+                        spawn_github_issue_detail_load(
+                            self.state.repo_root.clone(),
+                            self.state.config.github.command.clone(),
+                            number,
+                            self.events.sender(),
+                        );
+                    }
+                    GitHubEffect::SpawnPrDetail { number } => {
+                        spawn_github_pr_detail_load(
+                            self.state.repo_root.clone(),
+                            self.state.config.github.command.clone(),
+                            number,
+                            self.events.sender(),
+                        );
+                    }
+                    GitHubEffect::SpawnIssueComment { number, body } => {
+                        spawn_github_issue_comment(
+                            self.state.repo_root.clone(),
+                            self.state.config.github.command.clone(),
+                            number,
+                            body,
+                            self.events.sender(),
+                        );
+                    }
+                    GitHubEffect::SpawnIssueCreateBranch { number } => {
+                        spawn_github_issue_create_branch(
+                            self.state.repo_root.clone(),
+                            self.state.config.github.command.clone(),
+                            number,
+                            self.events.sender(),
+                        );
+                    }
+                    GitHubEffect::SpawnRepoLabels => {
+                        spawn_github_repo_labels_load(
+                            self.state.repo_root.clone(),
+                            self.state.config.github.command.clone(),
+                            self.events.sender(),
+                        );
+                    }
+                    GitHubEffect::SpawnIssueLabelApply { number, labels } => {
+                        spawn_github_issue_label_apply(
+                            self.state.repo_root.clone(),
+                            self.state.config.github.command.clone(),
+                            number,
+                            labels,
+                            self.events.sender(),
+                        );
+                    }
+                    GitHubEffect::SpawnOpenBrowser { target } => {
+                        spawn_github_open_browser(
+                            self.state.repo_root.clone(),
+                            self.state.config.github.command.clone(),
+                            target,
+                            self.events.sender(),
+                        );
+                    }
+                    GitHubEffect::SpawnPrCreate { request } => {
+                        spawn_github_pr_create(
+                            self.state.repo_root.clone(),
+                            self.state.config.github.command.clone(),
+                            request,
+                            self.events.sender(),
+                        );
+                    }
+                    GitHubEffect::SpawnPrMerge { number } => {
+                        spawn_github_pr_merge(
+                            self.state.repo_root.clone(),
+                            self.state.config.github.command.clone(),
+                            number,
+                            self.events.sender(),
+                        );
+                    }
+                    _ => {}
+                },
+                SideEffect::Shell(effect) => match effect {
+                    ShellEffect::Write(data) => {
+                        if let Some(shell) = self.shell.as_mut() {
+                            let _ = shell.write(&data);
+                        }
+                    }
+                    ShellEffect::Resize { cols, rows } => {
+                        if let Some(shell) = self.shell.as_mut() {
+                            let _ = shell.resize(cols, rows);
+                        }
+                    }
+                    _ => {}
+                },
+                SideEffect::Agent(effect) => match effect {
+                    AgentEffect::Spawn(id) => {
+                        self.spawn_agent(id);
+                    }
+                    AgentEffect::Restart(id) => {
+                        self.restart_agent(id);
+                    }
+                    AgentEffect::Write(data) => {
+                        let id = self.state.agent_manager.active_id();
+                        let _ = self.agent_runtime.write(id, &data);
+                    }
+                    _ => {}
+                },
+                SideEffect::Fs(effect) => match effect {
+                    FsEffect::LoadDirectoryChildren(path) => {
+                        spawn_directory_load(path, self.events.sender());
+                    }
+                    FsEffect::LoadPreviewFile(path) => {
+                        spawn_preview_load(
+                            path,
+                            self.state.config.preview.max_size_bytes,
+                            self.events.sender(),
+                        );
+                    }
+                    FsEffect::LoadFileDiff { path, source } => {
+                        spawn_file_diff_load(
+                            self.state.repo_root.clone(),
+                            path,
+                            source,
+                            self.state.config.diff.context_lines,
+                            self.events.sender(),
+                        );
+                    }
+                    FsEffect::LaunchEditor { path, line } => {
+                        self.pending_editor_launch = Some(PendingEditorLaunch { path, line });
+                    }
+                    _ => {}
+                },
+                SideEffect::Search(effect) => match effect {
+                    SearchEffect::Cancel => {
+                        self.search_cancel.cancel();
+                        self.search_debounce.clear();
+                        self.search_live_generation
+                            .store(self.state.search.generation, Ordering::Relaxed);
+                    }
+                    SearchEffect::Run { mode, query, generation } => {
+                        self.search_cancel.clear();
+                        spawn_search(
+                            SearchJob {
+                                mode,
+                                query,
+                                generation,
+                                repo_root: self.state.repo_root.clone(),
+                                rg_command: self.state.config.search.command.clone(),
+                            },
+                            self.events.sender(),
+                            self.search_live_generation.clone(),
+                            self.search_cancel.clone(),
+                        );
+                    }
+                    _ => {}
+                },
                 _ => {}
             }
         }

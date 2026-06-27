@@ -25,7 +25,7 @@ use crate::settings::{ensure_settings_selection, settings_move_selection, settin
 use crate::state::{PalettePrompt, ReduceView};
 use crate::theme::load_theme_with_capabilities;
 
-use crate::events::{AppCommand, AppEvent, SideEffect};
+use crate::events::{AgentEffect, AppCommand, AppEvent, FsEffect, GitEffect, GitHubEffect, SearchEffect, ShellEffect, SideEffect};
 
 
 mod github;
@@ -357,10 +357,10 @@ pub fn reduce_command(state: &mut ReduceView<'_>, command: AppCommand) -> Vec<Si
             reduce_github_list_action(state, target, action)
         }
         AppCommand::GitHubOpenInBrowser => reduce_github_open_in_browser(state),
-        AppCommand::ShellWrite(data) => vec![SideEffect::WriteShell(data)],
+        AppCommand::ShellWrite(data) => vec![SideEffect::Shell(ShellEffect::Write(data))],
         AppCommand::ShellScroll(delta) => reduce_shell_scroll(state, delta),
         AppCommand::ShellScrollLines(lines) => reduce_shell_scroll_lines(state, lines),
-        AppCommand::AgentWrite(data) => vec![SideEffect::WriteAgent(data)],
+        AppCommand::AgentWrite(data) => vec![SideEffect::Agent(AgentEffect::Write(data))],
         AppCommand::AgentScroll(delta) => reduce_agent_scroll(state, delta),
         AppCommand::AgentScrollLines(lines) => reduce_agent_scroll_lines(state, lines),
         AppCommand::AgentRestart => reduce_agent_restart(state),
@@ -705,7 +705,7 @@ mod tests {
         let mut state = test_state();
         state.workspace_meta.is_git_repo = true;
         let effects = run_reduce(&mut state, AppEvent::GitRefreshRequested);
-        assert!(effects.contains(&SideEffect::SpawnGitRefresh));
+        assert!(effects.contains(&SideEffect::Git(GitEffect::SpawnRefresh)));
         assert!(state.git.loading);
     }
 
@@ -773,7 +773,7 @@ mod tests {
             ))),
         );
 
-        assert!(effects.contains(&SideEffect::SpawnBranchList));
+        assert!(effects.contains(&SideEffect::Git(GitEffect::SpawnBranchList)));
         assert!(state.branches.loading);
     }
 
@@ -800,7 +800,7 @@ mod tests {
         );
 
         assert!(effects.iter().any(
-            |effect| matches!(effect, SideEffect::SpawnBranchCheckout { name } if name == "dev")
+            |effect| matches!(effect, SideEffect::Git(GitEffect::SpawnBranchCheckout { name }) if name == "dev")
         ));
         assert!(state.branches.checkout_loading);
     }
@@ -884,8 +884,8 @@ mod tests {
             },
         );
 
-        assert!(effects.contains(&SideEffect::SpawnGitRefresh));
-        assert!(effects.contains(&SideEffect::SpawnBranchList));
+        assert!(effects.contains(&SideEffect::Git(GitEffect::SpawnRefresh)));
+        assert!(effects.contains(&SideEffect::Git(GitEffect::SpawnBranchList)));
         assert!(!state.branches.checkout_loading);
         assert!(state.branches.checkout_error.is_none());
     }
@@ -941,7 +941,7 @@ mod tests {
         assert_eq!(
             effects
                 .iter()
-                .filter(|effect| **effect == SideEffect::SpawnGitRefresh)
+                .filter(|effect| **effect == SideEffect::Git(GitEffect::SpawnRefresh))
                 .count(),
             1
         );
@@ -961,7 +961,7 @@ mod tests {
             },
         );
 
-        assert!(effects.contains(&SideEffect::SpawnGitRefresh));
+        assert!(effects.contains(&SideEffect::Git(GitEffect::SpawnRefresh)));
         assert!(state.git.loading);
     }
 
@@ -978,7 +978,7 @@ mod tests {
             },
         );
 
-        assert!(effects.contains(&SideEffect::SpawnGitRefresh));
+        assert!(effects.contains(&SideEffect::Git(GitEffect::SpawnRefresh)));
         assert!(state.git.loading);
     }
 
@@ -995,7 +995,7 @@ mod tests {
             },
         );
 
-        assert!(!effects.contains(&SideEffect::SpawnGitRefresh));
+        assert!(!effects.contains(&SideEffect::Git(GitEffect::SpawnRefresh)));
     }
 
     #[test]
@@ -1012,7 +1012,7 @@ mod tests {
             },
         );
 
-        assert!(!effects.contains(&SideEffect::SpawnGitRefresh));
+        assert!(!effects.contains(&SideEffect::Git(GitEffect::SpawnRefresh)));
         assert!(state.git.loading);
     }
 
@@ -1042,8 +1042,8 @@ mod tests {
             },
         );
 
-        assert!(first.contains(&SideEffect::SpawnGitRefresh));
-        assert!(!second.contains(&SideEffect::SpawnGitRefresh));
+        assert!(first.contains(&SideEffect::Git(GitEffect::SpawnRefresh)));
+        assert!(!second.contains(&SideEffect::Git(GitEffect::SpawnRefresh)));
         assert!(state.git.loading);
     }
 
@@ -1053,7 +1053,7 @@ mod tests {
         state.workspace_meta.is_git_repo = true;
         let effects = run_reduce(&mut state, AppEvent::Command(AppCommand::RequestGitRefresh));
 
-        assert!(effects.contains(&SideEffect::SpawnGitRefresh));
+        assert!(effects.contains(&SideEffect::Git(GitEffect::SpawnRefresh)));
         assert!(state.git.loading);
     }
 
@@ -1062,7 +1062,7 @@ mod tests {
         let mut state = test_state();
         state.workspace_meta.is_git_repo = true;
         let effects = run_reduce(&mut state, AppEvent::Command(AppCommand::GitRefresh));
-        assert!(effects.contains(&SideEffect::SpawnGitRefresh));
+        assert!(effects.contains(&SideEffect::Git(GitEffect::SpawnRefresh)));
     }
 
     #[test]
@@ -1079,7 +1079,7 @@ mod tests {
         assert!(
             effects
                 .iter()
-                .any(|effect| matches!(effect, SideEffect::LoadFileDiff { path, .. } if path == "src/main.rs"))
+                .any(|effect| matches!(effect, SideEffect::Fs(FsEffect::LoadFileDiff { path, .. }) if path == "src/main.rs"))
         );
     }
 
@@ -1143,7 +1143,7 @@ mod tests {
         assert!(state.diff.loading);
         assert!(effects.iter().any(|effect| matches!(
             effect,
-            SideEffect::LoadFileDiff { path, source }
+            SideEffect::Fs(FsEffect::LoadFileDiff { path, source })
                 if path == "src/main.rs" && *source == crate::diff::DiffSource::Staged
         )));
     }
@@ -1195,7 +1195,7 @@ mod tests {
         assert_eq!(state.git.selected_path.as_deref(), Some("b.rs"));
         assert!(state.diff.loading);
         assert!(effects.iter().any(
-            |effect| matches!(effect, SideEffect::LoadFileDiff { path, .. } if path == "b.rs")
+            |effect| matches!(effect, SideEffect::Fs(FsEffect::LoadFileDiff { path, .. }) if path == "b.rs")
         ));
     }
 
@@ -1258,7 +1258,7 @@ mod tests {
         );
 
         assert!(state.github.loading);
-        assert!(effects.contains(&SideEffect::SpawnGitHubAuthCheck));
+        assert!(effects.contains(&SideEffect::GitHub(GitHubEffect::SpawnAuthCheck)));
     }
 
     #[test]
@@ -1296,7 +1296,7 @@ mod tests {
 
         assert!(!state.github.auth_checked);
         assert!(state.github.loading);
-        assert!(effects.contains(&SideEffect::SpawnGitHubAuthCheck));
+        assert!(effects.contains(&SideEffect::GitHub(GitHubEffect::SpawnAuthCheck)));
     }
 
     #[test]
@@ -1320,7 +1320,7 @@ mod tests {
 
         assert!(state.github.auth_ok);
         assert!(state.github.issues_loading);
-        assert!(effects.contains(&SideEffect::SpawnGitHubIssueList));
+        assert!(effects.contains(&SideEffect::GitHub(GitHubEffect::SpawnIssueList)));
     }
 
     #[test]
@@ -1344,7 +1344,7 @@ mod tests {
 
         assert!(state.github.auth_ok);
         assert!(state.github.prs_loading);
-        assert!(effects.contains(&SideEffect::SpawnGitHubPrList));
+        assert!(effects.contains(&SideEffect::GitHub(GitHubEffect::SpawnPrList)));
     }
 
     #[test]
@@ -1464,7 +1464,7 @@ mod tests {
         );
 
         let has_pr_detail = effects.iter().any(|e| {
-            matches!(e, SideEffect::SpawnGitHubPrDetail { .. })
+            matches!(e, SideEffect::GitHub(GitHubEffect::SpawnPrDetail { .. }))
         });
         assert!(!has_pr_detail, "issues-loaded must not spawn PR detail effects");
     }
@@ -1563,7 +1563,7 @@ mod tests {
         assert_eq!(state.navigation.main_tab, MainTab::Issues);
         assert_eq!(state.navigation.focus, FocusTarget::Main);
         assert!(state.github.issue_detail_loading);
-        assert!(effects.contains(&SideEffect::SpawnGitHubIssueDetail { number: 42 }));
+        assert!(effects.contains(&SideEffect::GitHub(GitHubEffect::SpawnIssueDetail { number: 42 })));
     }
 
     #[test]
@@ -1646,7 +1646,7 @@ mod tests {
         assert_eq!(state.navigation.main_tab, MainTab::Prs);
         assert_eq!(state.navigation.focus, FocusTarget::Main);
         assert!(state.github.pr_detail_loading);
-        assert!(effects.contains(&SideEffect::SpawnGitHubPrDetail { number: 60 }));
+        assert!(effects.contains(&SideEffect::GitHub(GitHubEffect::SpawnPrDetail { number: 60 })));
     }
 
     #[test]
@@ -1797,7 +1797,7 @@ mod tests {
         assert!(state.github.context_menu.is_none());
         assert!(effects
             .iter()
-            .any(|effect| matches!(effect, SideEffect::SpawnGitHubPrMerge { number: 17 })));
+            .any(|effect| matches!(effect, SideEffect::GitHub(GitHubEffect::SpawnPrMerge { number: 17 }))));
     }
 
     #[test]
@@ -1840,7 +1840,7 @@ mod tests {
         assert_eq!(state.navigation.main_tab, MainTab::Agent);
         assert!(effects.iter().any(|effect| matches!(
             effect,
-            SideEffect::WriteAgent(bytes) if std::str::from_utf8(bytes).is_ok_and(|text| text.contains("#42"))
+            SideEffect::Agent(AgentEffect::Write(bytes)) if std::str::from_utf8(bytes).is_ok_and(|text| text.contains("#42"))
         )));
     }
 
@@ -1869,7 +1869,7 @@ mod tests {
         assert_eq!(state.github.selected_issue, Some(9));
         assert!(effects.iter().any(|effect| matches!(
             effect,
-            SideEffect::SpawnGitHubIssueCreateBranch { number: 9 }
+            SideEffect::GitHub(GitHubEffect::SpawnIssueCreateBranch { number: 9 })
         )));
     }
 
@@ -1901,7 +1901,7 @@ mod tests {
         assert_eq!(state.navigation.left_tab, LeftNavTab::Search);
         assert!(effects.iter().any(|effect| matches!(
             effect,
-            SideEffect::SpawnGitHubIssueDetail { number: 3 }
+            SideEffect::GitHub(GitHubEffect::SpawnIssueDetail { number: 3 })
         )));
     }
 
@@ -1927,7 +1927,7 @@ mod tests {
         assert!(effects.iter().any(|effect| {
             matches!(
                 effect,
-                SideEffect::SpawnGitHubIssueComment { number: 42, body }
+                SideEffect::GitHub(GitHubEffect::SpawnIssueComment { number: 42, body })
                 if body == "Looks good"
             )
         }));
@@ -1960,8 +1960,8 @@ mod tests {
 
         assert!(state.github.issue_action_message.is_some());
         assert!(state.github.issue_detail.is_none());
-        assert!(effects.contains(&SideEffect::SpawnGitHubIssueList));
-        assert!(effects.contains(&SideEffect::SpawnGitHubIssueDetail { number: 42 }));
+        assert!(effects.contains(&SideEffect::GitHub(GitHubEffect::SpawnIssueList)));
+        assert!(effects.contains(&SideEffect::GitHub(GitHubEffect::SpawnIssueDetail { number: 42 })));
     }
 
     #[test]
@@ -1992,7 +1992,7 @@ mod tests {
             state.github.issue_action_message.as_deref(),
             Some("58-create-branch-from-issue")
         );
-        assert!(effects.contains(&SideEffect::SpawnGitRefresh));
+        assert!(effects.contains(&SideEffect::Git(GitEffect::SpawnRefresh)));
     }
 
     #[test]
@@ -2034,7 +2034,7 @@ mod tests {
         assert!(effects.iter().any(|effect| {
             matches!(
                 effect,
-                SideEffect::SpawnGitHubIssueLabelApply { number: 9, labels }
+                SideEffect::GitHub(GitHubEffect::SpawnIssueLabelApply { number: 9, labels })
                 if labels == &vec!["docs".to_string()]
             )
         }));
@@ -2057,9 +2057,9 @@ mod tests {
         assert!(effects.iter().any(|effect| {
             matches!(
                 effect,
-                SideEffect::SpawnGitHubOpenBrowser {
+                SideEffect::GitHub(GitHubEffect::SpawnOpenBrowser {
                     target: crate::github::GitHubBrowserTarget::Issue(42)
-                }
+                })
             )
         }));
     }
@@ -2101,7 +2101,7 @@ mod tests {
         assert!(effects.iter().any(|effect| {
             matches!(
                 effect,
-                SideEffect::SpawnGitHubPrCreate { request }
+                SideEffect::GitHub(GitHubEffect::SpawnPrCreate { request })
                 if *request == PrCreateRequest {
                     title: "Fix login".to_string(),
                     body: "Fixes #42".to_string(),
@@ -2157,7 +2157,7 @@ mod tests {
             state.github.issue_action_message.as_deref(),
             Some("Merged pull request #17")
         );
-        assert!(effects.contains(&SideEffect::SpawnGitHubPrList));
+        assert!(effects.contains(&SideEffect::GitHub(GitHubEffect::SpawnPrList)));
     }
 
     #[test]
@@ -2215,7 +2215,7 @@ mod tests {
         let effects = run_reduce(&mut state, AppEvent::Command(AppCommand::AgentNew));
         assert_eq!(state.agent_manager.session_count(), 2);
         assert_eq!(effects.len(), 1);
-        assert!(matches!(effects[0], SideEffect::SpawnAgent(_)));
+        assert!(matches!(effects[0], SideEffect::Agent(AgentEffect::Spawn(_))));
     }
 
     #[test]
@@ -2266,7 +2266,7 @@ mod tests {
 
         let effects = run_reduce(&mut state, AppEvent::Command(AppCommand::AgentCyclePrev));
         assert_eq!(state.agent_manager.active_id(), second);
-        assert!(effects.contains(&SideEffect::SpawnAgent(second)));
+        assert!(effects.contains(&SideEffect::Agent(AgentEffect::Spawn(second))));
     }
 
     #[test]
@@ -2285,7 +2285,7 @@ mod tests {
             AppEvent::Command(AppCommand::AgentSetActive(second)),
         );
         assert_eq!(state.agent_manager.active_id(), second);
-        assert!(effects.contains(&SideEffect::SpawnAgent(second)));
+        assert!(effects.contains(&SideEffect::Agent(AgentEffect::Spawn(second))));
     }
 
     #[test]
@@ -2294,7 +2294,7 @@ mod tests {
         state.navigation.main_tab = MainTab::Agent;
         state.active_agent_mut().spawned = false;
         let effects = agent_spawn_effects_if_needed(&mut ReduceView::from_app_state(&mut state));
-        assert!(effects.contains(&SideEffect::SpawnAgent(AgentId::FIRST)));
+        assert!(effects.contains(&SideEffect::Agent(AgentEffect::Spawn(AgentId::FIRST))));
     }
 
     #[test]
@@ -2315,7 +2315,7 @@ mod tests {
                 MainTab::Agent,
             ))),
         );
-        assert!(effects.contains(&SideEffect::SpawnAgent(AgentId::FIRST)));
+        assert!(effects.contains(&SideEffect::Agent(AgentEffect::Spawn(AgentId::FIRST))));
     }
 
     #[test]
@@ -2392,7 +2392,7 @@ mod tests {
         let mut state = test_state();
         state.navigation.main_tab = MainTab::Agent;
         let effects = run_reduce(&mut state, AppEvent::Command(AppCommand::AgentRestart));
-        assert!(effects.contains(&SideEffect::RestartAgent(AgentId::FIRST)));
+        assert!(effects.contains(&SideEffect::Agent(AgentEffect::Restart(AgentId::FIRST))));
         assert!(state.dirty);
     }
 
@@ -2429,7 +2429,7 @@ mod tests {
             &mut state,
             AppEvent::Command(AppCommand::ShellWrite(b"ls\n".to_vec())),
         );
-        assert!(effects.contains(&SideEffect::WriteShell(b"ls\n".to_vec())));
+        assert!(effects.contains(&SideEffect::Shell(ShellEffect::Write(b"ls\n".to_vec()))));
     }
 
     #[test]
@@ -2439,7 +2439,7 @@ mod tests {
             &mut state,
             AppEvent::Command(AppCommand::AgentWrite(b"hello\n".to_vec())),
         );
-        assert!(effects.contains(&SideEffect::WriteAgent(b"hello\n".to_vec())));
+        assert!(effects.contains(&SideEffect::Agent(AgentEffect::Write(b"hello\n".to_vec()))));
     }
 
     #[test]
@@ -2562,7 +2562,7 @@ mod tests {
             AppEvent::Command(AppCommand::PaletteExecuteSelected),
         );
 
-        assert!(effects.contains(&SideEffect::SpawnGitRefresh));
+        assert!(effects.contains(&SideEffect::Git(GitEffect::SpawnRefresh)));
         assert!(state.git.loading);
         assert!(!state.palette.open);
     }
@@ -2618,7 +2618,7 @@ mod tests {
 
         assert!(state.file_tree.nodes[&root].expanded);
         assert!(state.file_tree.loading.contains(&root));
-        assert!(effects.contains(&SideEffect::LoadDirectoryChildren(root)));
+        assert!(effects.contains(&SideEffect::Fs(FsEffect::LoadDirectoryChildren(root))));
     }
 
     #[test]
@@ -2643,7 +2643,7 @@ mod tests {
         let effects = workspace_expand_pending_effects(&mut ReduceView::from_app_state(&mut state));
 
         assert!(state.file_tree.nodes[&src].expanded);
-        assert!(effects.contains(&SideEffect::LoadDirectoryChildren(src)));
+        assert!(effects.contains(&SideEffect::Fs(FsEffect::LoadDirectoryChildren(src))));
         assert!(state.workspace_meta.pending_expanded_paths.is_empty());
     }
 
@@ -2707,7 +2707,7 @@ mod tests {
             &mut state,
             AppEvent::Command(AppCommand::FileTreeExpand(root.clone())),
         );
-        assert!(effects.contains(&SideEffect::LoadDirectoryChildren(root)));
+        assert!(effects.contains(&SideEffect::Fs(FsEffect::LoadDirectoryChildren(root))));
         assert!(state.file_tree.loading.contains(&state.file_tree.root));
     }
 
@@ -2780,7 +2780,7 @@ mod tests {
                 line: None,
             }),
         );
-        assert!(effects.contains(&SideEffect::LoadPreviewFile(path)));
+        assert!(effects.contains(&SideEffect::Fs(FsEffect::LoadPreviewFile(path))));
         assert_eq!(state.navigation.main_tab, MainTab::Preview);
         assert_eq!(state.navigation.focus, FocusTarget::Main);
         assert!(state.preview.loading);
@@ -2867,7 +2867,7 @@ mod tests {
             }),
         );
 
-        assert!(effects.contains(&SideEffect::LoadPreviewFile(path)));
+        assert!(effects.contains(&SideEffect::Fs(FsEffect::LoadPreviewFile(path))));
         assert_eq!(state.navigation.main_tab, MainTab::Preview);
     }
 
@@ -2894,7 +2894,7 @@ mod tests {
             &mut state,
             AppEvent::Command(AppCommand::SearchSetQuery("main".to_string())),
         );
-        assert!(effects.contains(&SideEffect::CancelSearch));
+        assert!(effects.contains(&SideEffect::Search(SearchEffect::Cancel)));
         assert!(state.search.debounce_scheduled);
         assert_eq!(state.search.generation, 1);
     }
@@ -2907,11 +2907,11 @@ mod tests {
         let effects = run_reduce(&mut state, AppEvent::Command(AppCommand::SearchExecute));
         assert!(effects.iter().any(|effect| matches!(
             effect,
-            SideEffect::RunSearch {
+            SideEffect::Search(SearchEffect::Run {
                 mode: SearchMode::Files,
                 query,
                 generation: 1,
-            } if query == "main"
+            }) if query == "main"
         )));
         assert!(state.search.running);
     }
@@ -2938,7 +2938,7 @@ mod tests {
         state.search.query = "abc".to_string();
         state.search.running = true;
         let effects = run_reduce(&mut state, AppEvent::Command(AppCommand::SearchClear));
-        assert!(effects.contains(&SideEffect::CancelSearch));
+        assert!(effects.contains(&SideEffect::Search(SearchEffect::Cancel)));
         assert!(state.search.query.is_empty());
         assert!(!state.search.running);
     }
@@ -2954,7 +2954,7 @@ mod tests {
                 line: None,
             }),
         );
-        assert!(effects.contains(&SideEffect::LaunchEditor { path, line: None }));
+        assert!(effects.contains(&SideEffect::Fs(FsEffect::LaunchEditor { path, line: None })));
     }
 
     #[test]
@@ -3034,7 +3034,7 @@ mod tests {
             },
         );
 
-        assert!(effects.contains(&SideEffect::LoadDirectoryChildren(root.join("src"))));
+        assert!(effects.contains(&SideEffect::Fs(FsEffect::LoadDirectoryChildren(root.join("src")))));
         assert!(!state.file_tree.nodes[&root.join("src")].children_loaded);
         assert_eq!(state.file_tree.selected, Some(root.join("src/main.rs")));
     }
@@ -3079,7 +3079,7 @@ mod tests {
             },
         );
 
-        assert!(effects.contains(&SideEffect::LoadDirectoryChildren(root.join("src"))));
+        assert!(effects.contains(&SideEffect::Fs(FsEffect::LoadDirectoryChildren(root.join("src")))));
         assert!(!state
             .file_tree
             .nodes
@@ -3101,7 +3101,7 @@ mod tests {
             },
         );
 
-        assert!(effects.contains(&SideEffect::LoadPreviewFile(path)));
+        assert!(effects.contains(&SideEffect::Fs(FsEffect::LoadPreviewFile(path))));
         assert!(state.preview.loading);
         assert!(state.preview.preserve_scroll_on_load);
         assert_eq!(state.preview.scroll_offset, 5);
@@ -3151,7 +3151,7 @@ mod tests {
             },
         );
 
-        assert!(effects.contains(&SideEffect::LoadPreviewFile(file)));
+        assert!(effects.contains(&SideEffect::Fs(FsEffect::LoadPreviewFile(file))));
         let _ = fs::remove_dir_all(temp);
     }
 

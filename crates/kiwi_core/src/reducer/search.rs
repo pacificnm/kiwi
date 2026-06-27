@@ -25,12 +25,12 @@ use crate::settings::{ensure_settings_selection, settings_move_selection, settin
 use crate::state::{PalettePrompt, ReduceView};
 use crate::theme::load_theme_with_capabilities;
 
-use crate::events::{AppCommand, AppEvent, SideEffect};
+use crate::events::{AppCommand, AppEvent, SearchEffect, SideEffect};
 
 pub(super) fn reduce_search_set_query(state: &mut ReduceView<'_>, query: String) -> Vec<SideEffect> {
     state.search.schedule_query(query);
     state.set_dirty();
-    vec![SideEffect::CancelSearch]
+    vec![SideEffect::Search(SearchEffect::Cancel)]
 }
 
 pub(super) fn reduce_search_append_char(state: &mut ReduceView<'_>, ch: char) -> Vec<SideEffect> {
@@ -52,7 +52,7 @@ pub(super) fn reduce_search_backspace(state: &mut ReduceView<'_>) -> Vec<SideEff
 pub(super) fn reduce_search_clear(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
     state.search.clear_query();
     state.set_dirty();
-    vec![SideEffect::CancelSearch]
+    vec![SideEffect::Search(SearchEffect::Cancel)]
 }
 
 pub(super) fn reduce_search_set_mode(
@@ -61,7 +61,7 @@ pub(super) fn reduce_search_set_mode(
 ) -> Vec<SideEffect> {
     state.search.set_mode(mode);
     state.set_dirty();
-    vec![SideEffect::CancelSearch]
+    vec![SideEffect::Search(SearchEffect::Cancel)]
 }
 
 pub(super) fn reduce_search_execute(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
@@ -69,20 +69,20 @@ pub(super) fn reduce_search_execute(state: &mut ReduceView<'_>) -> Vec<SideEffec
     state.set_dirty();
 
     if state.search.query.is_empty() {
-        return vec![SideEffect::CancelSearch];
+        return vec![SideEffect::Search(SearchEffect::Cancel)];
     }
 
-    vec![SideEffect::RunSearch {
+    vec![SideEffect::Search(SearchEffect::Run {
         mode: state.search.mode,
         query: state.search.query.clone(),
         generation,
-    }]
+    })]
 }
 
 pub(super) fn reduce_search_cancel(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
     state.search.cancel();
     state.set_dirty();
-    vec![SideEffect::CancelSearch]
+    vec![SideEffect::Search(SearchEffect::Cancel)]
 }
 
 pub(super) fn search_viewport_rows(state: &ReduceView<'_>) -> usize {

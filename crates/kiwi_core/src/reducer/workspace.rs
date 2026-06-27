@@ -25,7 +25,7 @@ use crate::settings::{ensure_settings_selection, settings_move_selection, settin
 use crate::state::{PalettePrompt, ReduceView};
 use crate::theme::load_theme_with_capabilities;
 
-use crate::events::{AppCommand, AppEvent, SideEffect};
+use crate::events::{AppCommand, AppEvent, FsEffect, SideEffect};
 
 use super::diff::diff_viewport_rows;
 use super::git::{branch_list_access_effects, reduce_git_refresh_requested, sync_git_statuses_to_file_tree};
@@ -49,7 +49,7 @@ pub fn workspace_expand_pending_effects(state: &mut ReduceView<'_>) -> Vec<SideE
 
         match state.file_tree.expand(&path) {
             Ok(ExpandAction::NeedsLoad) => {
-                effects.push(SideEffect::LoadDirectoryChildren(path));
+                effects.push(SideEffect::Fs(FsEffect::LoadDirectoryChildren(path)));
             }
             Ok(ExpandAction::AlreadyExpanded) => {}
             Err(_) => {}
@@ -86,7 +86,7 @@ pub(super) fn reduce_file_tree_expand(state: &mut ReduceView<'_>, path: PathBuf)
     match state.file_tree.expand(&path) {
         Ok(ExpandAction::NeedsLoad) => {
             state.set_dirty();
-            vec![SideEffect::LoadDirectoryChildren(path)]
+            vec![SideEffect::Fs(FsEffect::LoadDirectoryChildren(path))]
         }
         Ok(ExpandAction::AlreadyExpanded) => {
             state.set_dirty();
@@ -139,7 +139,7 @@ pub(super) fn reduce_file_tree_refresh(state: &mut ReduceView<'_>) -> Vec<SideEf
     let mut effects = Vec::new();
     for path in expanded {
         if let Ok(ExpandAction::NeedsLoad) = state.file_tree.expand(&path) {
-            effects.push(SideEffect::LoadDirectoryChildren(path));
+            effects.push(SideEffect::Fs(FsEffect::LoadDirectoryChildren(path)));
         }
     }
 
@@ -180,7 +180,7 @@ pub(super) fn reduce_preview_file(
         .navigation
         .apply(NavCommand::SetFocus(FocusTarget::Main));
     state.set_dirty();
-    vec![SideEffect::LoadPreviewFile(path)]
+    vec![SideEffect::Fs(FsEffect::LoadPreviewFile(path))]
 }
 
 pub(super) fn reduce_preview_loaded(
@@ -230,7 +230,7 @@ pub(super) fn reduce_fs_changed(state: &mut ReduceView<'_>, paths: Vec<PathBuf>)
     if !reload_dirs.is_empty() {
         state.set_dirty();
         for dir in reload_dirs {
-            effects.push(SideEffect::LoadDirectoryChildren(dir));
+            effects.push(SideEffect::Fs(FsEffect::LoadDirectoryChildren(dir)));
         }
     }
 
@@ -241,7 +241,7 @@ pub(super) fn reduce_fs_changed(state: &mut ReduceView<'_>, paths: Vec<PathBuf>)
         {
             state.preview.begin_reload();
             state.set_dirty();
-            effects.push(SideEffect::LoadPreviewFile(preview_path));
+            effects.push(SideEffect::Fs(FsEffect::LoadPreviewFile(preview_path)));
         }
     }
 
