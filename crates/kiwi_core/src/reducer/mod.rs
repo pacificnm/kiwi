@@ -171,6 +171,9 @@ pub fn reduce_command(state: &mut ReduceView<'_>, command: AppCommand) -> Vec<Si
             reduce_github_context_menu_select(state, index)
         }
         AppCommand::GitHubContextMenuCancel => reduce_github_context_menu_cancel(state),
+        AppCommand::GitHubListAction { target, action } => {
+            reduce_github_list_action(state, target, action)
+        }
         AppCommand::GitHubOpenInBrowser => reduce_github_open_in_browser(state),
         AppCommand::ShellWrite(data) => vec![SideEffect::WriteShell(data)],
         AppCommand::ShellScroll(delta) => reduce_shell_scroll(state, delta),
@@ -1165,27 +1168,75 @@ fn reduce_github_context_menu_execute(state: &mut ReduceView<'_>) -> Vec<SideEff
         return Vec::new();
     };
 
+    execute_github_list_action(state, menu.target, action)
+}
+
+fn reduce_github_list_action(
+    state: &mut ReduceView<'_>,
+    target: GhContextTarget,
+    action: GhContextMenuAction,
+) -> Vec<SideEffect> {
+    if !state.github.auth_ok {
+        state
+            .notifications
+            .show_toast("GitHub authentication required");
+        state.set_dirty();
+        return Vec::new();
+    }
+
+    execute_github_list_action(state, target, action)
+}
+
+fn execute_github_list_action(
+    state: &mut ReduceView<'_>,
+    target: GhContextTarget,
+    action: GhContextMenuAction,
+) -> Vec<SideEffect> {
     match action {
-        GhContextMenuAction::View => match menu.target {
+        GhContextMenuAction::View => match target {
             GhContextTarget::Issue { list_index } => {
                 let viewport_rows = issues_viewport_rows(state);
                 issue_select_row(state.github, list_index, viewport_rows);
-                reduce_github_open_selected(state)
+                let Some(number) = selected_issue_number(state.github) else {
+                    return Vec::new();
+                };
+                state
+                    .navigation
+                    .apply(NavCommand::SelectMainTabUnpaired(MainTab::Issues));
+                state
+                    .navigation
+                    .apply(NavCommand::SetFocus(FocusTarget::Main));
+                state.set_dirty();
+                github_issue_detail_effects(state, number, true)
             }
             GhContextTarget::PullRequest { list_index } => {
                 let viewport_rows = prs_viewport_rows(state);
                 pr_select_row(state.github, list_index, viewport_rows);
-                reduce_github_open_selected(state)
+                let Some(number) = selected_pr_number(state.github) else {
+                    return Vec::new();
+                };
+                state
+                    .navigation
+                    .apply(NavCommand::SelectMainTabUnpaired(MainTab::Prs));
+                state
+                    .navigation
+                    .apply(NavCommand::SetFocus(FocusTarget::Main));
+                state.set_dirty();
+                github_pr_detail_effects(state, number, true)
             }
         },
         GhContextMenuAction::CreateBranch => {
+            if let GhContextTarget::Issue { list_index } = target {
+                let viewport_rows = issues_viewport_rows(state);
+                issue_select_row(state.github, list_index, viewport_rows);
+            }
             github_issue_create_branch_effects(state, selected_issue_number(state.github))
         }
         GhContextMenuAction::Comment => github_issue_comment_prompt_effects(state),
         GhContextMenuAction::AddLabels => github_issue_label_picker_effects(state),
         GhContextMenuAction::Merge => github_pr_merge_effects(state),
         GhContextMenuAction::OpenInBrowser => github_open_in_browser_effects(state),
-        GhContextMenuAction::SendToAgent => match menu.target {
+        GhContextMenuAction::SendToAgent => match target {
             GhContextTarget::Issue { list_index } => {
                 let viewport_rows = issues_viewport_rows(state);
                 issue_select_row(state.github, list_index, viewport_rows);
@@ -3927,6 +3978,67 @@ mod tests {
         assert!(effects.iter().any(|effect| matches!(
             effect,
             SideEffect::WriteAgent(bytes) if std::str::from_utf8(bytes).is_ok_and(|text| text.contains("#42"))
+        )));
+    }
+
+    #[test]
+    fn github_list_action_create_branch_spawns_side_effect() {
+        use crate::github::{GhContextMenuAction, GhContextTarget, Issue, IssueState};
+
+        let mut state = test_state();
+        state.github.auth_ok = true;
+        state.github.issues = vec![Issue {
+            number: 9,
+            title: "Branch me".to_string(),
+            state: IssueState::Open,
+            labels: Vec::new(),
+            assignees: Vec::new(),
+        }];
+
+        let effects = run_reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::GitHubListAction {
+                target: GhContextTarget::Issue { list_index: 0 },
+                action: GhContextMenuAction::CreateBranch,
+            }),
+        );
+
+        assert_eq!(state.github.selected_issue, Some(9));
+        assert!(effects.iter().any(|effect| matches!(
+            effect,
+            SideEffect::SpawnGitHubIssueCreateBranch { number: 9 }
+        )));
+    }
+
+    #[test]
+    fn github_list_action_view_uses_unpaired_main_tab() {
+        use crate::github::{GhContextMenuAction, GhContextTarget, Issue, IssueState};
+        use crate::navigation::LeftNavTab;
+
+        let mut state = test_state();
+        state.github.auth_ok = true;
+        state.navigation.left_tab = LeftNavTab::Search;
+        state.github.issues = vec![Issue {
+            number: 3,
+            title: "GUI view".to_string(),
+            state: IssueState::Open,
+            labels: Vec::new(),
+            assignees: Vec::new(),
+        }];
+
+        let effects = run_reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::GitHubListAction {
+                target: GhContextTarget::Issue { list_index: 0 },
+                action: GhContextMenuAction::View,
+            }),
+        );
+
+        assert_eq!(state.navigation.main_tab, MainTab::Issues);
+        assert_eq!(state.navigation.left_tab, LeftNavTab::Search);
+        assert!(effects.iter().any(|effect| matches!(
+            effect,
+            SideEffect::SpawnGitHubIssueDetail { number: 3 }
         )));
     }
 

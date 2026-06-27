@@ -25,6 +25,7 @@ pub use browser::{
 };
 pub use context_menu::{
     format_issue_agent_prompt, format_pr_agent_prompt, issue_body_excerpt_from_detail,
+    GUI_ISSUE_LIST_ACTIONS, GUI_PR_LIST_ACTIONS,
 };
 pub use context_menu::{GhContextMenuAction, GhContextMenuState, GhContextTarget};
 pub use create_pr::create_pull_request;

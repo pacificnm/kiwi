@@ -5,8 +5,8 @@ use crate::diff::{DiffSource, FileDiffLoadResult};
 use crate::file_tree::DirectoryEntry;
 use crate::git::{BranchEntry, GitFileEntry};
 use crate::github::{
-    GhContextTarget, GitHubAuthCheckResult, GitHubBrowserTarget, GitHubLeftPane, IssueActionResult,
-    IssueDetailLoadResult, IssueListLoadResult, PrCreateRequest, PrDetailLoadResult,
+    GhContextMenuAction, GhContextTarget, GitHubAuthCheckResult, GitHubBrowserTarget, GitHubLeftPane,
+    IssueActionResult, IssueDetailLoadResult, IssueListLoadResult, PrCreateRequest, PrDetailLoadResult,
     PrListLoadResult, RepoLabelsLoadResult,
 };
 use crate::navigation::NavCommand;
@@ -162,6 +162,10 @@ pub enum AppCommand {
     GitHubContextMenuExecute,
     GitHubContextMenuSelect(usize),
     GitHubContextMenuCancel,
+    GitHubListAction {
+        target: GhContextTarget,
+        action: GhContextMenuAction,
+    },
     GitHubOpenInBrowser,
     ShellWrite(Vec<u8>),
     ShellScroll(i32),

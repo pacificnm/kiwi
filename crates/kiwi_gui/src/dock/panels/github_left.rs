@@ -11,6 +11,7 @@ use super::github_common::{
     issue_state_color, pr_state_color, render_auth_gate, select_issue_commands,
     select_pr_commands, sync_github_navigation, LIST_ROW_HEIGHT,
 };
+use super::github_context_menu::{render_issue_list_context_menu, render_pr_list_context_menu};
 use super::layout::render_virtual_rows;
 use crate::dock::context::PanelContext;
 use crate::dock::tab::KiwiTab;
@@ -172,7 +173,7 @@ fn render_issue_row(
 
     ui.horizontal(|ui| {
         ui.set_min_height(LIST_ROW_HEIGHT);
-        let response = ui
+        let row_response = ui
             .horizontal_wrapped(|ui| {
                 ui.label(RichText::new(prefix).color(title_color).monospace());
                 ui.colored_label(state_color, number);
@@ -183,14 +184,20 @@ fn render_issue_row(
                     }
                     egui::Label::new(rich).truncate()
                 });
-                ui.response()
             })
-            .inner
-            .interact(egui::Sense::click());
-        if response.clicked() {
+            .response;
+        if row_response.secondary_clicked() {
+            let _ = (ctx.dispatch)(AppCommand::GitHubSelectIssue(row_index));
+        }
+        if row_response.clicked() {
             for command in select_issue_commands(row_index) {
                 let _ = (ctx.dispatch)(command);
             }
+        }
+        if ctx.state.github.auth_ok {
+            row_response.context_menu(|ui| {
+                render_issue_list_context_menu(ui, ctx, row_index);
+            });
         }
     });
 }
@@ -222,7 +229,7 @@ fn render_pr_row(
 
     ui.horizontal(|ui| {
         ui.set_min_height(LIST_ROW_HEIGHT);
-        let response = ui
+        let row_response = ui
             .horizontal_wrapped(|ui| {
                 ui.label(RichText::new(prefix).color(title_color).monospace());
                 ui.colored_label(state_color, number);
@@ -236,14 +243,20 @@ fn render_pr_row(
                 if let Some(badge) = badge {
                     ui.colored_label(state_color, badge);
                 }
-                ui.response()
             })
-            .inner
-            .interact(egui::Sense::click());
-        if response.clicked() {
+            .response;
+        if row_response.secondary_clicked() {
+            let _ = (ctx.dispatch)(AppCommand::GitHubSelectPr(row_index));
+        }
+        if row_response.clicked() {
             for command in select_pr_commands(row_index) {
                 let _ = (ctx.dispatch)(command);
             }
+        }
+        if ctx.state.github.auth_ok {
+            row_response.context_menu(|ui| {
+                render_pr_list_context_menu(ui, ctx, row_index);
+            });
         }
     });
 }
@@ -252,10 +265,10 @@ fn render_footer(ui: &mut Ui, ctx: &PanelContext<'_>) {
     let text = match ctx.state.github.left_pane {
         GitHubLeftPane::Issues if ctx.state.github.issues_loading => "Loading issues…",
         GitHubLeftPane::Issues if ctx.state.github.issues.is_empty() => "F5 refresh",
-        GitHubLeftPane::Issues => "↑/↓ · Enter · F5",
+        GitHubLeftPane::Issues => "↑/↓ · Enter · right-click · F5",
         GitHubLeftPane::Prs if ctx.state.github.prs_loading => "Loading PRs…",
         GitHubLeftPane::Prs if ctx.state.github.prs.is_empty() => "F5 refresh",
-        GitHubLeftPane::Prs => "↑/↓ · Enter · F5",
+        GitHubLeftPane::Prs => "↑/↓ · Enter · right-click · F5",
     };
     ui.label(RichText::new(text).color(ctx.theme.role(SemanticRole::Muted)));
 }
