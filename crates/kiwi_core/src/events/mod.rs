@@ -18,6 +18,7 @@ mod channel;
 
 pub use channel::{EventChannel, EventSender, EVENT_CHANNEL_CAPACITY};
 
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppEvent {
     Command(AppCommand),
@@ -132,6 +133,7 @@ pub enum AppEvent {
     },
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppCommand {
     Navigation(NavCommand),
@@ -258,6 +260,7 @@ pub enum AppCommand {
     SetTheme(String),
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SideEffect {
     Quit,

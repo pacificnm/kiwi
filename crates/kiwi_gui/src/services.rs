@@ -303,6 +303,7 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
                 ctx.search.cancel.clone(),
             );
         }
+        _ => {}
     }
     false
 }
