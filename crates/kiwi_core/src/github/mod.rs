@@ -23,7 +23,9 @@ pub use browser::{
     browser_target_kind, missing_browser_target_message, page_scroll_issue_detail,
     resolve_browser_target, scroll_issue_detail, GitHubBrowserKind,
 };
-pub use context_menu::{format_issue_agent_prompt, format_pr_agent_prompt};
+pub use context_menu::{
+    format_issue_agent_prompt, format_pr_agent_prompt, issue_body_excerpt_from_detail,
+};
 pub use context_menu::{GhContextMenuAction, GhContextMenuState, GhContextTarget};
 pub use create_pr::create_pull_request;
 pub use detail::load_issue_detail;

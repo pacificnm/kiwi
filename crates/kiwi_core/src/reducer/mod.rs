@@ -13,7 +13,7 @@ use crate::git::{
 };
 use crate::github::{
     advance_pr_create_prompt, apply_label_picker_load, ensure_issue_selection, ensure_pr_selection,
-    format_issue_agent_prompt, format_pr_agent_prompt, issue_move_selection, issue_select_row,
+    format_issue_agent_prompt, format_pr_agent_prompt, issue_body_excerpt_from_detail, issue_move_selection, issue_select_row,
     missing_browser_target_message, page_scroll_issue_detail, pr_move_selection, pr_select_row,
     pull_request_is_mergeable, resolve_browser_target, scroll_issue_detail, selected_pull_request,
     GhContextMenuAction, GhContextMenuState, GhContextTarget, GitHubLeftPane,
@@ -1369,7 +1369,13 @@ fn github_send_issue_to_agent_effects(state: &mut ReduceView<'_>) -> Vec<SideEff
 
     let title = issue_title_for_number(state.github, number)
         .unwrap_or_else(|| "Untitled issue".to_string());
-    let prompt = format_issue_agent_prompt(number, &title);
+    let body_excerpt = state
+        .github
+        .issue_detail
+        .as_ref()
+        .filter(|detail| detail.number == number)
+        .and_then(issue_body_excerpt_from_detail);
+    let prompt = format_issue_agent_prompt(number, &title, body_excerpt.as_deref());
     github_send_prompt_to_agent_effects(state, prompt)
 }
 

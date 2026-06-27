@@ -9,7 +9,7 @@ pub use kiwi_core::github::{
 #[allow(unused_imports)]
 pub use kiwi_core::github::{
     issue_at_viewport, issue_selected_row_index, pr_at_viewport, pr_selected_row_index,
-    GhContextMenuState, GhContextTarget, GitHubAuthErrorKind, GitHubLeftPane, Issue,
+    GhContextMenuAction, GhContextMenuState, GhContextTarget, GitHubAuthErrorKind, GitHubLeftPane, Issue,
     IssueActionResult, IssueState, PrState, PullRequest, RepoLabel,
 };
 #[allow(unused_imports)]

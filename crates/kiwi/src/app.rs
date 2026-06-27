@@ -2455,6 +2455,62 @@ mod tests {
     }
 
     #[test]
+    fn right_click_github_issue_opens_context_menu() {
+        use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+
+        use crate::github::{GhContextMenuAction, GitHubLeftPane, Issue, IssueState};
+        use crate::navigation::{LeftNavTab, NavCommand};
+        use crate::state::{AppCommand, AppEvent, GitHubState};
+        use crate::ui::github_issue_interaction_at;
+
+        let mut app = App::new(test_context());
+        app.state_mut().github = GitHubState {
+            auth_checked: true,
+            auth_ok: true,
+            issues: vec![Issue {
+                number: 42,
+                title: "Mouse issue".to_string(),
+                state: IssueState::Open,
+                labels: Vec::new(),
+                assignees: Vec::new(),
+            }],
+            selected_issue: None,
+            left_pane: GitHubLeftPane::Issues,
+            ..GitHubState::default()
+        };
+        app.event_sender()
+            .send(AppEvent::Command(AppCommand::Navigation(
+                NavCommand::SelectLeftTab(LeftNavTab::Gh),
+            )))
+            .expect("send");
+        app.process_pending_events();
+
+        let area = app.state().layout.rects.left_content;
+        let row = (area.y..area.y.saturating_add(area.height))
+            .find(|row| github_issue_interaction_at(app.state(), area, area.x + 2, *row).is_some())
+            .expect("github issue row");
+        let mouse = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Right),
+            column: area.x + 2,
+            row,
+            modifiers: KeyModifiers::empty(),
+        };
+
+        app.dispatch_mouse(mouse);
+        assert_eq!(app.state().github.selected_issue, Some(42));
+        let menu = app
+            .state()
+            .github
+            .context_menu
+            .as_ref()
+            .expect("context menu open");
+        assert_eq!(menu.anchor_x, mouse.column);
+        assert!(menu.items.contains(&GhContextMenuAction::View));
+        assert!(menu.items.contains(&GhContextMenuAction::CreateBranch));
+        assert!(menu.items.contains(&GhContextMenuAction::SendToAgent));
+    }
+
+    #[test]
     fn double_click_git_file_opens_diff_tab() {
         use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 
