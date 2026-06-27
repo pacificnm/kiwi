@@ -18,4 +18,5 @@ workspace = true
 clap.workspace = true
 eframe.workspace = true
 egui.workspace = true
+egui_dock.workspace = true
 kiwi_core.workspace = true
