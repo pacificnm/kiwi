@@ -99,6 +99,20 @@ fn handle_tools_list(id: Value) -> String {
                         },
                         "required": ["query"]
                     }
+                },
+                {
+                    "name": "index_project",
+                    "description": "Re-index the project source code into project memory. Call this after completing code edits so new/changed code becomes searchable.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "root": {
+                                "type": "string",
+                                "description": "Absolute path to the project root directory to index"
+                            }
+                        },
+                        "required": ["root"]
+                    }
                 }
             ]
         }),
@@ -140,6 +154,22 @@ fn handle_tools_call(
             let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(8) as i32;
             let collection = args.get("collection").and_then(|v| v.as_str());
             search_knowledge(query, limit, collection, db, embed)
+        }
+        "index_project" => {
+            let root_str = match args.get("root").and_then(|v| v.as_str()) {
+                Some(r) => r,
+                None => return error_response(id, -32602, "missing argument: root"),
+            };
+            let root = std::path::Path::new(root_str);
+            // Ensure schema exists before indexing
+            let dim = embed.dim();
+            if let Err(e) = db.setup_schema(dim) {
+                return error_response(id, -32603, &format!("schema setup failed: {e}"));
+            }
+            match crate::indexer::index_project(root, db, embed) {
+                Ok(()) => Ok("project memory re-indexed".to_string()),
+                Err(e) => Err(e),
+            }
         }
         other => return error_response(id, -32602, &format!("unknown tool: {other}")),
     };

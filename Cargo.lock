@@ -1842,6 +1842,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "kiwi_mcp_gitnexus"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "kiwi_plugin_api",
+ "serde",
+ "serde_json",
+ "ureq",
+]
+
+[[package]]
 name = "kiwi_mcp_memory"
 version = "0.1.0"
 dependencies = [
