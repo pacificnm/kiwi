@@ -68,7 +68,7 @@ pub fn render_virtual_rows(
 
     ui.set_min_height(total_height);
 
-    let start = scroll_row_from_clip(ui, row_height).min(max_start);
+    let start = visible_start.min(max_start);
     let end = (start + viewport_rows + 2).min(total_rows);
 
     if start > 0 {
