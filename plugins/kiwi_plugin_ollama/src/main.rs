@@ -333,7 +333,24 @@ fn run() -> Result<()> {
                     println!("\ncompleted: response ready");
                     let _ = std::io::stdout().flush();
                     last_assistant_response = Some(full_response.clone());
-                    ctx.push_assistant(full_response);
+                    ctx.push_assistant(full_response.clone());
+
+                    // Auto-save the exchange to context memory
+                    if let Some(mcp) = ctx_mcp.as_mut() {
+                        let title: String = prompt.chars().take(60).collect();
+                        let content = format!("User: {prompt}\n\nAssistant: {full_response}");
+                        if let Err(e) = mcp.call_tool(
+                            "save_context_memory",
+                            json!({
+                                "content": content,
+                                "title": title,
+                                "session_key": session_key,
+                                "tags": ["kiwi-ollama"]
+                            }),
+                        ) {
+                            eprintln!("warning: context memory auto-save failed: {e}");
+                        }
+                    }
                 } else {
                     ctx.pop_last();
                 }
