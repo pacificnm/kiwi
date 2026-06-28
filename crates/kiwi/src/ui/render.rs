@@ -23,6 +23,7 @@ use super::notifications::render_notifications;
 use super::palette::render_palette_pane;
 use super::preview::render_preview_pane;
 use super::search::render_search_pane;
+use super::plugins::render_plugins_pane;
 use super::settings::render_settings_pane;
 use super::shell::render_shell_pane;
 use super::status_bar::render_status_bar;
@@ -120,6 +121,14 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
         );
     } else if state.navigation.main_tab == MainTab::Settings {
         render_settings_pane(
+            frame,
+            state.layout.rects.main_content,
+            state.navigation.focus.is_focused(Region::MainContent),
+            &state.theme,
+            state,
+        );
+    } else if state.navigation.main_tab == MainTab::Plugins {
+        render_plugins_pane(
             frame,
             state.layout.rects.main_content,
             state.navigation.focus.is_focused(Region::MainContent),

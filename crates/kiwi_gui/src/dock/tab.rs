@@ -20,6 +20,7 @@ pub enum KiwiTab {
     Agent,
     Config,
     Logs,
+    Plugins,
 }
 
 impl KiwiTab {
@@ -39,6 +40,7 @@ impl KiwiTab {
             Self::Agent => "Agent",
             Self::Config => "Settings",
             Self::Logs => "Logs",
+            Self::Plugins => "Plugins",
         }
     }
 
@@ -59,6 +61,7 @@ impl KiwiTab {
             Self::Agent,
             Self::Config,
             Self::Logs,
+            Self::Plugins,
         ]
     }
 
@@ -89,7 +92,7 @@ mod tests {
     #[test]
     fn all_variants_have_unique_titles() {
         let variants = KiwiTab::all_variants();
-        assert_eq!(variants.len(), 13);
+        assert_eq!(variants.len(), 14);
         let mut titles = variants.iter().map(|tab| tab.title()).collect::<Vec<_>>();
         titles.sort_unstable();
         titles.dedup();

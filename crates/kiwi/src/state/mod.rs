@@ -17,7 +17,7 @@ pub use domains::{
     GitHubPrCreateStep, GitHubState, GitState, LogEntry, LogsState, PalettePrompt, SettingsState,
     ShellState, StatusBarState, WorkspaceMeta,
 };
-pub use domains::{LogLevel, PluginPaletteCommand, PluginsState};
+pub use domains::{LogLevel, PluginEntry, PluginPaletteCommand, PluginStatus, PluginsState};
 pub use event::{
     AgentEffect, AppCommand, AppEvent, FsEffect, GitEffect, GitHubEffect, SearchEffect,
     ShellEffect, SideEffect,

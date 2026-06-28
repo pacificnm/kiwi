@@ -367,6 +367,52 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
                 }
             }
         }
+        SideEffect::PluginSetEnabled { name, enabled } => {
+            if let Some(path) = kiwi_core::plugins::default_registry_path() {
+                let (mut registry, _) = kiwi_core::plugins::PluginRegistry::load(&path);
+                if enabled {
+                    registry.enable(&name);
+                } else {
+                    registry.disable(&name);
+                }
+                if let Err(e) = registry.save(&path) {
+                    ctx.state
+                        .notifications
+                        .show_toast(format!("Failed to save plugin registry: {e}"));
+                    ctx.state.dirty = true;
+                } else {
+                    refresh_available_plugins(ctx);
+                }
+            }
+        }
+        SideEffect::PluginInstall { src_path } => {
+            match kiwi_core::plugins::install_plugin(&src_path) {
+                Err(e) => {
+                    ctx.state
+                        .notifications
+                        .show_toast(format!("Plugin install failed: {e}"));
+                    ctx.state.dirty = true;
+                }
+                Ok(entry) => {
+                    let name = entry.name.clone();
+                    if let Some(path) = kiwi_core::plugins::default_registry_path() {
+                        let (mut registry, _) = kiwi_core::plugins::PluginRegistry::load(&path);
+                        registry.register(entry);
+                        if let Err(e) = registry.save(&path) {
+                            ctx.state
+                                .notifications
+                                .show_toast(format!("Plugin installed but registry save failed: {e}"));
+                            ctx.state.dirty = true;
+                        } else {
+                            ctx.state
+                                .notifications
+                                .show_toast(format!("Plugin `{name}` installed. Restart to load it."));
+                            refresh_available_plugins(ctx);
+                        }
+                    }
+                }
+            }
+        }
         SideEffect::PersistUserTheme { name } => {
             let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
             match home {
@@ -392,6 +438,18 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
         _ => {}
     }
     false
+}
+
+fn refresh_available_plugins(ctx: &mut ServiceContext<'_>) {
+    let plugins_src = ctx.state.repo_root.join("plugins");
+    if plugins_src.is_dir() {
+        let registry = kiwi_core::plugins::default_registry_path()
+            .map(|p| kiwi_core::plugins::PluginRegistry::load(&p).0)
+            .unwrap_or_default();
+        ctx.state.plugins.available =
+            kiwi_core::plugins::scan_available_plugins(&[&plugins_src], &registry);
+        ctx.state.dirty = true;
+    }
 }
 
 fn spawn_editor_launch(

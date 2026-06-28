@@ -75,6 +75,7 @@ Palette commands: **Clipboard: Copy**, **Clipboard: Cut**, **Clipboard: Paste**.
 | `6` | Preview |
 | `7` | Logs |
 | `8` | Settings |
+| `9` | Plugins (Plugin Manager) |
 
 ## Settings (main, Settings tab)
 

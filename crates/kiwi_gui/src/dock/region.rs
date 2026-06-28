@@ -28,7 +28,8 @@ impl KiwiTab {
             | Self::GitHubPrs
             | Self::Preview
             | Self::Config
-            | Self::Logs => DockRegion::Center,
+            | Self::Logs
+            | Self::Plugins => DockRegion::Center,
         }
     }
 }

@@ -27,10 +27,16 @@ mod ui;
 mod watcher;
 mod workspace;
 
-use cli::Cli;
+use cli::{Cli, CliCommand};
 
 fn main() {
     let cli = Cli::parse_args();
+
+    // Dispatch non-TUI subcommands before any terminal/bootstrap setup.
+    if let Some(CliCommand::Plugin(ref sub)) = cli.command {
+        std::process::exit(commands::plugin::run(sub));
+    }
+
     let mut app = match bootstrap::init(&cli) {
         Ok(context) => app::App::new(context),
         Err(err) => {

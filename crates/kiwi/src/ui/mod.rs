@@ -12,6 +12,7 @@ mod mouse_clicks;
 mod mouse_scroll;
 mod notifications;
 mod palette;
+mod plugins;
 mod preview;
 mod render;
 mod scrollback;

@@ -5,7 +5,8 @@ mod viewport;
 pub use domains::{
     AgentState, BranchState, CommandPaletteState, DiffState, GitHubPrCreatePrompt,
     GitHubPrCreateStep, GitHubState, GitState, LogEntry, LogLevel, LogsState, ModalState,
-    NotificationState, PalettePrompt, PluginPaletteCommand, PluginsState, SettingsState,
+    AvailablePlugin, NotificationState, PalettePrompt, PluginEntry, PluginPaletteCommand,
+    PluginStatus, PluginsState, SettingsState,
     ShellState, StatusBarState, ToastState, WorkspaceMeta, MAX_PALETTE_HISTORY_ENTRIES,
 };
 pub use reduce_view::ReduceView;

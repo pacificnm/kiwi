@@ -97,6 +97,16 @@ impl GuiRuntime {
             let _ = runtime.dispatch(AppEvent::GitRefreshRequested);
         }
 
+        // Discover available plugins from repo_root/plugins/ and cross-ref with registry.
+        let plugins_src = repo_root.join("plugins");
+        if plugins_src.is_dir() {
+            let registry = kiwi_core::plugins::default_registry_path()
+                .map(|p| kiwi_core::plugins::PluginRegistry::load(&p).0)
+                .unwrap_or_default();
+            runtime.state.plugins.available =
+                kiwi_core::plugins::scan_available_plugins(&[&plugins_src], &registry);
+        }
+
         (runtime, gui_snapshot)
     }
 

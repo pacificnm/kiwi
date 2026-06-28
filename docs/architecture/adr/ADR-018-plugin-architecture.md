@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (design only — implementation Milestone 7)
+Accepted — implemented (Milestone 7, #319)
 
 ## Context
 
@@ -68,9 +68,20 @@ Core ships `kiwi_plugin_api` as a separate crate; plugins depend on it.
 | No plugins, fork only | Poor ecosystem growth |
 | Lua scripting | Less idiomatic for Rust project |
 
+## Implementation Notes (M7, #319)
+
+Phase 1 is fully implemented:
+
+- `kiwi_plugin_api` crate with `PluginManifest`, `PluginCapabilities`, `declare_plugin!`
+- `PluginRegistry` persisting to `~/.config/kiwi/plugin-registry.toml`
+- `kiwi plugin list/info/enable/disable/install/remove/reload` CLI
+- `PluginStatus` lifecycle (Loaded/Disabled/Failed/Incompatible/Missing)
+- TUI Plugin Manager (main tab 8, shortcut `9`, palette "Plugins: Open Manager")
+- GUI Plugin Manager dock panel (`KiwiTab::Plugins`, File → Plugins menu)
+- Reference plugin: `plugins/kiwi_plugin_hello/`
+
 ## Follow-up Work
 
-- SPEC-020 Plugin Framework (interface only in M1; impl M7)
-- Create `kiwi_plugin_api` crate stub at scaffold with version constant
-- Document security warnings in user docs
-- Start with internal "fake plugin" for integration tests
+- Phase 2: event subscriptions (`on_git_refresh`, `on_file_save`)
+- Phase 3: custom tab registration via manifest
+- Phase 4: custom widget panel rendering

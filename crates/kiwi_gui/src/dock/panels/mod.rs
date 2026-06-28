@@ -14,6 +14,7 @@ mod github_prs;
 mod issues_detail;
 mod layout;
 mod placeholder;
+mod plugins;
 mod preview;
 mod pty_input;
 mod scrollback;
@@ -49,6 +50,7 @@ pub fn render_panel(tab: KiwiTab, ui: &mut Ui, ctx: &mut PanelContext<'_>) {
         KiwiTab::Search => search::render(ui, ctx),
         KiwiTab::Preview => preview::render(ui, ctx),
         KiwiTab::Config => config::render(ui, ctx),
+        KiwiTab::Plugins => plugins::render(ui, ctx),
         _ => placeholder::render_placeholder(ui, tab, ctx),
     }
 }

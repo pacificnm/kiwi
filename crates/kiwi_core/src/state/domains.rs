@@ -493,9 +493,83 @@ impl PalettePrompt {
     }
 }
 
+/// Runtime lifecycle state of a single plugin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginStatus {
+    /// Successfully loaded and active this session.
+    Loaded,
+    /// Disabled in the registry; not loaded.
+    Disabled,
+    /// Loaded but then failed (error message attached).
+    Failed(String),
+    /// min_kiwi_version not satisfied.
+    Incompatible(String),
+    /// Registry entry exists but the plugin directory / library is missing.
+    Missing,
+}
+
+impl PluginStatus {
+    #[must_use]
+    pub fn label(&self) -> &str {
+        match self {
+            Self::Loaded => "Loaded",
+            Self::Disabled => "Disabled",
+            Self::Failed(_) => "Failed",
+            Self::Incompatible(_) => "Incompatible",
+            Self::Missing => "Missing",
+        }
+    }
+
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        matches!(self, Self::Loaded)
+    }
+}
+
+/// Display record for one plugin, populated during startup loading.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginEntry {
+    pub name: String,
+    pub display_name: String,
+    pub version: String,
+    pub description: String,
+    pub author: String,
+    pub enabled: bool,
+    pub status: PluginStatus,
+    /// IDs of palette commands this plugin registered.
+    pub command_ids: Vec<String>,
+}
+
+/// A plugin discovered by scanning a plugins source directory.
+/// Exists regardless of whether the plugin is installed in the registry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AvailablePlugin {
+    pub name: String,
+    pub display_name: String,
+    pub version: String,
+    pub description: String,
+    pub author: String,
+    /// Filesystem path to the plugin source directory (contains `plugin.toml`).
+    pub source_path: std::path::PathBuf,
+    /// `true` if a registry entry exists for this plugin name.
+    pub installed: bool,
+    /// `true` if installed and enabled in the registry.
+    pub enabled: bool,
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct PluginsState {
     pub commands: Vec<PluginPaletteCommand>,
+    /// One entry per discovered plugin (loaded, disabled, or failed).
+    pub entries: Vec<PluginEntry>,
+    /// All plugins found by scanning the plugins source directory.
+    /// Populated at startup and refreshed after install/enable/disable.
+    pub available: Vec<AvailablePlugin>,
+    pub selected_index: usize,
+    pub scroll_offset: usize,
+    pub detail_scroll: usize,
+    /// Path typed into the "Install from directory" field in the Plugin Manager.
+    pub install_path_input: String,
 }
 
 #[derive(Debug, Clone)]

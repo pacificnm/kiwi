@@ -15,6 +15,7 @@ pub mod file_tree;
 pub mod git;
 pub mod github;
 pub mod navigation;
+pub mod plugins;
 pub mod preview;
 pub mod reducer;
 pub mod repo;

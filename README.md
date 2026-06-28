@@ -124,6 +124,35 @@ kiwi/
 └── LICENSE.md            # MIT license
 ```
 
+## Plugins
+
+Kiwi supports native Rust plugins that register commands in the palette. Plugins are
+`.so` / `.dylib` files loaded from `~/.config/kiwi/plugins/`.
+
+```bash
+# Install a plugin (copies files and registers it)
+kiwi plugin install /path/to/my-plugin
+
+# Manage plugins without starting the TUI
+kiwi plugin list
+kiwi plugin enable  <name>
+kiwi plugin disable <name>
+kiwi plugin remove  <name>
+```
+
+Enable/disable changes take effect on the next restart. The **Plugin Manager** shows
+status for all installed plugins:
+
+- **TUI**: press `9` or search the command palette for **"Plugins: Open Manager"**
+- **GUI**: **File → Plugins** menu
+
+See [`crates/kiwi_plugin_api/README.md`](crates/kiwi_plugin_api/README.md) for the
+full authoring guide and `plugin.toml` reference. A working sample plugin is at
+[`plugins/kiwi_plugin_hello/`](plugins/kiwi_plugin_hello/).
+
+> **Security:** plugins run in-process with full user privileges. Only install plugins
+> from sources you trust.
+
 ## Principles
 
 1. **Orchestrator first, editor second**
