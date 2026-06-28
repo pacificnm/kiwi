@@ -310,6 +310,7 @@ impl eframe::App for KiwiApp {
 
         render_status_bar(ctx, &self.gui_theme, &self.runtime.state);
 
+        let mut should_close = false;
         egui::CentralPanel::default().show(ctx, |ui| {
             let mut pending_commands = Vec::new();
             let mut dispatch = |command: AppCommand| {
@@ -329,23 +330,27 @@ impl eframe::App for KiwiApp {
             );
             for command in pending_commands {
                 if self.dispatch_command(command) {
-                    self.close_window(ctx);
+                    should_close = true;
                     return;
                 }
             }
             self.runtime.sync_pty_resize_from_viewport();
             if self.handle_github_input(ctx) {
-                self.close_window(ctx);
+                should_close = true;
                 return;
             }
             if self.handle_search_input(ctx) {
-                self.close_window(ctx);
+                should_close = true;
                 return;
             }
             if self.handle_pty_input(ctx, &pty_surface) {
-                self.close_window(ctx);
+                should_close = true;
             }
         });
+        if should_close {
+            self.close_window(ctx);
+            return;
+        }
 
         render_reset_layout_modal(ctx, &mut self.reset_layout_prompt, &mut self.dock);
         render_shortcuts_modal(ctx, &mut self.shortcuts_help_open);
