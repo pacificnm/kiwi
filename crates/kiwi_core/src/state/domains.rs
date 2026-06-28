@@ -540,11 +540,31 @@ pub struct PluginEntry {
     pub command_ids: Vec<String>,
 }
 
+/// A plugin discovered by scanning a plugins source directory.
+/// Exists regardless of whether the plugin is installed in the registry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AvailablePlugin {
+    pub name: String,
+    pub display_name: String,
+    pub version: String,
+    pub description: String,
+    pub author: String,
+    /// Filesystem path to the plugin source directory (contains `plugin.toml`).
+    pub source_path: std::path::PathBuf,
+    /// `true` if a registry entry exists for this plugin name.
+    pub installed: bool,
+    /// `true` if installed and enabled in the registry.
+    pub enabled: bool,
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct PluginsState {
     pub commands: Vec<PluginPaletteCommand>,
     /// One entry per discovered plugin (loaded, disabled, or failed).
     pub entries: Vec<PluginEntry>,
+    /// All plugins found by scanning the plugins source directory.
+    /// Populated at startup and refreshed after install/enable/disable.
+    pub available: Vec<AvailablePlugin>,
     pub selected_index: usize,
     pub scroll_offset: usize,
     pub detail_scroll: usize,

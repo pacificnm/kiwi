@@ -380,6 +380,8 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
                         .notifications
                         .show_toast(format!("Failed to save plugin registry: {e}"));
                     ctx.state.dirty = true;
+                } else {
+                    refresh_available_plugins(ctx);
                 }
             }
         }
@@ -405,7 +407,7 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
                             ctx.state
                                 .notifications
                                 .show_toast(format!("Plugin `{name}` installed. Restart to load it."));
-                            ctx.state.dirty = true;
+                            refresh_available_plugins(ctx);
                         }
                     }
                 }
@@ -436,6 +438,18 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
         _ => {}
     }
     false
+}
+
+fn refresh_available_plugins(ctx: &mut ServiceContext<'_>) {
+    let plugins_src = ctx.state.repo_root.join("plugins");
+    if plugins_src.is_dir() {
+        let registry = kiwi_core::plugins::default_registry_path()
+            .map(|p| kiwi_core::plugins::PluginRegistry::load(&p).0)
+            .unwrap_or_default();
+        ctx.state.plugins.available =
+            kiwi_core::plugins::scan_available_plugins(&[&plugins_src], &registry);
+        ctx.state.dirty = true;
+    }
 }
 
 fn spawn_editor_launch(
