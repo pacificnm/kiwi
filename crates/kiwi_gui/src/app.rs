@@ -265,7 +265,8 @@ impl KiwiApp {
 impl eframe::App for KiwiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let nav_before = self.runtime.state.navigation.clone();
-        let (should_quit, event_count) = self.runtime.process_pending_events();
+        let dock_snapshot = snapshot_from_dock(self.dock.dock_state());
+        let (should_quit, event_count) = self.runtime.process_pending_events(Some(dock_snapshot));
         if self.runtime.state.navigation != nav_before {
             self.sync_dock();
         }

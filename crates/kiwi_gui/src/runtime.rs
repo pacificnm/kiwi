@@ -106,6 +106,7 @@ impl GuiRuntime {
             events: &self.events,
             pty: &mut self.pty,
             search: &mut self.search,
+            dock_snapshot: None,
         }
     }
 
@@ -147,13 +148,20 @@ impl GuiRuntime {
     }
 
     /// Returns `(should_quit, event_count)`.
-    pub fn process_pending_events(&mut self) -> (bool, usize) {
+    ///
+    /// `dock_snapshot` is forwarded to the service layer so that `SideEffect::SaveWorkspace`
+    /// can persist the dock layout. Pass `None` when no live dock is available (e.g., tests).
+    pub fn process_pending_events(
+        &mut self,
+        dock_snapshot: Option<GuiWorkspaceSnapshot>,
+    ) -> (bool, usize) {
         self.poll_agent_exits();
         let (quit, count) = process_pending_events(
             &mut self.state,
             &mut self.events,
             &mut self.pty,
             &mut self.search,
+            dock_snapshot,
         );
         self.sync_search_debounce();
         (quit, count)
@@ -272,7 +280,7 @@ mod tests {
 
         let deadline = std::time::Instant::now() + Duration::from_secs(3);
         while std::time::Instant::now() < deadline {
-            runtime.process_pending_events();
+            runtime.process_pending_events(None);
             if !runtime.state.search.running {
                 break;
             }
