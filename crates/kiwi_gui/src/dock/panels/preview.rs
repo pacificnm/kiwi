@@ -7,7 +7,7 @@ use kiwi_core::navigation::{FocusTarget, MainTab, NavCommand};
 use kiwi_core::state::ReduceView;
 use kiwi_core::theme::SemanticRole;
 
-use super::layout::render_virtual_rows;
+use super::layout::{render_virtual_rows, truncate_line};
 use crate::dock::context::PanelContext;
 use crate::dock::tab::KiwiTab;
 
@@ -270,22 +270,6 @@ fn line_number_width(line_count: usize) -> usize {
     digits + 1
 }
 
-fn truncate_line(text: &str, max_width: usize) -> String {
-    if max_width == 0 {
-        return String::new();
-    }
-    let mut iter = text.char_indices();
-    if let Some((byte_pos, _)) = iter.nth(max_width - 1) {
-        if iter.next().is_some() {
-            if max_width <= 1 {
-                return "…".to_string();
-            }
-            return text[..byte_pos].to_string() + "…";
-        }
-    }
-    text.to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -336,11 +320,6 @@ mod tests {
         let status = format_preview_status(&ctx);
         assert!(status.contains("2 lines"));
         assert!(status.contains("UTF-8"));
-    }
-
-    #[test]
-    fn truncate_line_ellipsis_when_too_long() {
-        assert_eq!(truncate_line("hello world", 5), "hell…");
     }
 
     #[test]

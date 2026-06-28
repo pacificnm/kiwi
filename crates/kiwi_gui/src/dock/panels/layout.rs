@@ -92,6 +92,23 @@ pub fn pty_dimensions_from_ui(ui: &Ui, theme_font_size: f32) -> (u16, u16) {
     (cols, rows)
 }
 
+/// Truncate `text` to `max_width` Unicode scalar values, appending `…` if truncated.
+pub(super) fn truncate_line(text: &str, max_width: usize) -> String {
+    if max_width == 0 {
+        return String::new();
+    }
+    let mut iter = text.char_indices();
+    if let Some((byte_pos, _)) = iter.nth(max_width - 1) {
+        if iter.next().is_some() {
+            if max_width <= 1 {
+                return "…".to_string();
+            }
+            return text[..byte_pos].to_string() + "…";
+        }
+    }
+    text.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,5 +117,25 @@ mod tests {
     fn row_count_fits_at_least_one_row() {
         assert_eq!(row_count_for_height(0.0, 18.0), 1);
         assert_eq!(row_count_for_height(36.0, 18.0), 2);
+    }
+
+    #[test]
+    fn truncate_line_ellipsis_when_too_long() {
+        assert_eq!(truncate_line("hello world", 5), "hell…");
+    }
+
+    #[test]
+    fn truncate_line_exact_width_no_ellipsis() {
+        assert_eq!(truncate_line("hello", 5), "hello");
+    }
+
+    #[test]
+    fn truncate_line_zero_width_empty() {
+        assert_eq!(truncate_line("hello", 0), "");
+    }
+
+    #[test]
+    fn truncate_line_width_one_returns_ellipsis() {
+        assert_eq!(truncate_line("hello", 1), "…");
     }
 }
