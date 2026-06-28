@@ -221,6 +221,9 @@ impl KiwiApp {
                         let _ = self.dispatch_command(AppCommand::SearchExecute);
                     }
                 }
+                // PTY panels encode F5 as \x1b[15~ via collect_pty_input; skip git refresh
+                // so htop/vim/man receive F5 without also triggering a git status reload (#281).
+                Some(KiwiTab::Terminal) | Some(KiwiTab::Agent) => {}
                 _ => {
                     let _ = self.runtime.dispatch(AppEvent::GitRefreshRequested);
                 }
