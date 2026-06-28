@@ -42,11 +42,6 @@ impl KiwiTab {
         }
     }
 
-    #[must_use]
-    pub const fn closable(self) -> bool {
-        true
-    }
-
     /// All tab variants (SPEC-022 tab metadata table).
     #[must_use]
     pub const fn all_variants() -> &'static [Self] {
@@ -114,13 +109,6 @@ mod tests {
     fn factory_tabs_are_subset_of_all_variants() {
         for tab in KiwiTab::factory_tabs() {
             assert!(KiwiTab::all_variants().contains(tab));
-        }
-    }
-
-    #[test]
-    fn every_tab_is_closable_in_v1() {
-        for tab in KiwiTab::all_variants() {
-            assert!(tab.closable());
         }
     }
 
