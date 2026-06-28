@@ -255,30 +255,30 @@ fn slice_line(text: &str, offset: usize, width: usize) -> String {
     if offset == 0 {
         return text.to_string();
     }
-
-    let chars: Vec<char> = text.chars().skip(offset).collect();
-    if chars.len() <= width {
-        return chars.into_iter().collect();
+    let Some((start_byte, _)) = text.char_indices().nth(offset) else {
+        return String::new();
+    };
+    let sliced = &text[start_byte..];
+    match sliced.char_indices().nth(width) {
+        Some((end_byte, _)) => sliced[..end_byte].to_string(),
+        None => sliced.to_string(),
     }
-
-    chars[..width].iter().collect()
 }
 
 fn truncate_line(text: &str, max_width: usize) -> String {
     if max_width == 0 {
         return String::new();
     }
-
-    let chars: Vec<char> = text.chars().collect();
-    if chars.len() <= max_width {
-        return text.to_string();
+    let mut iter = text.char_indices();
+    if let Some((byte_pos, _)) = iter.nth(max_width - 1) {
+        if iter.next().is_some() {
+            if max_width <= 1 {
+                return "…".to_string();
+            }
+            return text[..byte_pos].to_string() + "…";
+        }
     }
-
-    if max_width <= 1 {
-        return "…".to_string();
-    }
-
-    chars[..max_width - 1].iter().collect::<String>() + "…"
+    text.to_string()
 }
 
 fn text_cols_for(ui: &Ui) -> usize {
