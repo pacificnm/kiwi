@@ -53,6 +53,10 @@ struct Cli {
     #[arg(long, default_value = "kiwi-mcp-git")]
     mcp_git_bin: String,
 
+    /// Binary name or path for the Gitea MCP server
+    #[arg(long, default_value = "kiwi-mcp-gitnexus")]
+    mcp_gitnexus_bin: String,
+
     /// Comma-separated knowledge base collection names to search (default: all)
     #[arg(long, default_value = "")]
     kb_collections: String,
@@ -111,6 +115,7 @@ fn run() -> Result<()> {
     let mut mem_mcp: Option<McpProcess> = None;
     let mut ctx_mcp: Option<McpProcess> = None;
     let mut git_mcp: Option<McpProcess> = None;
+    let mut gitnexus_mcp: Option<McpProcess> = None;
 
     if !args.no_mcp {
         match McpProcess::spawn(&args.mcp_memory_bin) {
@@ -134,13 +139,24 @@ fn run() -> Result<()> {
             }
             Err(e) => eprintln!("warning: git MCP unavailable: {e}"),
         }
+        match McpProcess::spawn(&args.mcp_gitnexus_bin) {
+            Ok(proc) => {
+                eprintln!("mcp: Gitea server ready");
+                gitnexus_mcp = Some(proc);
+            }
+            Err(e) => eprintln!("warning: Gitea MCP unavailable (set GITEA_TOKEN/GITEA_URL/GITEA_REPO): {e}"),
+        }
     }
 
-    // Fetch tool list from git MCP (used by Ollama for tool calling)
-    let git_tools: Vec<OllamaTool> = git_mcp
+    // Fetch tool lists from git and Gitea MCP servers, merge for Ollama tool calling
+    let mut all_tools: Vec<OllamaTool> = git_mcp
         .as_mut()
         .and_then(|mcp| mcp.list_tools().ok())
         .unwrap_or_default();
+    if let Some(gt) = gitnexus_mcp.as_mut().and_then(|mcp| mcp.list_tools().ok()) {
+        all_tools.extend(gt);
+    }
+    let git_tools = all_tools;
 
     println!("kiwi-ollama ready (model: {model}, url: {url})");
     if !git_tools.is_empty() {
@@ -208,11 +224,12 @@ fn run() -> Result<()> {
                         kb_collections.join(",")
                     };
                     println!(
-                        "model: {model} | url: {url} | rag: {} | mcp-memory: {} | mcp-context: {} | mcp-git: {} ({} tools) | kb-collections: {kb_filter}",
+                        "model: {model} | url: {url} | rag: {} | mcp-memory: {} | mcp-context: {} | mcp-git: {} | mcp-gitnexus: {} | tools: {} | kb-collections: {kb_filter}",
                         if rag.is_some() { "ready" } else { "indexing..." },
                         if mem_mcp.is_some() { "connected" } else { "unavailable" },
                         if ctx_mcp.is_some() { "connected" } else { "unavailable" },
                         if git_mcp.is_some() { "connected" } else { "unavailable" },
+                        if gitnexus_mcp.is_some() { "connected" } else { "unavailable" },
                         git_tools.len(),
                     );
                     let _ = std::io::stdout().flush();
@@ -259,7 +276,8 @@ fn run() -> Result<()> {
                     println!("  /help            — show this help");
                     println!("Env vars: OLLAMA_URL, OLLAMA_MODEL, OLLAMA_EMBED_MODEL,");
                     println!("          DATABASE_URL, EMBED_BACKEND,");
-                    println!("          GITHUB_TOKEN, GITHUB_REPO");
+                    println!("          GITHUB_TOKEN, GITHUB_REPO,");
+                    println!("          GITEA_TOKEN, GITEA_URL, GITEA_REPO");
                     let _ = std::io::stdout().flush();
                     continue;
                 }
@@ -345,6 +363,18 @@ fn run() -> Result<()> {
             }
         }
 
+        // 5. Pre-coding analysis — always fetch git status so the model knows the
+        //    current branch and which files are modified before reasoning about code.
+        if let Some(mcp) = git_mcp.as_mut() {
+            println!("running tool: analysing codebase state");
+            let _ = std::io::stdout().flush();
+            if let Ok(status) = mcp.call_tool("git_status", json!({})) {
+                if !status.is_empty() {
+                    context_parts.push(format!("[Code analysis]\n{status}"));
+                }
+            }
+        }
+
         let combined_context = if context_parts.is_empty() {
             None
         } else {
@@ -364,6 +394,7 @@ fn run() -> Result<()> {
         let mut turn_messages = base_messages;
         let mut full_response = String::new();
         let mut had_error = false;
+        let mut called_tools: Vec<String> = Vec::new();
 
         'tool_loop: for _round in 0..8 {
             let stream = match client.chat_stream(&turn_messages, tools_ref) {
@@ -429,14 +460,26 @@ fn run() -> Result<()> {
             for (tool_name, tool_args) in &turn_calls {
                 println!("running tool: {tool_name}");
                 let _ = std::io::stdout().flush();
+                called_tools.push(tool_name.clone());
 
-                let result = git_mcp
-                    .as_mut()
-                    .map(|mcp| {
-                        mcp.call_tool(tool_name, tool_args.clone())
-                            .unwrap_or_else(|e| format!("error: {e}"))
-                    })
-                    .unwrap_or_else(|| "error: git MCP server not connected".to_string());
+                // Route to the correct MCP server: Gitea tools → gitnexus, rest → git
+                let result = if tool_name.starts_with("gitea_") {
+                    gitnexus_mcp
+                        .as_mut()
+                        .map(|mcp| {
+                            mcp.call_tool(tool_name, tool_args.clone())
+                                .unwrap_or_else(|e| format!("error: {e}"))
+                        })
+                        .unwrap_or_else(|| "error: Gitea MCP server not connected".to_string())
+                } else {
+                    git_mcp
+                        .as_mut()
+                        .map(|mcp| {
+                            mcp.call_tool(tool_name, tool_args.clone())
+                                .unwrap_or_else(|e| format!("error: {e}"))
+                        })
+                        .unwrap_or_else(|| "error: git MCP server not connected".to_string())
+                };
 
                 // Print first line of result as status
                 let summary = result.lines().next().unwrap_or("done").trim();
@@ -451,6 +494,25 @@ fn run() -> Result<()> {
         if had_error {
             ctx.pop_last();
             continue;
+        }
+
+        // Post-edit indexing: if any code-modifying tools ran, re-index project memory
+        let code_was_modified = called_tools
+            .iter()
+            .any(|t| matches!(t.as_str(), "git_add" | "git_commit" | "git_checkout"));
+        if code_was_modified {
+            if let Some(mcp) = mem_mcp.as_mut() {
+                println!("running tool: re-indexing project memory after code edits");
+                let _ = std::io::stdout().flush();
+                let repo_str = repo.to_string_lossy();
+                match mcp.call_tool("index_project", json!({ "root": repo_str.as_ref() })) {
+                    Ok(_) => {
+                        println!("completed: project memory updated");
+                        let _ = std::io::stdout().flush();
+                    }
+                    Err(e) => eprintln!("warning: post-edit re-index failed: {e}"),
+                }
+            }
         }
 
         if !full_response.is_empty() {

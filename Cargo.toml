@@ -11,6 +11,7 @@ members = [
     "plugins/kiwi_mcp_memory",
     "plugins/kiwi_mcp_context",
     "plugins/kiwi_mcp_git",
+    "plugins/kiwi_mcp_gitnexus",
 ]
 
 [workspace.package]

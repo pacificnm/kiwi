@@ -1,0 +1,30 @@
+[package]
+name = "kiwi_mcp_gitnexus"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "MCP server for Gitea (self-hosted git) operations in Kiwi"
+
+[lib]
+name = "kiwi_mcp_gitnexus"
+crate-type = ["cdylib"]
+
+[[bin]]
+name = "kiwi-mcp-gitnexus"
+path = "src/main.rs"
+
+[lints.rust]
+unsafe_code = "allow"
+
+[lints.clippy]
+all = "warn"
+
+[dependencies]
+kiwi_plugin_api = { path = "../../crates/kiwi_plugin_api" }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+clap.workspace = true
+ureq.workspace = true

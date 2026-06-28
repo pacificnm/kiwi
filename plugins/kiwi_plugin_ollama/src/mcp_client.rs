@@ -27,6 +27,9 @@ impl McpProcess {
             "GITHUB_REPO",
             "GITHUB_API_URL",
             "GIT_REPO_PATH",
+            "GITEA_TOKEN",
+            "GITEA_URL",
+            "GITEA_REPO",
         ] {
             if let Ok(val) = std::env::var(var) {
                 cmd.env(var, val);
