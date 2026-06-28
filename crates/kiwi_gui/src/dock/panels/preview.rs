@@ -162,7 +162,7 @@ fn render_content(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
     let cols = max_text_cols(ui, gutter_width);
     ctx.state.viewport.preview_cols = usize::from(cols);
 
-    let lines = ctx.state.preview.lines.clone();
+    let lines = &ctx.state.preview.lines;
     let mut scroll_offset = ctx.state.preview.scroll_offset;
     let viewport_rows = render_virtual_rows(
         ui,

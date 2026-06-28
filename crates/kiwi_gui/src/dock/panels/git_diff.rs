@@ -94,7 +94,7 @@ fn render_diff_content(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
         return;
     }
 
-    let lines = ctx.state.diff.lines.clone();
+    let lines = &ctx.state.diff.lines;
     if lines.is_empty() {
         ctx.state.viewport.preview_rows = 1;
         return;
