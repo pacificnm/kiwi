@@ -26,6 +26,7 @@ There is **no sandbox** in v1. Treat third-party plugins like running arbitrary 
 | `PluginApi` | Passed to `register`; call `register_command` |
 | `PluginCommand` | Palette command (`id`, `title`, `callback`) |
 | `PluginManifest` | Deserialized from `plugin.toml` |
+| `PluginCapabilities` | Optional capability flags in `plugin.toml` (informational) |
 | `KiwiPlugin` + `declare_plugin!` | Ergonomic plugin authoring |
 
 Event subscriptions and custom tabs are reserved for later phases.
@@ -45,8 +46,74 @@ Event subscriptions and custom tabs are reserved for later phases.
 name = "my-plugin"
 version = "0.1.0"
 min_kiwi_version = "0.1.0"
+
+# Optional metadata (shown in the Plugin Manager)
+display_name = "My Plugin"
+description  = "Does something useful."
+author       = "Your Name"
+
 # entry = "kiwi_plugin_init"   # optional; this is the default
+
+# Optional capability hints (informational only, not enforced)
+[capabilities]
+commands = true   # registers palette commands
+panels   = false  # adds custom panels
+tabs     = false  # adds main/left nav tabs
+events   = false  # subscribes to app events
+mcp      = false  # exposes an MCP tool
 ```
+
+All fields except `name`, `version`, and `min_kiwi_version` are optional and
+backward-compatible with existing manifests.
+
+## Plugin registry
+
+Kiwi tracks installed plugins in `~/.config/kiwi/plugin-registry.toml`. This file is
+created automatically when Kiwi starts and discovers plugins for the first time — you
+do not need to create it manually.
+
+New plugin directories are **auto-registered as enabled** on startup.
+
+## Installing plugins
+
+The recommended way is the `kiwi plugin` CLI (runs without starting the TUI):
+
+```bash
+# Install from a local directory (copies files, registers in registry)
+kiwi plugin install /path/to/my-plugin
+
+# List all registered plugins
+kiwi plugin list
+
+# Show details for a plugin
+kiwi plugin info my-plugin
+
+# Enable / disable (takes effect on next restart)
+kiwi plugin enable my-plugin
+kiwi plugin disable my-plugin
+
+# Remove from registry (files are NOT deleted)
+kiwi plugin remove my-plugin
+
+# Normalise the registry file
+kiwi plugin reload
+```
+
+You can also install manually by placing the plugin directory under
+`~/.config/kiwi/plugins/` and restarting Kiwi.
+
+## Plugin Manager UI
+
+Once Kiwi is running, open the Plugin Manager to inspect installed plugins:
+
+- **TUI**: press `9` or open the command palette (`Ctrl+P`) and search for
+  **"Plugins: Open Manager"**.
+- **GUI**: use the **File → Plugins** menu or toggle the **Plugins** panel from
+  the **View** menu.
+
+The Plugin Manager displays a list of all registered plugins with their status
+(`Loaded`, `Disabled`, `Failed`, `Incompatible`) and a detail view showing version,
+author, description, and registered palette commands.
 
 ## Authoring a plugin
 
@@ -123,11 +190,21 @@ pub extern "C" fn kiwi_plugin_init() -> PluginDescriptor {
 
 Helpers: [`api_version_compatible`], [`kiwi_version_compatible`].
 
+## Plugin status lifecycle
+
+| Status | Meaning |
+| --- | --- |
+| `Loaded` | Successfully loaded and commands are active in the palette |
+| `Disabled` | Present on disk but disabled via `kiwi plugin disable` — not loaded |
+| `Failed` | Library found but failed to load (ABI mismatch, missing symbol, etc.) |
+| `Incompatible` | `min_kiwi_version` exceeds the running Kiwi version |
+| `Missing` | Registered in the registry but the files cannot be found on disk |
+
 ## Host integration (Kiwi core)
 
 Kiwi implements [`PluginRegistrar`] to collect [`PluginCommand`] values during load.
-Discovery, dynamic loading, and palette wiring live in the main `kiwi` crate. See the
-reference plugin at `plugins/kiwi_plugin_hello/`.
+Discovery, dynamic loading, registry management, and palette wiring live in the main
+`kiwi` crate. See the reference plugin at `plugins/kiwi_plugin_hello/`.
 
 [`KiwiPlugin`]: https://docs.rs/kiwi_plugin_api/latest/kiwi_plugin_api/trait.KiwiPlugin.html
 [`kiwi_plugin_init`]: https://docs.rs/kiwi_plugin_api/latest/kiwi_plugin_api/constant.PLUGIN_INIT_SYMBOL.html
