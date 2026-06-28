@@ -32,3 +32,4 @@ walkdir.workspace = true
 postgres.workspace = true
 pgvector.workspace = true
 sha2.workspace = true
+toml.workspace = true

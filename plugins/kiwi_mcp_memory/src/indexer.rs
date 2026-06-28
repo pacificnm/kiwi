@@ -92,6 +92,167 @@ pub fn index_project(root: &Path, db: &mut MemoryDb, embed: &EmbedClient) -> Res
     Ok(())
 }
 
+/// Walk `source`, chunk eligible files, embed, and upsert into knowledge_base.
+///
+/// `extensions` filters by file extension (case-insensitive, no leading dot).
+/// An empty slice means "accept all files that parse as UTF-8".
+/// HTML/HTM files are stripped of tags before chunking regardless of how they
+/// were selected.
+pub fn index_knowledge(
+    collection: &str,
+    source: &Path,
+    db: &mut crate::db::MemoryDb,
+    embed: &EmbedClient,
+    extensions: &[&str],
+) -> Result<()> {
+    eprintln!("indexing knowledge collection '{collection}' from {}", source.display());
+
+    let mut indexed = 0usize;
+    let mut skipped = 0usize;
+    let mut files_seen = 0usize;
+
+    for entry in WalkDir::new(source)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+    {
+        let path = entry.path();
+
+        // Extension filter
+        if !extensions.is_empty() {
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if !extensions.iter().any(|&ex| ex.eq_ignore_ascii_case(&ext)) {
+                continue;
+            }
+        }
+
+        files_seen += 1;
+
+        let raw = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => continue, // binary or unreadable — skip silently
+        };
+
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+
+        let content = if ext == "html" || ext == "htm" {
+            strip_html(&raw)
+        } else {
+            raw
+        };
+
+        let content = content.trim().to_string();
+        if content.is_empty() {
+            continue;
+        }
+
+        let rel = path
+            .strip_prefix(source)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .into_owned();
+
+        let chunks = chunk_text(&content);
+        for chunk in chunks {
+            let hash = sha256_hex(&chunk);
+            match embed.embed(&chunk) {
+                Ok(embedding) => {
+                    db.upsert_knowledge(collection, &rel, &chunk, &hash, &embedding)?;
+                    indexed += 1;
+                }
+                Err(e) => {
+                    eprintln!("  embed error for {rel}: {e}");
+                    skipped += 1;
+                }
+            }
+        }
+    }
+
+    eprintln!(
+        "done — {files_seen} files, {indexed} chunks indexed, {skipped} skipped"
+    );
+    Ok(())
+}
+
+/// Remove HTML tags and decode common entities, collapsing whitespace runs.
+fn strip_html(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut in_tag = false;
+    let mut chars = html.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => {
+                in_tag = false;
+                // Replace block-level tags with a newline for readability
+                out.push(' ');
+            }
+            '&' if !in_tag => {
+                // Collect until ';' or whitespace for entity decoding
+                let mut entity = String::new();
+                while let Some(&c) = chars.peek() {
+                    if c == ';' {
+                        chars.next();
+                        break;
+                    }
+                    if c.is_whitespace() {
+                        break;
+                    }
+                    entity.push(chars.next().unwrap());
+                }
+                let decoded = match entity.as_str() {
+                    "amp" => "&",
+                    "lt" => "<",
+                    "gt" => ">",
+                    "nbsp" | "#160" => " ",
+                    "quot" | "#34" => "\"",
+                    "#39" | "apos" => "'",
+                    "ndash" | "#8211" => "–",
+                    "mdash" | "#8212" => "—",
+                    _ => {
+                        out.push('&');
+                        out.push_str(&entity);
+                        continue;
+                    }
+                };
+                out.push_str(decoded);
+            }
+            _ if !in_tag => out.push(ch),
+            _ => {}
+        }
+    }
+
+    // Collapse runs of whitespace (but preserve single newlines)
+    let mut result = String::with_capacity(out.len());
+    let mut last_was_space = false;
+    for ch in out.chars() {
+        if ch == '\n' || ch == '\r' {
+            if !last_was_space {
+                result.push('\n');
+            }
+            last_was_space = true;
+        } else if ch.is_whitespace() {
+            if !last_was_space {
+                result.push(' ');
+            }
+            last_was_space = true;
+        } else {
+            result.push(ch);
+            last_was_space = false;
+        }
+    }
+    result
+}
+
 fn chunk_text(text: &str) -> Vec<String> {
     let mut chunks = Vec::new();
     let len = text.len();

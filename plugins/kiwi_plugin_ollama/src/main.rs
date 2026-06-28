@@ -48,6 +48,10 @@ struct Cli {
     /// Binary name or path for the context memory MCP server
     #[arg(long, default_value = "kiwi-mcp-context")]
     mcp_context_bin: String,
+
+    /// Comma-separated knowledge base collection names to search (default: all)
+    #[arg(long, default_value = "")]
+    kb_collections: String,
 }
 
 fn main() {
@@ -79,6 +83,14 @@ fn run() -> Result<()> {
         .repo
         .canonicalize()
         .unwrap_or_else(|_| args.repo.clone());
+
+    // Parse comma-separated knowledge base collection filter
+    let kb_collections: Vec<String> = args
+        .kb_collections
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
 
     let client = OllamaClient::new(url.clone(), model.clone(), embed_model);
     let mut ctx = ConversationContext::new();
@@ -182,8 +194,13 @@ fn run() -> Result<()> {
                     continue;
                 }
                 "/status" => {
+                    let kb_filter = if kb_collections.is_empty() {
+                        "all".to_string()
+                    } else {
+                        kb_collections.join(",")
+                    };
                     println!(
-                        "model: {model} | url: {url} | rag: {} | mcp-memory: {} | mcp-context: {}",
+                        "model: {model} | url: {url} | rag: {} | mcp-memory: {} | mcp-context: {} | kb-collections: {kb_filter}",
                         if rag.is_some() { "ready" } else { "indexing..." },
                         if mem_mcp.is_some() { "connected" } else { "unavailable" },
                         if ctx_mcp.is_some() { "connected" } else { "unavailable" },
@@ -264,7 +281,44 @@ fn run() -> Result<()> {
             }
         }
 
-        // 2. Context memory (MCP)
+        // 2. Knowledge base (MCP — same kiwi-mcp-memory server)
+        if let Some(mcp) = mem_mcp.as_mut() {
+            println!("running tool: searching knowledge base");
+            let _ = std::io::stdout().flush();
+            if kb_collections.is_empty() {
+                // Search across all collections in one call
+                match mcp.call_tool(
+                    "search_knowledge_base",
+                    json!({ "query": prompt, "limit": 5 }),
+                ) {
+                    Ok(text) if !text.is_empty() && text != "No results found." => {
+                        context_parts.push(format!("[Knowledge base]\n{text}"));
+                    }
+                    Err(e) => eprintln!("warning: knowledge base search failed: {e}"),
+                    _ => {}
+                }
+            } else {
+                // Search each named collection separately, combine results
+                let mut kb_parts: Vec<String> = Vec::new();
+                for col in &kb_collections {
+                    match mcp.call_tool(
+                        "search_knowledge_base",
+                        json!({ "query": prompt, "limit": 3, "collection": col }),
+                    ) {
+                        Ok(text) if !text.is_empty() && text != "No results found." => {
+                            kb_parts.push(text);
+                        }
+                        Err(e) => eprintln!("warning: knowledge base search ({col}) failed: {e}"),
+                        _ => {}
+                    }
+                }
+                if !kb_parts.is_empty() {
+                    context_parts.push(format!("[Knowledge base]\n{}", kb_parts.join("\n\n")));
+                }
+            }
+        }
+
+        // 4. Context memory (MCP)
         if let Some(mcp) = ctx_mcp.as_mut() {
             println!("running tool: searching context memory");
             let _ = std::io::stdout().flush();
@@ -280,7 +334,7 @@ fn run() -> Result<()> {
             }
         }
 
-        // 3. Local RAG (file embeddings)
+        // 5. Local RAG (live source code — no DB required)
         if let Some(index) = rag.as_ref() {
             println!("running tool: searching codebase");
             let _ = std::io::stdout().flush();
