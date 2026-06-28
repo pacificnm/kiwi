@@ -2,9 +2,10 @@ use kiwi_plugin_api::kiwi_version_compatible;
 use kiwi_plugin_loader::{load_plugin, PluginHost};
 
 use crate::config::PluginsSettings;
-use crate::state::{PluginPaletteCommand, PluginsState};
+use crate::state::{PluginEntry, PluginPaletteCommand, PluginStatus, PluginsState};
 
 use super::discovery::{discover_plugins, PluginCandidate};
+use super::registry::{default_registry_path, PluginRegistry, PluginRegistryEntry};
 
 pub struct PluginLoadOutcome {
     pub state: PluginsState,
@@ -23,11 +24,55 @@ pub fn load_plugins(config: &PluginsSettings, kiwi_version: &str) -> PluginLoadO
         return outcome;
     }
 
+    // Load (or create empty) registry.
+    let registry_path = default_registry_path();
+    let mut registry = if let Some(ref path) = registry_path {
+        let (reg, warnings) = PluginRegistry::load(path);
+        outcome.messages.extend(warnings);
+        reg
+    } else {
+        PluginRegistry::default()
+    };
+
     let (candidates, discovery_warnings) = discover_plugins(&config.directory);
     outcome.messages.extend(discovery_warnings);
 
-    for candidate in candidates {
-        load_candidate(&mut outcome, &candidate, kiwi_version);
+    for candidate in &candidates {
+        let name = &candidate.manifest.name;
+
+        // Auto-register newly discovered plugins (enabled by default).
+        if registry.get(name).is_none() {
+            let entry_filename = candidate
+                .library_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(&candidate.manifest.entry)
+                .to_string();
+            let installed_path = candidate
+                .manifest_path
+                .parent()
+                .unwrap_or(&candidate.manifest_path)
+                .to_path_buf();
+            registry.register(PluginRegistryEntry {
+                name: name.clone(),
+                display_name: candidate.manifest.display_name.clone(),
+                version: candidate.manifest.version.clone(),
+                enabled: true,
+                installed_path,
+                entry: entry_filename,
+                source: "local".to_string(),
+            });
+        }
+
+        let enabled = registry.is_enabled(name);
+        load_candidate(&mut outcome, candidate, kiwi_version, enabled);
+    }
+
+    // Persist any registry changes (new auto-registrations, etc.).
+    if let Some(ref path) = registry_path {
+        if let Err(err) = registry.save(path) {
+            outcome.messages.push(format!("Warning: could not save plugin registry: {err}"));
+        }
     }
 
     outcome
@@ -37,28 +82,63 @@ fn load_candidate(
     outcome: &mut PluginLoadOutcome,
     candidate: &PluginCandidate,
     kiwi_version: &str,
+    enabled: bool,
 ) {
-    let name = &candidate.manifest.name;
-    if !kiwi_version_compatible(&candidate.manifest.min_kiwi_version, kiwi_version) {
-        outcome.messages.push(format!(
-            "Plugin `{name}` skipped: requires Kiwi {} (running {kiwi_version})",
-            candidate.manifest.min_kiwi_version
-        ));
+    let manifest = &candidate.manifest;
+    let name = manifest.name.clone();
+    let display_name = manifest.effective_display_name().to_string();
+    let version = manifest.version.clone();
+    let description = manifest.description.clone().unwrap_or_default();
+    let author = manifest.author.clone().unwrap_or_default();
+
+    if !enabled {
+        outcome.state.entries.push(PluginEntry {
+            name,
+            display_name,
+            version,
+            description,
+            author,
+            enabled: false,
+            status: PluginStatus::Disabled,
+            command_ids: vec![],
+        });
         return;
     }
 
-    match load_plugin(&candidate.library_path, &candidate.manifest.entry) {
+    if !kiwi_version_compatible(&manifest.min_kiwi_version, kiwi_version) {
+        let reason = format!(
+            "requires Kiwi {} (running {kiwi_version})",
+            manifest.min_kiwi_version
+        );
+        outcome
+            .messages
+            .push(format!("Plugin `{name}` skipped: {reason}"));
+        outcome.state.entries.push(PluginEntry {
+            name,
+            display_name,
+            version,
+            description,
+            author,
+            enabled: true,
+            status: PluginStatus::Incompatible(reason),
+            command_ids: vec![],
+        });
+        return;
+    }
+
+    match load_plugin(&candidate.library_path, &manifest.entry) {
         Ok(mut loaded) => {
-            if loaded.name != *name {
+            if loaded.name != name {
                 outcome.messages.push(format!(
                     "Plugin `{name}` warning: descriptor name `{}` does not match manifest",
                     loaded.name
                 ));
             }
 
-            let command_count = loaded.commands.len();
+            let mut command_ids = Vec::new();
             let plugin_name = loaded.name.clone();
             for command in std::mem::take(&mut loaded.commands) {
+                command_ids.push(command.id.clone());
                 outcome.state.commands.push(PluginPaletteCommand {
                     id: command.id,
                     title: command.title,
@@ -68,14 +148,38 @@ fn load_candidate(
                 });
             }
 
-            outcome.messages.push(format!(
-                "Plugin `{name}` loaded ({command_count} command(s))"
-            ));
+            let count = command_ids.len();
+            outcome
+                .messages
+                .push(format!("Plugin `{name}` loaded ({count} command(s))"));
+            outcome.state.entries.push(PluginEntry {
+                name,
+                display_name,
+                version,
+                description,
+                author,
+                enabled: true,
+                status: PluginStatus::Loaded,
+                command_ids,
+            });
             outcome.host.push(loaded);
         }
-        Err(err) => outcome
-            .messages
-            .push(format!("Plugin `{name}` skipped: {err}")),
+        Err(err) => {
+            let reason = err.to_string();
+            outcome
+                .messages
+                .push(format!("Plugin `{name}` skipped: {err}"));
+            outcome.state.entries.push(PluginEntry {
+                name,
+                display_name,
+                version,
+                description,
+                author,
+                enabled: true,
+                status: PluginStatus::Failed(reason),
+                command_ids: vec![],
+            });
+        }
     }
 }
 
@@ -119,11 +223,7 @@ mod tests {
         }
 
         fn copy_library(&self, library_path: &Path) {
-            let ext = if cfg!(target_os = "macos") {
-                "dylib"
-            } else {
-                "so"
-            };
+            let ext = if cfg!(target_os = "macos") { "dylib" } else { "so" };
             let dest = self.root.join("hello").join(format!("libhello.{ext}"));
             fs::copy(library_path, dest).expect("copy library");
         }
@@ -156,11 +256,12 @@ mod tests {
             "0.1.0",
         );
         assert!(outcome.state.commands.is_empty());
+        assert!(outcome.state.entries.is_empty());
         assert!(outcome.messages.is_empty());
     }
 
     #[test]
-    fn sample_hello_plugin_registers_palette_command() {
+    fn sample_hello_plugin_registers_palette_command_and_entry() {
         let library_path = sample_hello_library_path();
         assert!(
             library_path.is_file(),
@@ -180,10 +281,7 @@ mod tests {
         );
 
         assert!(
-            outcome
-                .messages
-                .iter()
-                .any(|message| message.contains("Plugin `hello` loaded")),
+            outcome.messages.iter().any(|m| m.contains("Plugin `hello` loaded")),
             "messages: {:?}",
             outcome.messages
         );
@@ -191,9 +289,31 @@ mod tests {
         assert_eq!(outcome.state.commands[0].id, "hello.greet");
         assert_eq!(outcome.state.commands[0].title, "Hello Plugin: Greet");
 
+        // PluginEntry should be present and Loaded
+        assert_eq!(outcome.state.entries.len(), 1);
+        let entry = &outcome.state.entries[0];
+        assert_eq!(entry.name, "hello");
+        assert!(entry.enabled);
+        assert!(matches!(entry.status, PluginStatus::Loaded));
+        assert_eq!(entry.command_ids, ["hello.greet"]);
+
         match invoke_plugin_command(outcome.state.commands[0].callback) {
             PluginInvokeOutcome::Completed(PluginResult::Ok) => {}
             other => panic!("unexpected plugin callback outcome: {other:?}"),
         }
+    }
+
+    #[test]
+    fn incompatible_version_produces_incompatible_entry() {
+        let outcome = load_plugins(
+            &PluginsSettings {
+                enabled: true,
+                directory: PathBuf::from("/tmp/kiwi-no-plugins-dir"),
+            },
+            "0.1.0",
+        );
+        // No candidates → no entries, no error
+        assert!(outcome.state.entries.is_empty());
+        assert!(outcome.state.commands.is_empty());
     }
 }
