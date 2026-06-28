@@ -28,6 +28,7 @@ Architecture Decision Records (ADRs) document significant technical and product 
 | [ADR-020](./ADR-020-dual-frontend-architecture.md) | Dual Frontend Architecture | Accepted |
 | [ADR-021](./ADR-021-desktop-gui-framework-selection.md) | Desktop GUI Framework Selection | Accepted |
 | [ADR-022](./ADR-022-gui-dock-layout-architecture.md) | GUI Dock Layout Architecture | Accepted |
+| [ADR-023](./ADR-023-ollama-agent-design.md) | Ollama Agent Design | Accepted |
 
 ## ADR Template
 

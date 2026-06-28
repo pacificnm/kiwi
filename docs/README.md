@@ -11,6 +11,7 @@ This documentation package expands the [project initiation plan](../plan.md) int
 | [Architecture](./architecture/README.md) | High-level structure and decision records | [ADR index](./architecture/adr/README.md) |
 | [Specifications](./specs/README.md) | Detailed behavioral and interface contracts | [SPEC-001 Startup](./specs/SPEC-001-startup-lifecycle.md) |
 | [Design](./design/README.md) | UX, layout, interaction, and workflows | [Layout](./design/layout.md) |
+| [Agents](./agents/README.md) | Agent configuration guides (Ollama, custom) | [Ollama/qwen2.5-coder](./agents/ollama-qwen-agent.md) |
 | [Development](./development/README.md) | Resolved issues, PTY behavior, implementer notes | [Issue resolution log](./development/issue-resolution-log.md) |
 | [Roadmap](./roadmap/README.md) | Milestones, backlog, and release planning | [Milestones](./roadmap/milestones.md) |
 | [Repository Structure](./repository-structure.md) | Proposed crate and module layout | — |
