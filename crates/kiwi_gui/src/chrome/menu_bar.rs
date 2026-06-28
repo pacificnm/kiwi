@@ -43,7 +43,7 @@ pub fn render_menu_bar(ctx: &Context, dock: &mut DockShell) -> MenuBarAction {
                 });
 
                 ui.menu_button("View", |ui| {
-                    for tab in KiwiTab::all_variants() {
+                    for tab in KiwiTab::all_variants().iter().filter(|t| !t.is_placeholder()) {
                         let mut open = dock.is_tab_open(*tab);
                         if ui.checkbox(&mut open, tab.title()).changed() {
                             if open {

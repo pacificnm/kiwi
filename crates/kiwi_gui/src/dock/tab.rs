@@ -67,6 +67,13 @@ impl KiwiTab {
         ]
     }
 
+    /// Returns `true` for tabs whose panels are not yet implemented (show placeholder text).
+    /// Used to hide stub tabs from the View menu (#278).
+    #[must_use]
+    pub const fn is_placeholder(self) -> bool {
+        matches!(self, Self::Logs | Self::Config | Self::GitLog)
+    }
+
     /// Factory-default open tabs (ADR-022); used by layout and tests.
     #[must_use]
     pub const fn factory_tabs() -> &'static [Self] {
@@ -92,6 +99,15 @@ mod tests {
         titles.sort_unstable();
         titles.dedup();
         assert_eq!(titles.len(), variants.len());
+    }
+
+    #[test]
+    fn placeholder_tabs_are_logs_config_gitlog() {
+        assert!(KiwiTab::Logs.is_placeholder());
+        assert!(KiwiTab::Config.is_placeholder());
+        assert!(KiwiTab::GitLog.is_placeholder());
+        assert!(!KiwiTab::Explorer.is_placeholder());
+        assert!(!KiwiTab::Terminal.is_placeholder());
     }
 
     #[test]
