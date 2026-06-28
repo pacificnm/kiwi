@@ -15,7 +15,6 @@ pub struct PtyScrollbackView<'a> {
     pub viewport_offset: usize,
     pub spawn_error: Option<&'a str>,
     pub idle_hint: Option<&'a str>,
-    pub footer: Option<&'a str>,
 }
 
 pub fn render_pty_scrollback(
@@ -26,8 +25,6 @@ pub fn render_pty_scrollback(
     viewport_offset: &mut usize,
     viewport_rows_out: &mut usize,
 ) {
-    let _ = pane.footer;
-
     if let Some(error) = pane.spawn_error {
         ui.colored_label(theme.role(SemanticRole::AgentError), error);
         *viewport_rows_out = 1;
@@ -130,7 +127,6 @@ pub fn render_shell_panel(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
             viewport_offset,
             spawn_error: ctx.state.shell.spawn_error.as_deref(),
             idle_hint,
-            footer: None,
         },
         &mut follow_tail,
         &mut viewport_offset,
@@ -170,7 +166,6 @@ pub fn render_agent_panel(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
                 viewport_offset,
                 spawn_error: spawn_error.as_deref(),
                 idle_hint: idle_hint.as_deref(),
-                footer: None,
             },
             &mut follow_tail,
             &mut viewport_offset,
