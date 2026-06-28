@@ -110,6 +110,9 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
             ctx.pty.shutdown();
             return true;
         }
+        // Both core state and dock layout are saved here, matching KiwiApp::save_workspace
+        // (the 30-second timer path). The dock_snapshot carries the live egui_dock state;
+        // it is None only in tests / headless contexts (#276).
         SideEffect::SaveWorkspace => {
             let mut view = ReduceView::from_app_state(ctx.state);
             try_save_from_reduce_view(&mut view);
@@ -671,6 +674,25 @@ mod tests {
         );
         assert!(!quit);
         assert!(state.github.loading);
+    }
+
+    #[test]
+    fn save_workspace_effect_does_not_quit() {
+        // Verifies both save paths are symmetric (#276): dock_snapshot=None exercises
+        // the core-state path; production passes Some(...) which also saves dock layout.
+        let mut state = test_state();
+        let events = EventChannel::new();
+        let mut pty = PtyRuntime::new();
+        let mut search = SearchRuntime::default();
+        let mut ctx = ServiceContext {
+            state: &mut state,
+            events: &events,
+            pty: &mut pty,
+            search: &mut search,
+            dock_snapshot: None,
+        };
+        let quit = execute_gui_effects(&mut ctx, vec![SideEffect::SaveWorkspace]);
+        assert!(!quit);
     }
 
     #[test]
