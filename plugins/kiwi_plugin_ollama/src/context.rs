@@ -47,6 +47,15 @@ impl ConversationContext {
         self.messages.pop();
     }
 
+    /// Returns the content of the most recent user message, if any.
+    pub fn last_user_message(&self) -> Option<&str> {
+        self.messages
+            .iter()
+            .rev()
+            .find(|m| m.role == "user")
+            .map(|m| m.content.as_str())
+    }
+
     /// Assembles the full message list for /api/chat.
     /// RAG context, if provided, is injected as a temporary exchange before
     /// the real conversation history so it is not persisted across turns.
