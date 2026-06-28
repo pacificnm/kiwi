@@ -39,8 +39,8 @@ impl TabViewer for KiwiTabViewer<'_> {
         fix_blank_gap_at_top(ui);
     }
 
-    fn closeable(&mut self, _tab: &mut Self::Tab) -> bool {
-        true
+    fn closeable(&mut self, tab: &mut Self::Tab) -> bool {
+        !matches!(tab, KiwiTab::Terminal)
     }
 
     /// Use egui_dock's tab [`ScrollArea`] for all panels. Nested scroll areas break scrolling.
