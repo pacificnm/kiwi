@@ -12,6 +12,7 @@ pub struct GuiTheme {
     pub visuals: Visuals,
     semantic: HashMap<SemanticRole, Color32>,
     pub font_size: f32,
+    pub needs_apply: bool,
 }
 
 impl GuiTheme {
@@ -30,6 +31,7 @@ impl GuiTheme {
             visuals,
             semantic,
             font_size: gui.font_size,
+            needs_apply: true,
         }
     }
 
@@ -41,7 +43,7 @@ impl GuiTheme {
             .unwrap_or_else(|| role_color(&self.semantic, SemanticRole::Fg))
     }
 
-    pub fn apply_to_context(&self, ctx: &egui::Context) {
+    pub fn apply_to_context(&mut self, ctx: &egui::Context) {
         ctx.set_visuals(self.visuals.clone());
         let scaled = self.font_size * ctx.pixels_per_point();
         ctx.style_mut(|style| {
@@ -61,6 +63,7 @@ impl GuiTheme {
                 .text_styles
                 .insert(TextStyle::Small, FontId::proportional(scaled * 0.85));
         });
+        self.needs_apply = false;
     }
 }
 

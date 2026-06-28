@@ -41,11 +41,13 @@ pub struct KiwiApp {
 impl KiwiApp {
     #[must_use]
     pub fn new(
-        _cc: &eframe::CreationContext<'_>,
+        cc: &eframe::CreationContext<'_>,
         runtime: GuiRuntime,
         gui_snapshot: Option<GuiWorkspaceSnapshot>,
     ) -> Self {
-        let gui_theme = GuiTheme::from_palette(&runtime.state.theme, &runtime.state.config.gui);
+        let mut gui_theme =
+            GuiTheme::from_palette(&runtime.state.theme, &runtime.state.config.gui);
+        gui_theme.apply_to_context(&cc.egui_ctx);
         let dock = gui_snapshot
             .as_ref()
             .map(restore_dock)
@@ -287,7 +289,9 @@ impl eframe::App for KiwiApp {
             return;
         }
 
-        self.gui_theme.apply_to_context(ctx);
+        if self.gui_theme.needs_apply {
+            self.gui_theme.apply_to_context(ctx);
+        }
 
         if self.runtime.state.dirty {
             self.status_bar = compute_status_bar(&self.runtime.state);
