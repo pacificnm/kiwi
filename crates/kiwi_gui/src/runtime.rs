@@ -1,6 +1,6 @@
 //! Post-bootstrap runtime: shared state, event channel, and background services.
 
-use kiwi_core::events::{AppCommand, AppEvent, EventChannel};
+use kiwi_core::events::{AppEvent, EventChannel};
 use kiwi_core::reducer::{
     agent_spawn_effects_if_needed, file_tree_startup_effects, workspace_restore_effects,
 };
@@ -94,7 +94,7 @@ impl GuiRuntime {
         execute_gui_effects(&mut ctx, agent_spawn_effects);
 
         if runtime.state.workspace_meta.is_git_repo {
-            runtime.dispatch(AppEvent::GitRefreshRequested);
+            let _ = runtime.dispatch(AppEvent::GitRefreshRequested);
         }
 
         (runtime, gui_snapshot)
