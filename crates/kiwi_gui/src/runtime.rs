@@ -118,12 +118,10 @@ impl GuiRuntime {
         self.search.debounce_pending()
     }
 
+    /// Returns `true` if the debounce timer fired. The caller is responsible for
+    /// dispatching `SearchExecute` when this returns `true`.
     pub fn poll_search_debounce(&mut self) -> bool {
-        if self.search.poll_debounce() {
-            let _ = self.dispatch_command(AppCommand::SearchExecute);
-            return true;
-        }
-        false
+        self.search.poll_debounce()
     }
 
     pub fn dispatch(&mut self, event: AppEvent) -> bool {
@@ -274,8 +272,9 @@ mod tests {
         thread::sleep(Duration::from_millis(250));
         assert!(
             runtime.poll_search_debounce(),
-            "debounce timer should fire SearchExecute"
+            "debounce timer should fire"
         );
+        runtime.dispatch_command(AppCommand::SearchExecute);
         assert!(runtime.state.search.running);
 
         let deadline = std::time::Instant::now() + Duration::from_secs(3);

@@ -385,7 +385,7 @@ impl eframe::App for KiwiApp {
             ctx.request_repaint();
         }
         if self.runtime.poll_search_debounce() {
-            // `poll_search_debounce` dispatches `SearchExecute` when the timer fires.
+            let _ = self.runtime.dispatch_command(AppCommand::SearchExecute);
         }
 
         if event_count > 0 || self.runtime.state.dirty {
