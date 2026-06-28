@@ -132,7 +132,10 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
                     );
                 }
             }
-            _ => {}
+            // Branch list/checkout are driven by the GUI dock directly; no service action needed.
+            GitEffect::SpawnBranchList => {}
+            GitEffect::SpawnBranchCheckout { .. } => {}
+            _ => {} // #[non_exhaustive] forward-compat
         },
         SideEffect::GitHub(effect) => match effect {
             GitHubEffect::SpawnRefresh => {
@@ -231,7 +234,7 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
                     ctx.events.sender(),
                 );
             }
-            _ => {}
+            _ => {} // #[non_exhaustive] forward-compat
         },
         SideEffect::Shell(effect) => match effect {
             ShellEffect::Write(data) => {
@@ -242,7 +245,7 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
                     ctx.state.shell.apply_resize(cols, rows);
                 }
             }
-            _ => {}
+            _ => {} // #[non_exhaustive] forward-compat
         },
         SideEffect::Agent(effect) => match effect {
             AgentEffect::Spawn(id) => {
@@ -271,7 +274,7 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
                 let id = ctx.state.agent_manager.active_id();
                 let _ = ctx.pty.write_agent(id, &data);
             }
-            _ => {}
+            _ => {} // #[non_exhaustive] forward-compat
         },
         SideEffect::Fs(effect) => match effect {
             FsEffect::LoadDirectoryChildren(path) => {
@@ -302,7 +305,7 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
                     ctx.events.sender(),
                 );
             }
-            _ => {}
+            _ => {} // #[non_exhaustive] forward-compat
         },
         SideEffect::Search(effect) => match effect {
             SearchEffect::Cancel => {
@@ -327,7 +330,7 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
                     ctx.search.cancel.clone(),
                 );
             }
-            _ => {}
+            _ => {} // #[non_exhaustive] forward-compat
         },
         SideEffect::CopyToClipboard(text) => {
             match Clipboard::new().and_then(|mut cb| cb.set_text(text)) {
