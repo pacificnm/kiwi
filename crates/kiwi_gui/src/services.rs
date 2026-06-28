@@ -341,6 +341,7 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
                 }
             }
         }
+        // arboard reads the OS clipboard directly — egui::Context is not required (#273).
         SideEffect::PasteFromClipboard => {
             match Clipboard::new().and_then(|mut cb| cb.get_text()) {
                 Ok(text) => {
@@ -350,7 +351,7 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
                             kiwi_core::events::AppCommand::PasteText(text),
                         ),
                     );
-                    // execute resulting effects inline (PasteText only produces shell/agent writes)
+                    // PasteText only produces Shell/Agent write effects; execute inline.
                     for inner in effects {
                         execute_gui_effect(ctx, inner);
                     }
