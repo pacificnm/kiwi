@@ -338,6 +338,13 @@ pub const COMMANDS: &[CommandDef] = &[
         action: PaletteAction::Navigation(NavCommand::SelectMainTab(MainTab::Settings)),
     },
     CommandDef {
+        id: "main.plugins",
+        title: "Plugins: Open Manager",
+        shortcut: Some("9"),
+        context: CommandContext::Always,
+        action: PaletteAction::Navigation(NavCommand::SelectMainTab(MainTab::Plugins)),
+    },
+    CommandDef {
         id: "left.files",
         title: "Left Tab: Files",
         shortcut: None,
