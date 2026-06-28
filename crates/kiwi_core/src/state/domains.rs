@@ -548,6 +548,8 @@ pub struct PluginsState {
     pub selected_index: usize,
     pub scroll_offset: usize,
     pub detail_scroll: usize,
+    /// Path typed into the "Install from directory" field in the Plugin Manager.
+    pub install_path_input: String,
 }
 
 #[derive(Debug, Clone)]

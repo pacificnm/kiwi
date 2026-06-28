@@ -11,6 +11,7 @@ mod agent;
 mod search;
 mod diff;
 mod navigation;
+mod plugins;
 mod workspace;
 mod settings;
 
@@ -35,6 +36,7 @@ pub use self::diff::diff_select_file_effects;
 pub use self::diff::diff_move_file_effects;
 pub use self::diff::diff_set_source_effects;
 
+use self::plugins::{reduce_plugin_install, reduce_plugin_set_enabled};
 use self::github::reduce_github_refresh_requested;
 use self::github::reduce_github_auth_checked;
 use self::github::reduce_github_issues_loaded;
@@ -354,6 +356,10 @@ pub fn reduce_command(state: &mut ReduceView<'_>, command: AppCommand) -> Vec<Si
         AppCommand::SettingsSelect(index) => reduce_settings_select(state, index),
         AppCommand::SettingsApplyTheme => reduce_settings_apply_theme(state),
         AppCommand::SetTheme(name) => reduce_set_theme(state, name),
+        AppCommand::PluginSetEnabled { name, enabled } => {
+            reduce_plugin_set_enabled(state, name, enabled)
+        }
+        AppCommand::PluginInstall { src_path } => reduce_plugin_install(state, src_path),
     }
 }
 

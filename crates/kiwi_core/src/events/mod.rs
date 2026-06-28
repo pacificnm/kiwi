@@ -254,6 +254,10 @@ pub enum AppCommand {
     SettingsApplyTheme,
     #[cfg_attr(not(test), allow(dead_code))]
     SetTheme(String),
+    /// Enable or disable a plugin. Updates state immediately; persisted via SideEffect.
+    PluginSetEnabled { name: String, enabled: bool },
+    /// Install a plugin from a local directory into the plugins folder.
+    PluginInstall { src_path: std::path::PathBuf },
 }
 
 #[non_exhaustive]
@@ -329,6 +333,10 @@ pub enum SideEffect {
     Agent(AgentEffect),
     Fs(FsEffect),
     Search(SearchEffect),
+    /// Persist enable/disable change to plugin-registry.toml.
+    PluginSetEnabled { name: String, enabled: bool },
+    /// Copy a plugin directory into the plugins folder and register it.
+    PluginInstall { src_path: std::path::PathBuf },
 }
 
 impl AppCommand {
