@@ -67,20 +67,6 @@ pub fn sync_dock_from_navigation(
 }
 
 #[must_use]
-#[allow(dead_code)] // navigation helper; covered by unit tests
-pub fn primary_tab_for_navigation(
-    nav: &NavigationState,
-    gh_pane: GitHubLeftPane,
-) -> Option<KiwiTab> {
-    match nav.focus {
-        FocusTarget::Shell => Some(KiwiTab::Terminal),
-        FocusTarget::CommandPalette => None,
-        FocusTarget::Left => kiwi_tab_for_left(nav.left_tab, nav.main_tab, gh_pane),
-        FocusTarget::Main => kiwi_tab_for_main(nav.main_tab, gh_pane),
-    }
-}
-
-#[must_use]
 fn kiwi_tab_for_left(left: LeftNavTab, _main: MainTab, _gh_pane: GitHubLeftPane) -> Option<KiwiTab> {
     match left {
         LeftNavTab::Files => Some(KiwiTab::Explorer),
@@ -117,85 +103,68 @@ mod tests {
         nav
     }
 
+    fn sync_opens(nav: NavigationState, tab: KiwiTab) {
+        let mut dock = DockShell::new();
+        dock.close_tab(tab);
+        assert!(!dock.is_tab_open(tab));
+        sync_dock_from_navigation(&mut dock, &nav, GitHubLeftPane::Issues);
+        assert!(dock.is_tab_open(tab));
+    }
+
     #[test]
     fn shell_focus_opens_terminal() {
-        let nav = nav_with(&[NavCommand::SetFocus(FocusTarget::Shell)]);
-        assert_eq!(
-            primary_tab_for_navigation(&nav, GitHubLeftPane::Issues),
-            Some(KiwiTab::Terminal)
-        );
+        sync_opens(nav_with(&[NavCommand::SetFocus(FocusTarget::Shell)]), KiwiTab::Terminal);
     }
 
     #[test]
     fn goto_agent_opens_agent_tab() {
-        let nav = nav_with(&[
-            NavCommand::SelectMainTab(MainTab::Agent),
-            NavCommand::SetFocus(FocusTarget::Main),
-        ]);
-        assert_eq!(
-            primary_tab_for_navigation(&nav, GitHubLeftPane::Issues),
-            Some(KiwiTab::Agent)
+        sync_opens(
+            nav_with(&[NavCommand::SelectMainTab(MainTab::Agent), NavCommand::SetFocus(FocusTarget::Main)]),
+            KiwiTab::Agent,
         );
     }
 
     #[test]
     fn goto_issues_opens_issues_detail_tab() {
-        let nav = nav_with(&[
-            NavCommand::SelectLeftTab(LeftNavTab::Gh),
-            NavCommand::SelectMainTab(MainTab::Issues),
-            NavCommand::SetFocus(FocusTarget::Main),
-        ]);
-        assert_eq!(
-            primary_tab_for_navigation(&nav, GitHubLeftPane::Issues),
-            Some(KiwiTab::Issues)
+        sync_opens(
+            nav_with(&[
+                NavCommand::SelectLeftTab(LeftNavTab::Gh),
+                NavCommand::SelectMainTab(MainTab::Issues),
+                NavCommand::SetFocus(FocusTarget::Main),
+            ]),
+            KiwiTab::Issues,
         );
     }
 
     #[test]
     fn gh_left_focus_opens_github_list_tab() {
-        let nav = nav_with(&[
-            NavCommand::SelectLeftTab(LeftNavTab::Gh),
-            NavCommand::SetFocus(FocusTarget::Left),
-        ]);
-        assert_eq!(
-            primary_tab_for_navigation(&nav, GitHubLeftPane::Issues),
-            Some(KiwiTab::GitHubIssues)
+        sync_opens(
+            nav_with(&[NavCommand::SelectLeftTab(LeftNavTab::Gh), NavCommand::SetFocus(FocusTarget::Left)]),
+            KiwiTab::GitHubIssues,
         );
     }
 
     #[test]
     fn goto_files_opens_explorer() {
-        let nav = nav_with(&[
-            NavCommand::SelectLeftTab(LeftNavTab::Files),
-            NavCommand::SetFocus(FocusTarget::Left),
-        ]);
-        assert_eq!(
-            primary_tab_for_navigation(&nav, GitHubLeftPane::Issues),
-            Some(KiwiTab::Explorer)
+        sync_opens(
+            nav_with(&[NavCommand::SelectLeftTab(LeftNavTab::Files), NavCommand::SetFocus(FocusTarget::Left)]),
+            KiwiTab::Explorer,
         );
     }
 
     #[test]
     fn goto_branches_opens_git_log_tab() {
-        let nav = nav_with(&[
-            NavCommand::SelectMainTab(MainTab::Branches),
-            NavCommand::SetFocus(FocusTarget::Main),
-        ]);
-        assert_eq!(
-            primary_tab_for_navigation(&nav, GitHubLeftPane::Issues),
-            Some(KiwiTab::GitLog)
+        sync_opens(
+            nav_with(&[NavCommand::SelectMainTab(MainTab::Branches), NavCommand::SetFocus(FocusTarget::Main)]),
+            KiwiTab::GitLog,
         );
     }
 
     #[test]
     fn goto_search_opens_search_tab() {
-        let nav = nav_with(&[
-            NavCommand::SelectLeftTab(LeftNavTab::Search),
-            NavCommand::SetFocus(FocusTarget::Left),
-        ]);
-        assert_eq!(
-            primary_tab_for_navigation(&nav, GitHubLeftPane::Issues),
-            Some(KiwiTab::Search)
+        sync_opens(
+            nav_with(&[NavCommand::SelectLeftTab(LeftNavTab::Search), NavCommand::SetFocus(FocusTarget::Left)]),
+            KiwiTab::Search,
         );
     }
 

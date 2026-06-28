@@ -6,23 +6,6 @@ use kiwi_core::navigation::{FocusTarget, LeftNavTab, NavCommand};
 use kiwi_core::search::SearchMode;
 use kiwi_core::state::AppState;
 
-/// Sync TUI navigation when the Search dock tab is focused (keyboard routing).
-#[allow(dead_code)] // covered by unit tests; dock tab clicks dispatch nav via `on_tab_button`
-pub fn navigation_sync_commands(state: &AppState) -> Vec<AppCommand> {
-    let mut commands = Vec::new();
-    if state.navigation.left_tab != LeftNavTab::Search {
-        commands.push(AppCommand::Navigation(NavCommand::SelectLeftTab(
-            LeftNavTab::Search,
-        )));
-    }
-    if state.navigation.focus != FocusTarget::Left {
-        commands.push(AppCommand::Navigation(NavCommand::SetFocus(
-            FocusTarget::Left,
-        )));
-    }
-    commands
-}
-
 /// Collect keyboard commands when the Search dock tab is focused.
 pub fn collect_search_keyboard(ctx: &Context, state: &AppState) -> Vec<AppCommand> {
     if state.palette.open || ctx.wants_keyboard_input() {
@@ -171,22 +154,6 @@ mod tests {
             TerminalCapabilities::TrueColor,
             ViewportMetrics::default(),
         )
-    }
-
-    #[test]
-    fn navigation_sync_selects_search_left_tab() {
-        let mut state = test_state();
-        state.navigation.left_tab = LeftNavTab::Files;
-        state.navigation.focus = FocusTarget::Main;
-        let commands = navigation_sync_commands(&state);
-        assert!(commands.iter().any(|cmd| matches!(
-            cmd,
-            AppCommand::Navigation(NavCommand::SelectLeftTab(LeftNavTab::Search))
-        )));
-        assert!(commands.iter().any(|cmd| matches!(
-            cmd,
-            AppCommand::Navigation(NavCommand::SetFocus(FocusTarget::Left))
-        )));
     }
 
     #[test]
