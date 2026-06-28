@@ -211,14 +211,6 @@ fn color_for_line_kind(ctx: &PanelContext<'_>, kind: DiffLineKind) -> Color32 {
     }
 }
 
-fn gutter_width(lines: &[DiffLine]) -> usize {
-    let old_width = max_lineno_digits(lines.iter().filter_map(|line| line.old_lineno));
-    let new_width = max_lineno_digits(lines.iter().filter_map(|line| line.new_lineno));
-    if old_width == 0 && new_width == 0 {
-        return 0;
-    }
-    old_width + 1 + new_width + 2
-}
 
 fn max_lineno_digits(values: impl Iterator<Item = u32>) -> usize {
     values
@@ -363,16 +355,4 @@ mod tests {
         assert!(status.contains("1 lines"));
     }
 
-    #[test]
-    fn gutter_width_zero_when_no_line_numbers() {
-        assert_eq!(
-            gutter_width(&[DiffLine {
-                kind: DiffLineKind::Header,
-                content: "@@".to_string(),
-                old_lineno: None,
-                new_lineno: None,
-            }]),
-            0
-        );
-    }
 }

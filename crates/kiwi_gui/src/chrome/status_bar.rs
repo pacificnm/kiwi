@@ -2,20 +2,18 @@
 
 use egui::{Align, Layout, RichText};
 use kiwi_core::agent::AgentStatus;
-use kiwi_core::state::AppState;
-use kiwi_core::status_bar::{compute_status_bar, fit_status_bar_segments, BRAND, SEPARATOR};
+use kiwi_core::status_bar::{fit_status_bar_segments, StatusBarSnapshot, BRAND, SEPARATOR};
 use kiwi_core::theme::SemanticRole;
 
 use crate::theme::GuiTheme;
 
 const STATUS_BAR_HEIGHT: f32 = 24.0;
 
-pub fn render_status_bar(ctx: &egui::Context, theme: &GuiTheme, state: &AppState) {
+pub fn render_status_bar(ctx: &egui::Context, theme: &GuiTheme, snapshot: &StatusBarSnapshot) {
     egui::TopBottomPanel::bottom("status_bar")
         .min_height(STATUS_BAR_HEIGHT)
         .max_height(STATUS_BAR_HEIGHT)
         .show(ctx, |ui| {
-            let snapshot = compute_status_bar(state);
             let width = ui.available_width().max(0.0) as u16;
             let segments = fit_status_bar_segments(&snapshot, width);
 
@@ -77,7 +75,7 @@ mod tests {
 
     use kiwi_core::config::ResolvedConfig;
     use kiwi_core::state::{AppState, ViewportMetrics};
-    use kiwi_core::status_bar::format_status_line;
+    use kiwi_core::status_bar::{compute_status_bar, format_status_line};
     use kiwi_core::theme::{load_theme_with_capabilities, TerminalCapabilities};
 
     use super::*;

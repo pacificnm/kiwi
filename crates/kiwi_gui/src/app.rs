@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use kiwi_core::events::{AppCommand, AppEvent};
 use kiwi_core::navigation::FocusTarget;
 use kiwi_core::state::ReduceView;
+use kiwi_core::status_bar::{compute_status_bar, StatusBarSnapshot};
 use kiwi_core::workspace::{try_merge_save_gui, try_save_from_reduce_view, GuiWorkspaceSnapshot};
 
 use crate::chrome::{
@@ -34,6 +35,7 @@ pub struct KiwiApp {
     workspace_last_saved: Instant,
     last_shell_interrupt: Option<Instant>,
     shutdown_completed: bool,
+    status_bar: StatusBarSnapshot,
 }
 
 impl KiwiApp {
@@ -49,6 +51,7 @@ impl KiwiApp {
             .map(restore_dock)
             .map(DockShell::with_state)
             .unwrap_or_default();
+        let status_bar = compute_status_bar(&runtime.state);
         let mut app = Self {
             runtime,
             gui_theme,
@@ -59,6 +62,7 @@ impl KiwiApp {
             workspace_last_saved: Instant::now(),
             last_shell_interrupt: None,
             shutdown_completed: false,
+            status_bar,
         };
         app.sync_dock();
         app
@@ -285,6 +289,10 @@ impl eframe::App for KiwiApp {
 
         self.gui_theme.apply_to_context(ctx);
 
+        if self.runtime.state.dirty {
+            self.status_bar = compute_status_bar(&self.runtime.state);
+        }
+
         let menu_action = render_menu_bar(ctx, &mut self.dock);
         if menu_action.reset_layout_requested {
             self.reset_layout_prompt = true;
@@ -311,7 +319,7 @@ impl eframe::App for KiwiApp {
             return;
         }
 
-        render_status_bar(ctx, &self.gui_theme, &self.runtime.state);
+        render_status_bar(ctx, &self.gui_theme, &self.status_bar);
 
         let mut should_close = false;
         egui::CentralPanel::default().show(ctx, |ui| {
