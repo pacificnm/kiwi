@@ -44,10 +44,11 @@ fn render_header(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
 }
 
 fn render_query_line(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
+    let mut query = ctx.state.search.query.clone();
     let response = ui.horizontal(|ui| {
         ui.label(RichText::new("/").monospace());
         ui.add(
-            egui::TextEdit::singleline(&mut ctx.state.search.query)
+            egui::TextEdit::singleline(&mut query)
                 .id(egui::Id::new(SEARCH_QUERY_ID))
                 .desired_width(f32::INFINITY)
                 .hint_text("type to search"),
@@ -57,9 +58,7 @@ fn render_query_line(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
         response.inner.request_focus();
     }
     if response.inner.changed() {
-        let _ = (ctx.dispatch)(AppCommand::SearchSetQuery(
-            ctx.state.search.query.clone(),
-        ));
+        let _ = (ctx.dispatch)(AppCommand::SearchSetQuery(query));
     }
 }
 
