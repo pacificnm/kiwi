@@ -10,6 +10,17 @@ See [SPEC-010 Agent Service](../specs/SPEC-010-agent-service.md) for the full PT
 |---|---|---|
 | `kiwi-ollama` | Ollama/qwen2.5-coder local LLM with RAG codebase indexing | [ollama-qwen-agent.md](./ollama-qwen-agent.md) |
 
+## MCP memory servers
+
+Two MCP servers provide persistent memory over PostgreSQL + pgvector:
+
+| Server | Binary | Purpose |
+|---|---|---|
+| Project memory | `kiwi-mcp-memory` | Index and search project docs | 
+| Context memory | `kiwi-mcp-context` | Save and retrieve agent session notes |
+
+See [mcp-memory-servers.md](./mcp-memory-servers.md) for setup and configuration.
+
 ## Adding a custom agent
 
 Any executable can be used. Minimal `.kiwi.toml`:
