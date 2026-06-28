@@ -2,6 +2,7 @@
 
 mod agent;
 mod ansi;
+mod config;
 mod explorer;
 mod git_diff;
 mod git_status;
@@ -47,6 +48,7 @@ pub fn render_panel(tab: KiwiTab, ui: &mut Ui, ctx: &mut PanelContext<'_>) {
         KiwiTab::GitHubPrs => github_prs::render(ui, ctx),
         KiwiTab::Search => search::render(ui, ctx),
         KiwiTab::Preview => preview::render(ui, ctx),
+        KiwiTab::Config => config::render(ui, ctx),
         _ => placeholder::render_placeholder(ui, tab, ctx),
     }
 }
@@ -64,6 +66,7 @@ mod routing_tests {
         GitHubPrs,
         Search,
         Preview,
+        Config,
         Placeholder,
     }
 
@@ -76,6 +79,7 @@ mod routing_tests {
             KiwiTab::GitHubPrs => PanelRoute::GitHubPrs,
             KiwiTab::Search => PanelRoute::Search,
             KiwiTab::Preview => PanelRoute::Preview,
+            KiwiTab::Config => PanelRoute::Config,
             _ => PanelRoute::Placeholder,
         }
     }
@@ -97,6 +101,11 @@ mod routing_tests {
     fn search_and_preview_use_dedicated_panels() {
         assert_eq!(panel_route(KiwiTab::Search), PanelRoute::Search);
         assert_eq!(panel_route(KiwiTab::Preview), PanelRoute::Preview);
+    }
+
+    #[test]
+    fn config_tab_uses_dedicated_settings_panel() {
+        assert_eq!(panel_route(KiwiTab::Config), PanelRoute::Config);
     }
 
     #[test]

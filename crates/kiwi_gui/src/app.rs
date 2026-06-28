@@ -316,6 +316,12 @@ impl eframe::App for KiwiApp {
         if menu_action.about_requested {
             self.about_open = true;
         }
+        if menu_action.settings_requested {
+            self.dock.show_tab(KiwiTab::Config);
+            for command in navigation_commands_for_dock_tab(KiwiTab::Config) {
+                let _ = self.dispatch_command(command);
+            }
+        }
         for tab in menu_action.tabs_opened {
             for command in navigation_commands_for_dock_tab(tab) {
                 let _ = self.dispatch_command(command);
@@ -368,6 +374,16 @@ impl eframe::App for KiwiApp {
         if should_close {
             self.close_window(ctx);
             return;
+        }
+
+        // Rebuild GuiTheme when font size is changed via the Settings panel.
+        if (self.runtime.state.config.gui.font_size - self.gui_theme.font_size).abs()
+            > f32::EPSILON
+        {
+            self.gui_theme = GuiTheme::from_palette(
+                &self.runtime.state.theme,
+                &self.runtime.state.config.gui,
+            );
         }
 
         render_reset_layout_modal(ctx, &mut self.reset_layout_prompt, &mut self.dock);

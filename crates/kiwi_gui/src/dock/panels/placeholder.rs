@@ -19,6 +19,7 @@ pub fn render_placeholder(ui: &mut Ui, tab: KiwiTab, ctx: &mut PanelContext<'_>)
         KiwiTab::GitHubPrs => return super::github_prs::render(ui, ctx),
         KiwiTab::Search => return super::search::render(ui, ctx),
         KiwiTab::Preview => return super::preview::render(ui, ctx),
+        KiwiTab::Config => return super::config::render(ui, ctx),
         _ => {}
     }
 
@@ -69,9 +70,8 @@ fn state_hint(tab: KiwiTab, ctx: &mut PanelContext<'_>) -> Option<String> {
                 ctx.state.search.query.clone()
             }
         )),
-        KiwiTab::Terminal | KiwiTab::Agent => None,
+        KiwiTab::Terminal | KiwiTab::Agent | KiwiTab::Config => None,
         KiwiTab::Logs => Some(format!("{} log entries", ctx.state.logs.entries.len())),
-        KiwiTab::Config => Some(format!("Theme: {}", ctx.state.theme.name)),
         KiwiTab::GitLog => None,
     }
 }
