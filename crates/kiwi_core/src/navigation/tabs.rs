@@ -54,11 +54,12 @@ pub enum MainTab {
     Preview,
     Logs,
     Settings,
+    Plugins,
 }
 
 impl MainTab {
     #[cfg_attr(not(test), allow(dead_code))]
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Agent,
         Self::Issues,
         Self::Branches,
@@ -67,6 +68,7 @@ impl MainTab {
         Self::Preview,
         Self::Logs,
         Self::Settings,
+        Self::Plugins,
     ];
 
     #[must_use]
@@ -80,6 +82,7 @@ impl MainTab {
             Self::Preview => 5,
             Self::Logs => 6,
             Self::Settings => 7,
+            Self::Plugins => 8,
         }
     }
 
@@ -94,6 +97,7 @@ impl MainTab {
             Self::Preview => "Preview",
             Self::Logs => "Logs",
             Self::Settings => "Settings",
+            Self::Plugins => "Plugins",
         }
     }
 
@@ -108,6 +112,7 @@ impl MainTab {
             5 => Some(Self::Preview),
             6 => Some(Self::Logs),
             7 => Some(Self::Settings),
+            8 => Some(Self::Plugins),
             _ => None,
         }
     }
@@ -119,7 +124,7 @@ impl MainTab {
             Self::Issues | Self::Prs | Self::Branches => Some(LeftNavTab::Gh),
             Self::Preview => Some(LeftNavTab::Files),
             Self::Diff => Some(LeftNavTab::Git),
-            Self::Agent | Self::Logs | Self::Settings => None,
+            Self::Agent | Self::Logs | Self::Settings | Self::Plugins => None,
         }
     }
 }
@@ -131,7 +136,7 @@ pub const LEFT_TAB_LABELS: [&str; 4] = [
     LeftNavTab::Search.label(),
 ];
 
-pub const MAIN_TAB_LABELS: [&str; 8] = [
+pub const MAIN_TAB_LABELS: [&str; 9] = [
     MainTab::Agent.label(),
     MainTab::Issues.label(),
     MainTab::Branches.label(),
@@ -140,6 +145,7 @@ pub const MAIN_TAB_LABELS: [&str; 8] = [
     MainTab::Preview.label(),
     MainTab::Logs.label(),
     MainTab::Settings.label(),
+    MainTab::Plugins.label(),
 ];
 
 #[cfg(test)]
@@ -156,6 +162,22 @@ mod tests {
         assert_eq!(MainTab::Agent.paired_left_tab(), None);
         assert_eq!(MainTab::Logs.paired_left_tab(), None);
         assert_eq!(MainTab::Settings.paired_left_tab(), None);
+        assert_eq!(MainTab::Plugins.paired_left_tab(), None);
+    }
+
+    #[test]
+    fn plugins_tab_has_correct_index_and_label() {
+        assert_eq!(MainTab::Plugins.index(), 8);
+        assert_eq!(MainTab::Plugins.label(), "Plugins");
+        assert_eq!(MainTab::from_index(8), Some(MainTab::Plugins));
+    }
+
+    #[test]
+    fn main_tab_all_and_labels_are_in_sync() {
+        assert_eq!(MainTab::ALL.len(), MAIN_TAB_LABELS.len());
+        for (tab, label) in MainTab::ALL.iter().zip(MAIN_TAB_LABELS.iter()) {
+            assert_eq!(tab.label(), *label);
+        }
     }
 
     #[test]

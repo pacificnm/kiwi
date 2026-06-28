@@ -152,6 +152,7 @@ fn main_pane_scrollable(state: &AppState) -> bool {
             | MainTab::Diff
             | MainTab::Preview
             | MainTab::Settings
+            | MainTab::Plugins
     )
 }
 
@@ -185,7 +186,7 @@ fn main_wheel_command(state: &AppState, delta: i32) -> Option<AppCommand> {
         MainTab::Diff => Some(AppCommand::DiffScroll(delta)),
         MainTab::Preview => Some(AppCommand::PreviewScroll(delta)),
         MainTab::Settings => Some(AppCommand::SettingsMoveSelection(delta)),
-        MainTab::Logs => None,
+        MainTab::Logs | MainTab::Plugins => None,
     }
 }
 

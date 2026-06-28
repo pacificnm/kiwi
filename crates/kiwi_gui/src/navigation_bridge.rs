@@ -87,6 +87,7 @@ fn kiwi_tab_for_main(main: MainTab, _gh_pane: GitHubLeftPane) -> Option<KiwiTab>
         MainTab::Preview => Some(KiwiTab::Preview),
         MainTab::Logs => Some(KiwiTab::Logs),
         MainTab::Settings => Some(KiwiTab::Config),
+        MainTab::Plugins => None, // KiwiTab::Plugins wired in Step 9
     }
 }
 
