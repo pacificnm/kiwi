@@ -5,6 +5,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use arboard::Clipboard;
+
 use kiwi_core::diff::spawn_file_diff_load;
 use kiwi_core::editor::{
     launch_gui_editor, prepare_editor_launch, run_terminal_editor, EditorLaunchMode,
@@ -22,6 +24,7 @@ use kiwi_core::github::{
     spawn_github_pr_list_load, spawn_github_pr_merge, spawn_github_repo_labels_load,
 };
 use kiwi_core::preview::spawn_preview_load;
+use kiwi_core::config::persist_user_theme;
 use kiwi_core::search::{spawn_search, DebounceTimer, SearchCancelHandle, SearchJob};
 use kiwi_core::state::{AppState, ReduceView};
 use kiwi_core::workspace::try_save_from_reduce_view;
@@ -315,6 +318,57 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
             }
             _ => {}
         },
+        SideEffect::CopyToClipboard(text) => {
+            match Clipboard::new().and_then(|mut cb| cb.set_text(text)) {
+                Ok(()) => {}
+                Err(err) => {
+                    ctx.state.notifications.show_toast(format!("Copy failed: {err}"));
+                    ctx.state.dirty = true;
+                }
+            }
+        }
+        SideEffect::PasteFromClipboard => {
+            match Clipboard::new().and_then(|mut cb| cb.get_text()) {
+                Ok(text) => {
+                    let effects = kiwi_core::reducer::reduce(
+                        &mut ReduceView::from_app_state(ctx.state),
+                        kiwi_core::events::AppEvent::Command(
+                            kiwi_core::events::AppCommand::PasteText(text),
+                        ),
+                    );
+                    // execute resulting effects inline (PasteText only produces shell/agent writes)
+                    for inner in effects {
+                        execute_gui_effect(ctx, inner);
+                    }
+                }
+                Err(err) => {
+                    ctx.state.notifications.show_toast(format!("Paste failed: {err}"));
+                    ctx.state.dirty = true;
+                }
+            }
+        }
+        SideEffect::PersistUserTheme { name } => {
+            let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+            match home {
+                Some(home) => match persist_user_theme(&home, &name) {
+                    Ok(()) => {}
+                    Err(err) => {
+                        ctx.state
+                            .notifications
+                            .show_toast(format!("Failed to save theme to config: {err}"));
+                        ctx.state.dirty = true;
+                    }
+                },
+                None => {
+                    ctx.state
+                        .notifications
+                        .show_toast("Cannot save theme: HOME not set");
+                    ctx.state.dirty = true;
+                }
+            }
+        }
+        // SideEffect is #[non_exhaustive]; future variants added to kiwi_core are unhandled here
+        // until explicitly implemented above.
         _ => {}
     }
     false
@@ -585,5 +639,59 @@ mod tests {
         );
         assert!(!quit);
         assert!(state.github.loading);
+    }
+
+    #[test]
+    fn copy_to_clipboard_effect_does_not_quit() {
+        let mut state = test_state();
+        let events = EventChannel::new();
+        let mut pty = PtyRuntime::new();
+        let mut search = SearchRuntime::default();
+        let mut ctx = ServiceContext {
+            state: &mut state,
+            events: &events,
+            pty: &mut pty,
+            search: &mut search,
+        };
+        let quit =
+            execute_gui_effects(&mut ctx, vec![SideEffect::CopyToClipboard("hello".to_string())]);
+        assert!(!quit);
+    }
+
+    #[test]
+    fn paste_from_clipboard_effect_does_not_quit() {
+        let mut state = test_state();
+        let events = EventChannel::new();
+        let mut pty = PtyRuntime::new();
+        let mut search = SearchRuntime::default();
+        let mut ctx = ServiceContext {
+            state: &mut state,
+            events: &events,
+            pty: &mut pty,
+            search: &mut search,
+        };
+        // May fail to open clipboard in headless CI; either way it must not panic or quit.
+        let quit = execute_gui_effects(&mut ctx, vec![SideEffect::PasteFromClipboard]);
+        assert!(!quit);
+    }
+
+    #[test]
+    fn persist_user_theme_effect_does_not_quit() {
+        let mut state = test_state();
+        let events = EventChannel::new();
+        let mut pty = PtyRuntime::new();
+        let mut search = SearchRuntime::default();
+        let mut ctx = ServiceContext {
+            state: &mut state,
+            events: &events,
+            pty: &mut pty,
+            search: &mut search,
+        };
+        // May show a toast if HOME is unset; must not panic or quit.
+        let quit = execute_gui_effects(
+            &mut ctx,
+            vec![SideEffect::PersistUserTheme { name: "dark".to_string() }],
+        );
+        assert!(!quit);
     }
 }
