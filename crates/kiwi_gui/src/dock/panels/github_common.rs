@@ -46,11 +46,7 @@ pub fn github_status_label(state: &AppState, tab: KiwiTab) -> Option<&'static st
     }
     if state.github.auth_ok {
         return match tab {
-            KiwiTab::GitHubIssues | KiwiTab::Issues
-                if state.github.issues_loading && matches!(tab, KiwiTab::GitHubIssues) =>
-            {
-                Some("Loading issues…")
-            }
+            KiwiTab::GitHubIssues if state.github.issues_loading => Some("Loading issues…"),
             KiwiTab::GitHubPrs if state.github.prs_loading => Some("Loading pull requests…"),
             KiwiTab::Issues if state.github.issue_detail_loading => Some("Loading issue detail…"),
             _ => None,
@@ -192,6 +188,48 @@ mod tests {
     use kiwi_core::theme::{load_theme_with_capabilities, TerminalCapabilities};
 
     use super::*;
+
+    fn make_state() -> kiwi_core::state::AppState {
+        use std::path::PathBuf;
+        use kiwi_core::state::{AppState, ViewportMetrics};
+        use kiwi_core::theme::{load_theme_with_capabilities, TerminalCapabilities};
+        AppState::from_startup(
+            PathBuf::from("/tmp/kiwi"),
+            true,
+            ResolvedConfig::default(),
+            load_theme_with_capabilities(&ResolvedConfig::default().theme, TerminalCapabilities::TrueColor)
+                .expect("theme"),
+            TerminalCapabilities::TrueColor,
+            ViewportMetrics::default(),
+        )
+    }
+
+    #[test]
+    fn github_status_label_issues_list_loading() {
+        let mut state = make_state();
+        state.github.auth_ok = true;
+        state.github.issues_loading = true;
+        assert_eq!(
+            github_status_label(&state, KiwiTab::GitHubIssues),
+            Some("Loading issues…")
+        );
+        // Issues detail tab must NOT show the list-loading label.
+        assert_ne!(
+            github_status_label(&state, KiwiTab::Issues),
+            Some("Loading issues…")
+        );
+    }
+
+    #[test]
+    fn github_status_label_issue_detail_loading() {
+        let mut state = make_state();
+        state.github.auth_ok = true;
+        state.github.issue_detail_loading = true;
+        assert_eq!(
+            github_status_label(&state, KiwiTab::Issues),
+            Some("Loading issue detail…")
+        );
+    }
 
     #[test]
     fn issue_open_uses_issue_open_role() {
