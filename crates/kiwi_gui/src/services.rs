@@ -714,7 +714,7 @@ mod tests {
         // May show a toast if HOME is unset; must not panic or quit.
         let quit = execute_gui_effects(
             &mut ctx,
-            vec![SideEffect::PersistUserTheme { name: "dark".to_string() }],
+            vec![SideEffect::PersistUserTheme { name: "kiwi-dark".to_string() }],
         );
         assert!(!quit);
     }
