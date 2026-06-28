@@ -33,6 +33,7 @@ pub struct KiwiApp {
     about_open: bool,
     workspace_last_saved: Instant,
     last_shell_interrupt: Option<Instant>,
+    shutdown_completed: bool,
 }
 
 impl KiwiApp {
@@ -57,6 +58,7 @@ impl KiwiApp {
             about_open: false,
             workspace_last_saved: Instant::now(),
             last_shell_interrupt: None,
+            shutdown_completed: false,
         };
         app.sync_dock();
         app
@@ -258,6 +260,7 @@ impl KiwiApp {
     fn close_window(&mut self, ctx: &egui::Context) {
         self.runtime.shutdown();
         self.save_workspace();
+        self.shutdown_completed = true;
         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
     }
 }
@@ -380,7 +383,9 @@ impl eframe::App for KiwiApp {
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        self.runtime.shutdown();
-        self.save_workspace();
+        if !self.shutdown_completed {
+            self.runtime.shutdown();
+            self.save_workspace();
+        }
     }
 }
