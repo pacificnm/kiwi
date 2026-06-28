@@ -27,7 +27,7 @@ use kiwi_core::preview::spawn_preview_load;
 use kiwi_core::config::persist_user_theme;
 use kiwi_core::search::{spawn_search, DebounceTimer, SearchCancelHandle, SearchJob};
 use kiwi_core::state::{AppState, ReduceView};
-use kiwi_core::workspace::try_save_from_reduce_view;
+use kiwi_core::workspace::{try_merge_save_gui, try_save_from_reduce_view, GuiWorkspaceSnapshot};
 
 use crate::pty::PtyRuntime;
 
@@ -89,6 +89,9 @@ pub struct ServiceContext<'a> {
     pub events: &'a EventChannel,
     pub pty: &'a mut PtyRuntime,
     pub search: &'a mut SearchRuntime,
+    /// Dock layout snapshot used by SaveWorkspace to persist GUI state alongside core state.
+    /// `None` in tests or when the service layer is invoked without a live dock.
+    pub dock_snapshot: Option<GuiWorkspaceSnapshot>,
 }
 
 /// Execute a batch of reducer side effects. Returns `true` when the app should quit.
@@ -110,6 +113,14 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
         SideEffect::SaveWorkspace => {
             let mut view = ReduceView::from_app_state(ctx.state);
             try_save_from_reduce_view(&mut view);
+            if let Some(ref snapshot) = ctx.dock_snapshot {
+                try_merge_save_gui(
+                    &ctx.state.repo_root.clone(),
+                    ctx.state.config.workspace.persist,
+                    snapshot,
+                    &mut ctx.state.logs,
+                );
+            }
         }
         SideEffect::Git(effect) => match effect {
             GitEffect::SpawnRefresh => {
@@ -419,12 +430,17 @@ fn spawn_editor_launch(
 
 /// Drain pending events, apply reducers, and execute resulting side effects.
 ///
+/// `dock_snapshot` is passed to `ServiceContext` so that `SideEffect::SaveWorkspace` can
+/// persist the dock layout alongside the core workspace state. Pass `None` in tests or
+/// when no live dock is available.
+///
 /// Returns `(should_quit, event_count)`.
 pub fn process_pending_events(
     state: &mut AppState,
     events: &mut EventChannel,
     pty: &mut PtyRuntime,
     search: &mut SearchRuntime,
+    dock_snapshot: Option<GuiWorkspaceSnapshot>,
 ) -> (bool, usize) {
     let pending: Vec<AppEvent> = events
         .drain_coalesced()
@@ -441,6 +457,7 @@ pub fn process_pending_events(
             events,
             pty,
             search,
+            dock_snapshot: dock_snapshot.clone(),
         };
         if execute_gui_effects(&mut ctx, effects) {
             should_quit = true;
@@ -504,7 +521,7 @@ mod tests {
             })
             .expect("send");
 
-        let (quit, count) = process_pending_events(&mut state, &mut events, &mut pty, &mut search);
+        let (quit, count) = process_pending_events(&mut state, &mut events, &mut pty, &mut search, None);
         assert!(!quit);
         assert_eq!(count, 1);
 
@@ -526,6 +543,7 @@ mod tests {
             events: &events,
             pty: &mut pty,
             search: &mut search,
+            dock_snapshot: None,
         };
 
         let quit = execute_gui_effects(&mut ctx, vec![SideEffect::Git(GitEffect::SpawnRefresh)]);
@@ -543,6 +561,7 @@ mod tests {
             events: &events,
             pty: &mut pty,
             search: &mut search,
+            dock_snapshot: None,
         };
 
         let quit = execute_gui_effects(&mut ctx, vec![SideEffect::GitHub(GitHubEffect::SpawnAuthCheck)]);
@@ -593,6 +612,7 @@ mod tests {
             events: &events,
             pty: &mut pty,
             search: &mut search,
+            dock_snapshot: None,
         };
 
         let quit = execute_gui_effects(
@@ -634,6 +654,7 @@ mod tests {
                 events: &events,
                 pty: &mut pty,
                 search: &mut search,
+                dock_snapshot: None,
             },
             effects,
         );
@@ -652,6 +673,7 @@ mod tests {
             events: &events,
             pty: &mut pty,
             search: &mut search,
+            dock_snapshot: None,
         };
         let quit =
             execute_gui_effects(&mut ctx, vec![SideEffect::CopyToClipboard("hello".to_string())]);
@@ -669,6 +691,7 @@ mod tests {
             events: &events,
             pty: &mut pty,
             search: &mut search,
+            dock_snapshot: None,
         };
         // May fail to open clipboard in headless CI; either way it must not panic or quit.
         let quit = execute_gui_effects(&mut ctx, vec![SideEffect::PasteFromClipboard]);
@@ -686,6 +709,7 @@ mod tests {
             events: &events,
             pty: &mut pty,
             search: &mut search,
+            dock_snapshot: None,
         };
         // May show a toast if HOME is unset; must not panic or quit.
         let quit = execute_gui_effects(
