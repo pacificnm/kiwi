@@ -96,7 +96,7 @@ fn kiwi_tab_for_main(main: MainTab, _gh_pane: GitHubLeftPane) -> Option<KiwiTab>
         MainTab::Agent => Some(KiwiTab::Agent),
         MainTab::Issues => Some(KiwiTab::Issues),
         MainTab::Prs => Some(KiwiTab::GitHubPrs),
-        MainTab::Branches => Some(KiwiTab::GitHubIssues),
+        MainTab::Branches => Some(KiwiTab::GitLog),
         MainTab::Diff => Some(KiwiTab::GitDiff),
         MainTab::Preview => Some(KiwiTab::Preview),
         MainTab::Logs => Some(KiwiTab::Logs),
@@ -172,6 +172,18 @@ mod tests {
         assert_eq!(
             primary_tab_for_navigation(&nav, GitHubLeftPane::Issues),
             Some(KiwiTab::Explorer)
+        );
+    }
+
+    #[test]
+    fn goto_branches_opens_git_log_tab() {
+        let nav = nav_with(&[
+            NavCommand::SelectMainTab(MainTab::Branches),
+            NavCommand::SetFocus(FocusTarget::Main),
+        ]);
+        assert_eq!(
+            primary_tab_for_navigation(&nav, GitHubLeftPane::Issues),
+            Some(KiwiTab::GitLog)
         );
     }
 
