@@ -5,7 +5,7 @@ use kiwi_core::diff::{DiffLine, DiffLineKind, DiffSource};
 use kiwi_core::events::AppCommand;
 use kiwi_core::theme::SemanticRole;
 
-use super::layout::render_virtual_rows;
+use super::layout::{render_virtual_rows, truncate_line};
 use crate::dock::context::PanelContext;
 
 const ROW_HEIGHT: f32 = 16.0;
@@ -255,22 +255,6 @@ fn slice_line(text: &str, offset: usize, width: usize) -> String {
         Some((end_byte, _)) => sliced[..end_byte].to_string(),
         None => sliced.to_string(),
     }
-}
-
-fn truncate_line(text: &str, max_width: usize) -> String {
-    if max_width == 0 {
-        return String::new();
-    }
-    let mut iter = text.char_indices();
-    if let Some((byte_pos, _)) = iter.nth(max_width - 1) {
-        if iter.next().is_some() {
-            if max_width <= 1 {
-                return "…".to_string();
-            }
-            return text[..byte_pos].to_string() + "…";
-        }
-    }
-    text.to_string()
 }
 
 fn text_cols_for(ui: &Ui) -> usize {
