@@ -16,6 +16,7 @@ pub struct MenuBarAction {
     pub shortcuts_help_requested: bool,
     pub about_requested: bool,
     pub settings_requested: bool,
+    pub plugins_requested: bool,
     /// Dock tabs opened from the View menu this frame (need nav sync).
     pub tabs_opened: Vec<KiwiTab>,
 }
@@ -39,6 +40,10 @@ pub fn render_menu_bar(ctx: &Context, dock: &mut DockShell) -> MenuBarAction {
                     ui.separator();
                     if ui.button("Settings").clicked() {
                         action.settings_requested = true;
+                        ui.close_menu();
+                    }
+                    if ui.button("Plugins").clicked() {
+                        action.plugins_requested = true;
                         ui.close_menu();
                     }
                     ui.separator();

@@ -322,6 +322,12 @@ impl eframe::App for KiwiApp {
                 let _ = self.dispatch_command(command);
             }
         }
+        if menu_action.plugins_requested {
+            self.dock.show_tab(KiwiTab::Plugins);
+            for command in navigation_commands_for_dock_tab(KiwiTab::Plugins) {
+                let _ = self.dispatch_command(command);
+            }
+        }
         for tab in menu_action.tabs_opened {
             for command in navigation_commands_for_dock_tab(tab) {
                 let _ = self.dispatch_command(command);

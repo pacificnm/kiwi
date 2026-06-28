@@ -70,7 +70,7 @@ fn state_hint(tab: KiwiTab, ctx: &mut PanelContext<'_>) -> Option<String> {
                 ctx.state.search.query.clone()
             }
         )),
-        KiwiTab::Terminal | KiwiTab::Agent | KiwiTab::Config => None,
+        KiwiTab::Terminal | KiwiTab::Agent | KiwiTab::Config | KiwiTab::Plugins => None,
         KiwiTab::Logs => Some(format!("{} log entries", ctx.state.logs.entries.len())),
         KiwiTab::GitLog => None,
     }

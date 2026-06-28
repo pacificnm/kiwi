@@ -21,6 +21,7 @@ pub fn navigation_commands_for_dock_tab(tab: KiwiTab) -> Vec<AppCommand> {
         KiwiTab::Preview => main_focus(MainTab::Preview),
         KiwiTab::Logs => main_focus(MainTab::Logs),
         KiwiTab::Config => main_focus(MainTab::Settings),
+        KiwiTab::Plugins => main_focus(MainTab::Plugins),
         KiwiTab::Terminal => vec![AppCommand::Navigation(NavCommand::SetFocus(
             FocusTarget::Shell,
         ))],
@@ -87,7 +88,7 @@ fn kiwi_tab_for_main(main: MainTab, _gh_pane: GitHubLeftPane) -> Option<KiwiTab>
         MainTab::Preview => Some(KiwiTab::Preview),
         MainTab::Logs => Some(KiwiTab::Logs),
         MainTab::Settings => Some(KiwiTab::Config),
-        MainTab::Plugins => None, // KiwiTab::Plugins wired in Step 9
+        MainTab::Plugins => Some(KiwiTab::Plugins),
     }
 }
 
