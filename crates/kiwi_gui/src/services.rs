@@ -139,7 +139,9 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
         },
         SideEffect::GitHub(effect) => match effect {
             GitHubEffect::SpawnRefresh => {
-                // Reducer refresh path emits SpawnAuthCheck; keep for parity with TUI.
+                // The reducer never emits SpawnRefresh for GitHubRefresh commands
+                // (it emits SpawnAuthCheck directly). This arm exists only for
+                // #[non_exhaustive] forward-compat should the variant gain meaning later.
             }
             GitHubEffect::SpawnAuthCheck => {
                 spawn_github_auth_check(
@@ -650,6 +652,11 @@ mod tests {
         assert!(effects.iter().any(|effect| matches!(
             effect,
             SideEffect::GitHub(GitHubEffect::SpawnAuthCheck)
+        )));
+        // Reducer contract: GitHubRefresh must NOT emit SpawnRefresh (see #274).
+        assert!(!effects.iter().any(|effect| matches!(
+            effect,
+            SideEffect::GitHub(GitHubEffect::SpawnRefresh)
         )));
 
         let quit = execute_gui_effects(
