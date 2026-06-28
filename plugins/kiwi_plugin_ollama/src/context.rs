@@ -25,18 +25,12 @@ impl ConversationContext {
     }
 
     pub fn push_user(&mut self, content: String) {
-        self.messages.push(ChatMessage {
-            role: "user".to_string(),
-            content,
-        });
+        self.messages.push(ChatMessage::user(content));
         self.trim_history();
     }
 
     pub fn push_assistant(&mut self, content: String) {
-        self.messages.push(ChatMessage {
-            role: "assistant".to_string(),
-            content,
-        });
+        self.messages.push(ChatMessage::assistant(content));
     }
 
     pub fn clear(&mut self) {
@@ -62,22 +56,15 @@ impl ConversationContext {
     pub fn build_messages(&self, rag_context: Option<&str>) -> Vec<ChatMessage> {
         let mut out = Vec::new();
 
-        out.push(ChatMessage {
-            role: "system".to_string(),
-            content: SYSTEM_PROMPT.to_string(),
-        });
+        out.push(ChatMessage::system(SYSTEM_PROMPT));
 
         if let Some(ctx) = rag_context {
-            out.push(ChatMessage {
-                role: "user".to_string(),
-                content: format!("[Relevant codebase context — use this to inform your answer]\n\n{ctx}"),
-            });
-            out.push(ChatMessage {
-                role: "assistant".to_string(),
-                content:
-                    "I have reviewed the provided codebase context and will use it to answer."
-                        .to_string(),
-            });
+            out.push(ChatMessage::user(format!(
+                "[Relevant context — use this to inform your answer]\n\n{ctx}"
+            )));
+            out.push(ChatMessage::assistant(
+                "I have reviewed the provided context and will use it to answer.",
+            ));
         }
 
         out.extend(self.messages.iter().cloned());

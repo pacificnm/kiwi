@@ -1,0 +1,31 @@
+[package]
+name = "kiwi_mcp_git"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "MCP server for git and GitHub operations in Kiwi"
+
+[lib]
+name = "kiwi_mcp_git"
+crate-type = ["cdylib"]
+
+[[bin]]
+name = "kiwi-mcp-git"
+path = "src/main.rs"
+
+[lints.rust]
+unsafe_code = "allow"
+
+[lints.clippy]
+all = "warn"
+
+[dependencies]
+kiwi_plugin_api = { path = "../../crates/kiwi_plugin_api" }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+clap.workspace = true
+ureq.workspace = true
+git2.workspace = true

@@ -23,6 +23,10 @@ impl McpProcess {
             "OLLAMA_EMBED_MODEL",
             "OPENAI_API_KEY",
             "OPENAI_EMBED_MODEL",
+            "GITHUB_TOKEN",
+            "GITHUB_REPO",
+            "GITHUB_API_URL",
+            "GIT_REPO_PATH",
         ] {
             if let Ok(val) = std::env::var(var) {
                 cmd.env(var, val);
@@ -62,6 +66,40 @@ impl McpProcess {
         writeln!(self.writer, "{notif}").context("mcp write error")?;
         self.writer.flush().context("mcp flush error")?;
         Ok(())
+    }
+
+    /// Fetch the server's tool list and convert to Ollama tool format.
+    pub fn list_tools(&mut self) -> Result<Vec<crate::ollama::OllamaTool>> {
+        let resp = self.send("tools/list", serde_json::json!({}))?;
+        let tools = resp
+            .pointer("/result/tools")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        Ok(tools
+            .into_iter()
+            .filter_map(|t| {
+                let name = t.get("name")?.as_str()?.to_string();
+                let description = t
+                    .get("description")
+                    .and_then(|d| d.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let parameters = t
+                    .get("inputSchema")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({"type":"object","properties":{}}));
+                Some(crate::ollama::OllamaTool {
+                    kind: "function".to_string(),
+                    function: crate::ollama::OllamaToolFunction {
+                        name,
+                        description,
+                        parameters,
+                    },
+                })
+            })
+            .collect())
     }
 
     /// Call an MCP tool and return the text content of the first content block.
