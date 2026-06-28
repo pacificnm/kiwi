@@ -108,7 +108,7 @@ pub fn render(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
 
     ui.add_space(4.0);
 
-    // Agents section — dropdown of installed plugin-provided agents.
+    // Agents section — dropdown of agent plugins with an explicit Apply button.
     {
         let agent_plugins: Vec<_> = ctx
             .state
@@ -124,45 +124,65 @@ pub fn render(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
                 .default_open(true)
                 .show(ui, |ui| {
                     let current_cmd = ctx.state.config.agent.command.clone();
-                    let current_label = agent_plugins
-                        .iter()
-                        .find(|p| p.agent_command.as_deref() == Some(&current_cmd))
-                        .map(|p| p.display_name.clone())
-                        .unwrap_or_else(|| format!("Custom ({})", current_cmd));
 
-                    let mut selected_cmd = current_cmd.clone();
-                    let mut selected_args: Vec<String> = ctx.state.config.agent.args.clone();
+                    // Persistent pending selection — survives across frames without
+                    // changing the live config until the user clicks Apply.
+                    let pending_id = egui::Id::new("agent_pending_selection");
+                    let mut pending: (String, Vec<String>) = ui
+                        .ctx()
+                        .data_mut(|d| d.get_temp::<(String, Vec<String>)>(pending_id))
+                        .unwrap_or_else(|| (current_cmd.clone(), ctx.state.config.agent.args.clone()));
+
+                    // Determine display label for the current pending selection.
+                    let pending_label = agent_plugins
+                        .iter()
+                        .find(|p| p.agent_command.as_deref() == Some(&pending.0))
+                        .map(|p| p.display_name.clone())
+                        .unwrap_or_else(|| format!("Custom ({})", pending.0));
 
                     egui::ComboBox::from_id_salt("agent_select")
-                        .selected_text(&current_label)
+                        .selected_text(&pending_label)
                         .width(200.0)
                         .show_ui(ui, |ui| {
                             for plugin in &agent_plugins {
                                 let cmd = plugin.agent_command.as_deref().unwrap_or("").to_string();
-                                let resp = ui.selectable_value(
-                                    &mut selected_cmd,
-                                    cmd.clone(),
-                                    &plugin.display_name,
-                                );
-                                if resp.clicked() {
-                                    selected_args = plugin.agent_args.clone();
+                                let args = plugin.agent_args.clone();
+                                if ui
+                                    .selectable_label(pending.0 == cmd, &plugin.display_name)
+                                    .clicked()
+                                {
+                                    pending = (cmd, args);
                                 }
                             }
                         });
 
-                    if selected_cmd != current_cmd {
+                    // Persist the pending selection across frames.
+                    ui.ctx().data_mut(|d| d.insert_temp(pending_id, pending.clone()));
+
+                    ui.add_space(4.0);
+
+                    let changed = pending.0 != current_cmd;
+                    let btn = ui.add_enabled(changed, egui::Button::new("Apply & Restart Agent"));
+                    if btn.clicked() {
                         (ctx.dispatch)(AppCommand::SetAgent {
-                            command: selected_cmd,
-                            args: selected_args,
+                            command: pending.0.clone(),
+                            args: pending.1.clone(),
                         });
                     }
 
-                    ui.add_space(2.0);
-                    ui.label(
-                        RichText::new("Restart the Agent panel after switching.")
-                            .color(muted)
-                            .small(),
-                    );
+                    if !changed {
+                        ui.add_space(2.0);
+                        let active_label = agent_plugins
+                            .iter()
+                            .find(|p| p.agent_command.as_deref() == Some(&current_cmd))
+                            .map(|p| p.display_name.as_str())
+                            .unwrap_or("Custom");
+                        ui.label(
+                            RichText::new(format!("Active: {active_label}"))
+                                .color(muted)
+                                .small(),
+                        );
+                    }
                 });
 
             ui.add_space(4.0);

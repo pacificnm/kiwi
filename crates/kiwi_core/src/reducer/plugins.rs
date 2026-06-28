@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::events::SideEffect;
+use crate::events::{AgentEffect, SideEffect};
 use crate::state::{PluginStatus, ReduceView};
 
 pub(super) fn reduce_plugin_set_enabled(
@@ -40,9 +40,11 @@ pub(super) fn reduce_set_agent(
 ) -> Vec<SideEffect> {
     state.config.agent.command = command.clone();
     state.config.agent.args = args.clone();
-    state.notifications.show_toast(
-        format!("Agent set to `{command}`. Restart the Agent panel to apply.")
-    );
+    let id = state.agent_manager.active_id();
+    state.notifications.show_toast(format!("Switching agent to `{command}`…"));
     state.set_dirty();
-    vec![SideEffect::PersistAgentConfig { command, args }]
+    vec![
+        SideEffect::PersistAgentConfig { command, args },
+        SideEffect::Agent(AgentEffect::Restart(id)),
+    ]
 }
