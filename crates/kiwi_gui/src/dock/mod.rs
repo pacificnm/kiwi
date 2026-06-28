@@ -57,6 +57,7 @@ impl DockShell {
         let mut viewer = KiwiTabViewer { ctx };
         DockArea::new(&mut self.dock_state)
             .style(Style::from_egui(ui.style().as_ref()))
+            .show_leaf_close_all_buttons(false)
             .show_inside(ui, &mut viewer);
     }
 
