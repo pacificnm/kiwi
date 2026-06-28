@@ -100,7 +100,9 @@ fn render_diff_content(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
         return;
     }
 
-    let gutter = gutter_width(&lines);
+    let old_width = max_lineno_digits(lines.iter().filter_map(|l| l.old_lineno));
+    let new_width = max_lineno_digits(lines.iter().filter_map(|l| l.new_lineno));
+    let gutter = if old_width == 0 && new_width == 0 { 0 } else { old_width + 1 + new_width + 2 };
     let text_width = text_cols.saturating_sub(gutter).max(1);
     let word_wrap = ctx.state.config.diff.word_wrap;
     let horizontal_offset = if word_wrap {
@@ -122,7 +124,7 @@ fn render_diff_content(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
                 ui.set_min_height(ROW_HEIGHT);
                 if gutter > 0 {
                     ui.label(
-                        RichText::new(format_gutter(line.old_lineno, line.new_lineno, &lines))
+                        RichText::new(format_gutter(line.old_lineno, line.new_lineno, old_width, new_width))
                             .font(mono.clone())
                             .color(ctx.theme.role(SemanticRole::Muted)),
                     );
@@ -225,9 +227,7 @@ fn max_lineno_digits(values: impl Iterator<Item = u32>) -> usize {
         .unwrap_or(0)
 }
 
-fn format_gutter(old_lineno: Option<u32>, new_lineno: Option<u32>, lines: &[DiffLine]) -> String {
-    let old_width = max_lineno_digits(lines.iter().filter_map(|line| line.old_lineno));
-    let new_width = max_lineno_digits(lines.iter().filter_map(|line| line.new_lineno));
+fn format_gutter(old_lineno: Option<u32>, new_lineno: Option<u32>, old_width: usize, new_width: usize) -> String {
     let old = old_lineno
         .map(|value| format!("{value:>old_width$}"))
         .unwrap_or_else(|| " ".repeat(old_width));
