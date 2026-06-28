@@ -1,0 +1,32 @@
+[package]
+name = "kiwi_plugin_ollama"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Ollama/qwen2.5-coder agent and plugin for Kiwi"
+
+[lib]
+name = "kiwi_plugin_ollama"
+crate-type = ["cdylib"]
+
+[[bin]]
+name = "kiwi-ollama"
+path = "src/main.rs"
+
+# declare_plugin! expands to extern "C" fn which requires allowing unsafe items
+[lints.rust]
+unsafe_code = "allow"
+
+[lints.clippy]
+all = "warn"
+
+[dependencies]
+kiwi_plugin_api = { path = "../../crates/kiwi_plugin_api" }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+clap.workspace = true
+ureq.workspace = true
+walkdir.workspace = true
