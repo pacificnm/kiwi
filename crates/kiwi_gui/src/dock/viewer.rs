@@ -26,6 +26,9 @@ impl TabViewer for KiwiTabViewer<'_> {
     fn on_tab_button(&mut self, tab: &mut Self::Tab, response: &egui::Response) {
         if response.clicked() {
             for command in navigation_commands_for_dock_tab(*tab) {
+                // navigation_commands_for_dock_tab only produces NavCommand variants,
+                // which never trigger a quit. The egui_dock callback also returns ()
+                // so propagating the quit signal upward is not possible (#283).
                 let _ = (self.ctx.dispatch)(command);
             }
         }
