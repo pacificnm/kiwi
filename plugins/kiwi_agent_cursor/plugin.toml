@@ -6,5 +6,5 @@ description = "Cursor AI coding assistant — runs as the AI agent in the Agent 
 author = "PacificNM"
 
 [agent]
-command = "cursor"
+command = "agent"
 args = []
