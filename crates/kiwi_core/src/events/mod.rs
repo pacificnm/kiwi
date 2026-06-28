@@ -258,6 +258,8 @@ pub enum AppCommand {
     PluginSetEnabled { name: String, enabled: bool },
     /// Install a plugin from a local directory into the plugins folder.
     PluginInstall { src_path: std::path::PathBuf },
+    /// Switch the active AI agent command. Updates config immediately; persisted via SideEffect.
+    SetAgent { command: String, args: Vec<String> },
 }
 
 #[non_exhaustive]
@@ -337,6 +339,8 @@ pub enum SideEffect {
     PluginSetEnabled { name: String, enabled: bool },
     /// Copy a plugin directory into the plugins folder and register it.
     PluginInstall { src_path: std::path::PathBuf },
+    /// Persist the chosen agent command to ~/.config/kiwi/config.toml.
+    PersistAgentConfig { command: String, args: Vec<String> },
 }
 
 impl AppCommand {

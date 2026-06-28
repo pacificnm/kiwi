@@ -555,6 +555,10 @@ pub struct AvailablePlugin {
     pub installed: bool,
     /// `true` if installed and enabled in the registry.
     pub enabled: bool,
+    /// If set, this plugin provides an AI agent. Value is the executable command.
+    pub agent_command: Option<String>,
+    /// Arguments for the agent command declared in `plugin.toml`.
+    pub agent_args: Vec<String>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]

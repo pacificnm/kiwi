@@ -9,4 +9,4 @@ pub use types::{
     default_plugins_directory, expand_tilde, AgentSettings, EditorSettings, GuiSettings, MouseMode,
     MouseSettings, PluginsSettings, ResolvedConfig, ShellSettings, ThemeSettings,
 };
-pub use writer::{persist_user_theme, project_has_theme_override, user_config_path};
+pub use writer::{persist_user_agent, persist_user_theme, project_has_theme_override, user_config_path};

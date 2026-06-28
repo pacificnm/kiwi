@@ -36,7 +36,7 @@ pub use self::diff::diff_select_file_effects;
 pub use self::diff::diff_move_file_effects;
 pub use self::diff::diff_set_source_effects;
 
-use self::plugins::{reduce_plugin_install, reduce_plugin_set_enabled};
+use self::plugins::{reduce_plugin_install, reduce_plugin_set_enabled, reduce_set_agent};
 use self::github::reduce_github_refresh_requested;
 use self::github::reduce_github_auth_checked;
 use self::github::reduce_github_issues_loaded;
@@ -360,6 +360,7 @@ pub fn reduce_command(state: &mut ReduceView<'_>, command: AppCommand) -> Vec<Si
             reduce_plugin_set_enabled(state, name, enabled)
         }
         AppCommand::PluginInstall { src_path } => reduce_plugin_install(state, src_path),
+        AppCommand::SetAgent { command, args } => reduce_set_agent(state, command, args),
     }
 }
 

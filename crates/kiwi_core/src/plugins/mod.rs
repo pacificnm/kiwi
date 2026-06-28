@@ -23,6 +23,11 @@ pub fn scan_available_plugins(
                 continue
             };
             let reg_entry = registry.get(&manifest.name);
+            let (agent_command, agent_args) = manifest
+                .agent
+                .as_ref()
+                .map(|a| (Some(a.command.clone()), a.args.clone()))
+                .unwrap_or((None, Vec::new()));
             found.push(crate::state::AvailablePlugin {
                 display_name: manifest.effective_display_name().to_string(),
                 version: manifest.version.clone(),
@@ -32,6 +37,8 @@ pub fn scan_available_plugins(
                 installed: reg_entry.is_some(),
                 enabled: reg_entry.map_or(false, |e| e.enabled),
                 name: manifest.name,
+                agent_command,
+                agent_args,
             });
         }
     }

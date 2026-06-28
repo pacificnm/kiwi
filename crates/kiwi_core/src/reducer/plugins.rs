@@ -32,3 +32,17 @@ pub(super) fn reduce_plugin_install(
     state.set_dirty();
     vec![SideEffect::PluginInstall { src_path }]
 }
+
+pub(super) fn reduce_set_agent(
+    state: &mut ReduceView<'_>,
+    command: String,
+    args: Vec<String>,
+) -> Vec<SideEffect> {
+    state.config.agent.command = command.clone();
+    state.config.agent.args = args.clone();
+    state.notifications.show_toast(
+        format!("Agent set to `{command}`. Restart the Agent panel to apply.")
+    );
+    state.set_dirty();
+    vec![SideEffect::PersistAgentConfig { command, args }]
+}

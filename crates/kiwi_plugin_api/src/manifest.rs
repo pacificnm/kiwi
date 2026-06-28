@@ -19,6 +19,19 @@ pub struct PluginManifest {
     pub author: Option<String>,
     #[serde(default)]
     pub capabilities: Option<PluginCapabilities>,
+    /// If set, this plugin provides an AI agent command for the Agent panel.
+    #[serde(default)]
+    pub agent: Option<AgentPluginConfig>,
+}
+
+/// Agent command declared by a plugin in its `plugin.toml`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
+#[serde(default)]
+pub struct AgentPluginConfig {
+    /// The executable to run (e.g. `"cursor"`, `"aider"`).
+    pub command: String,
+    /// Arguments passed to the executable on spawn.
+    pub args: Vec<String>,
 }
 
 impl PluginManifest {

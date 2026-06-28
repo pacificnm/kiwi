@@ -413,6 +413,25 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
                 }
             }
         }
+        SideEffect::PersistAgentConfig { command, args } => {
+            let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+            match home {
+                Some(home) => {
+                    if let Err(e) = kiwi_core::config::persist_user_agent(&home, &command, &args) {
+                        ctx.state
+                            .notifications
+                            .show_toast(format!("Failed to save agent config: {e}"));
+                        ctx.state.dirty = true;
+                    }
+                }
+                None => {
+                    ctx.state
+                        .notifications
+                        .show_toast("Cannot save agent config: HOME not set");
+                    ctx.state.dirty = true;
+                }
+            }
+        }
         SideEffect::PersistUserTheme { name } => {
             let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
             match home {
