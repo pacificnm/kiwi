@@ -101,7 +101,7 @@ fn detect_github_key_action(input: &egui::InputState) -> Option<GithubKeyAction>
         return Some(GithubKeyAction::OpenBrowser);
     }
 
-    if input.modifiers.any() && !input.key_pressed(Key::R) {
+    if input.modifiers.any() {
         return None;
     }
 
