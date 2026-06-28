@@ -1,3 +1,6 @@
 name = "kiwi-mcp-context"
 version = "0.1.0"
 min_kiwi_version = "0.1.0"
+display_name = "MCP Context"
+description = "MCP server providing session context memory."
+author = "PacificNM"

@@ -2,6 +2,33 @@ pub mod registry;
 
 pub use registry::{default_registry_path, install_plugin, PluginRegistry, PluginRegistryEntry};
 
+/// If `name` is not in `registry`, reads its `plugin.toml` from
+/// `install_dir/<name>/plugin.toml` and registers it as enabled.
+/// Returns `true` if a new entry was added.
+pub fn ensure_registered(registry: &mut PluginRegistry, name: &str) -> bool {
+    if registry.get(name).is_some() {
+        return false;
+    }
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    let install_dir = crate::config::default_plugins_directory(home.as_deref());
+    let plugin_path = install_dir.join(name);
+    let manifest_path = plugin_path.join("plugin.toml");
+    let Ok(content) = std::fs::read_to_string(&manifest_path) else { return false };
+    let Ok(manifest) = toml::from_str::<kiwi_plugin_api::PluginManifest>(&content) else {
+        return false;
+    };
+    registry.register(PluginRegistryEntry {
+        name: manifest.name.clone(),
+        display_name: manifest.display_name.clone(),
+        version: manifest.version.clone(),
+        enabled: true,
+        installed_path: plugin_path,
+        entry: manifest.entry.clone(),
+        source: "local".to_string(),
+    });
+    true
+}
+
 /// Scan `search_dirs` for subdirectories containing `plugin.toml` and return
 /// an `AvailablePlugin` per discovery, cross-referenced against `registry` and
 /// the on-disk install directory at `~/.config/kiwi/plugins/<name>`.

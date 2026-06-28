@@ -370,6 +370,8 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
         SideEffect::PluginSetEnabled { name, enabled } => {
             if let Some(path) = kiwi_core::plugins::default_registry_path() {
                 let (mut registry, _) = kiwi_core::plugins::PluginRegistry::load(&path);
+                // Auto-register plugins that are on disk but not yet in the registry.
+                kiwi_core::plugins::ensure_registered(&mut registry, &name);
                 if enabled {
                     registry.enable(&name);
                 } else {
@@ -381,6 +383,10 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
                         .show_toast(format!("Failed to save plugin registry: {e}"));
                     ctx.state.dirty = true;
                 } else {
+                    ctx.state.notifications.show_toast(format!(
+                        "Plugin `{name}` {}. Restart to apply.",
+                        if enabled { "enabled" } else { "disabled" }
+                    ));
                     refresh_available_plugins(ctx);
                 }
             }

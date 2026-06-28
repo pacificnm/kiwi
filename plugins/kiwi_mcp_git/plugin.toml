@@ -1,3 +1,6 @@
 name = "kiwi-mcp-git"
 version = "0.1.0"
 min_kiwi_version = "0.1.0"
+display_name = "MCP Git"
+description = "MCP server providing Git operations."
+author = "PacificNM"

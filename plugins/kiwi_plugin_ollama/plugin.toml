@@ -1,3 +1,10 @@
 name = "ollama"
 version = "0.1.0"
 min_kiwi_version = "0.1.0"
+display_name = "Ollama"
+description = "Local AI models via Ollama — runs as the AI agent in the Agent panel."
+author = "PacificNM"
+
+[agent]
+command = "ollama"
+args = []
