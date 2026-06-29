@@ -146,6 +146,51 @@ fn init_tools() -> Vec<KiwiToolDef> {
     ]
 }
 
+/// OpenAI Chat Completions tool definition (`type: "function"`).
+#[derive(Debug, Clone, Serialize)]
+pub struct OpenAiToolSchema {
+    #[serde(rename = "type")]
+    pub kind: &'static str,
+    pub function: OpenAiFunctionSchema,
+}
+
+/// Function payload inside an OpenAI tool definition.
+#[derive(Debug, Clone, Serialize)]
+pub struct OpenAiFunctionSchema {
+    pub name: &'static str,
+    pub description: &'static str,
+    pub parameters: Value,
+}
+
+/// Convert registry entries to Claude Messages API tool schemas.
+pub fn tools_for_claude(tools: &[KiwiToolDef]) -> Vec<ToolSchema> {
+    tools.iter().map(ToolSchema::from).collect()
+}
+
+/// Convert registry entries to OpenAI Chat Completions tool schemas.
+pub fn tools_for_openai(tools: &[KiwiToolDef]) -> Vec<OpenAiToolSchema> {
+    tools
+        .iter()
+        .map(|tool| OpenAiToolSchema {
+            kind: "function",
+            function: OpenAiFunctionSchema {
+                name: tool.id,
+                description: tool.description,
+                parameters: tool.input_schema.clone(),
+            },
+        })
+        .collect()
+}
+
+/// Return true when the Ollama model is known to support OpenAI-style tool calling.
+pub fn ollama_supports_tools(model: &str) -> bool {
+    let base = model.split(':').next().unwrap_or(model).to_ascii_lowercase();
+    base.starts_with("qwen2.5-coder")
+        || base.starts_with("llama3")
+        || base.starts_with("mistral")
+        || base.starts_with("mixtral")
+}
+
 impl ToolRegistry {
     /// Every registered tool definition.
     pub fn all() -> &'static [KiwiToolDef] {
@@ -154,7 +199,12 @@ impl ToolRegistry {
 
     /// Convert registry entries to Claude Messages API tool schemas.
     pub fn claude_schemas() -> Vec<ToolSchema> {
-        Self::all().iter().map(ToolSchema::from).collect()
+        tools_for_claude(Self::all())
+    }
+
+    /// Convert registry entries to OpenAI Chat Completions tool schemas.
+    pub fn openai_schemas() -> Vec<OpenAiToolSchema> {
+        tools_for_openai(Self::all())
     }
 }
 
@@ -283,6 +333,24 @@ mod tests {
             assert!(v["name"].is_string());
             assert!(v["input_schema"].is_object());
         }
+    }
+
+    #[test]
+    fn openai_adapter_uses_function_type() {
+        let schemas = tools_for_openai(ToolRegistry::all());
+        assert_eq!(schemas.len(), 8);
+        let first = serde_json::to_value(&schemas[0]).unwrap();
+        assert_eq!(first["type"], "function");
+        assert_eq!(first["function"]["name"], "file.read");
+        assert!(first["function"]["parameters"].is_object());
+    }
+
+    #[test]
+    fn ollama_supports_known_tool_models() {
+        assert!(ollama_supports_tools("qwen2.5-coder:7b"));
+        assert!(ollama_supports_tools("llama3.1:8b"));
+        assert!(ollama_supports_tools("mistral:latest"));
+        assert!(!ollama_supports_tools("nomic-embed-text"));
     }
 
     #[test]
