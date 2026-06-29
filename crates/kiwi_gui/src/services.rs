@@ -557,23 +557,22 @@ fn handle_execute_tool(
 
 fn spawn_claude_stream_effect(ctx: &mut ServiceContext<'_>, agent_id: kiwi_core::agent::AgentId) {
     let env_var_name = ctx.state.config.agent.api_key_env.clone();
-    let api_key = match std::env::var(&env_var_name) {
-        Ok(k) => {
-            let k = k.trim().to_string();
-            if k.is_empty() {
-                String::new()
-            } else {
-                k
-            }
-        }
-        Err(_) => String::new(),
-    };
+    let config_key = ctx.state.config.agent.api_key.clone();
+
+    // Resolve API key: env var takes priority, then literal from config file.
+    let api_key = std::env::var(&env_var_name)
+        .ok()
+        .map(|k| k.trim().to_string())
+        .filter(|k| !k.is_empty())
+        .or_else(|| config_key.map(|k| k.trim().to_string()).filter(|k| !k.is_empty()))
+        .unwrap_or_default();
 
     if api_key.is_empty() {
         let _ = ctx.events.sender().send(AppEvent::AgentApiError {
             agent_id,
             message: format!(
-                "API key not set — export {env_var_name}=<your-key> in your shell"
+                "API key not found. Set ${env_var_name} in your shell, \
+                 or add api_key = \"sk-...\" under [agent] in ~/.config/kiwi/config.toml"
             ),
         });
         return;

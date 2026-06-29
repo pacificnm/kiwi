@@ -68,6 +68,9 @@ pub struct AgentSection {
     pub provider: Option<String>,
     /// Environment variable that holds the API key (default `"ANTHROPIC_API_KEY"`).
     pub api_key_env: Option<String>,
+    /// API key literal — alternative to `api_key_env` when env var is inconvenient.
+    /// Stored in config file; prefer env var for security.
+    pub api_key: Option<String>,
     /// Default model to request (e.g. `"claude-opus-4-8"`).
     pub model: Option<String>,
 }
@@ -218,6 +221,8 @@ pub struct AgentSettings {
     pub provider: Option<String>,
     /// Name of the environment variable holding the API key.
     pub api_key_env: String,
+    /// API key literal from config file (fallback when env var is not set).
+    pub api_key: Option<String>,
     /// Model to request from the API.
     pub model: String,
 }
@@ -231,6 +236,7 @@ impl Default for AgentSettings {
             mode: AgentMode::Pty,
             provider: None,
             api_key_env: "ANTHROPIC_API_KEY".to_string(),
+            api_key: None,
             model: "claude-opus-4-8".to_string(),
         }
     }
@@ -335,6 +341,7 @@ impl Default for ResolvedConfig {
                 mode: AgentMode::Pty,
                 provider: None,
                 api_key_env: "ANTHROPIC_API_KEY".to_string(),
+                api_key: None,
                 model: "claude-opus-4-8".to_string(),
             },
             shell: ShellSettings {
@@ -439,6 +446,9 @@ impl RawConfig {
             }
             if let Some(api_key_env) = &agent.api_key_env {
                 resolved.agent.api_key_env = api_key_env.clone();
+            }
+            if let Some(api_key) = &agent.api_key {
+                resolved.agent.api_key = Some(api_key.clone());
             }
             if let Some(model) = &agent.model {
                 resolved.agent.model = model.clone();
