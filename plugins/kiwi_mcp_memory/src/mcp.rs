@@ -143,7 +143,7 @@ fn handle_tools_call(
                 Some(q) => q,
                 None => return error_response(id, -32602, "missing argument: query"),
             };
-            let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(8) as i32;
+            let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(8);
             search_project(query, limit, db, embed)
         }
         "search_knowledge_base" => {
@@ -151,7 +151,7 @@ fn handle_tools_call(
                 Some(q) => q,
                 None => return error_response(id, -32602, "missing argument: query"),
             };
-            let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(8) as i32;
+            let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(8);
             let collection = args.get("collection").and_then(|v| v.as_str());
             search_knowledge(query, limit, collection, db, embed)
         }
@@ -176,11 +176,11 @@ fn handle_tools_call(
 
     match result {
         Ok(text) => ok_response(id, tool_result(text)),
-        Err(e) => error_response(id, -32603, &format!("search failed: {e}")),
+        Err(e) => error_response(id, -32603, &format!("search failed: {e:#}")),
     }
 }
 
-fn search_project(query: &str, limit: i32, db: &mut MemoryDb, embed: &EmbedClient) -> Result<String> {
+fn search_project(query: &str, limit: i64, db: &mut MemoryDb, embed: &EmbedClient) -> Result<String> {
     let embedding = embed.embed(query)?;
     let results = db.search(&embedding, limit)?;
 
@@ -202,7 +202,7 @@ fn search_project(query: &str, limit: i32, db: &mut MemoryDb, embed: &EmbedClien
 
 fn search_knowledge(
     query: &str,
-    limit: i32,
+    limit: i64,
     collection: Option<&str>,
     db: &mut MemoryDb,
     embed: &EmbedClient,

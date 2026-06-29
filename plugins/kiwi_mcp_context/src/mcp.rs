@@ -191,7 +191,7 @@ fn dispatch_search(
     let limit = args
         .get("limit")
         .and_then(|v| v.as_i64())
-        .unwrap_or(8) as i32;
+        .unwrap_or(8);
     let session_key = args
         .get("session_key")
         .and_then(|v| v.as_str())
@@ -220,7 +220,7 @@ fn dispatch_list(args: &Value, db: &mut ContextDb) -> anyhow::Result<String> {
     let limit = args
         .get("limit")
         .and_then(|v| v.as_i64())
-        .unwrap_or(20) as i32;
+        .unwrap_or(20);
     let session_key = args
         .get("session_key")
         .and_then(|v| v.as_str())

@@ -2,11 +2,12 @@
 
 #![cfg_attr(not(test), allow(dead_code))]
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError};
 
 use super::AppEvent;
+use crate::agent::AgentId;
 
 pub const EVENT_CHANNEL_CAPACITY: usize = 1024;
 
@@ -46,6 +47,7 @@ impl EventChannel {
         let mut events = Vec::new();
         let mut pending_git_refresh = false;
         let mut pending_fs_paths: HashSet<PathBuf> = HashSet::new();
+        let mut pending_agent_output: HashMap<AgentId, Vec<u8>> = HashMap::new();
 
         loop {
             match self.receiver.try_recv() {
@@ -55,16 +57,37 @@ impl EventChannel {
                 Ok(AppEvent::FsChanged { paths }) => {
                     pending_fs_paths.extend(paths);
                 }
+                Ok(AppEvent::AgentOutput { agent_id, data }) => {
+                    pending_agent_output
+                        .entry(agent_id)
+                        .or_default()
+                        .extend(data);
+                }
                 Ok(event) => {
-                    flush_pending(&mut events, &mut pending_git_refresh, &mut pending_fs_paths);
+                    flush_pending(
+                        &mut events,
+                        &mut pending_git_refresh,
+                        &mut pending_fs_paths,
+                        &mut pending_agent_output,
+                    );
                     events.push(event);
                 }
                 Err(TryRecvError::Empty) => {
-                    flush_pending(&mut events, &mut pending_git_refresh, &mut pending_fs_paths);
+                    flush_pending(
+                        &mut events,
+                        &mut pending_git_refresh,
+                        &mut pending_fs_paths,
+                        &mut pending_agent_output,
+                    );
                     break;
                 }
                 Err(TryRecvError::Disconnected) => {
-                    flush_pending(&mut events, &mut pending_git_refresh, &mut pending_fs_paths);
+                    flush_pending(
+                        &mut events,
+                        &mut pending_git_refresh,
+                        &mut pending_fs_paths,
+                        &mut pending_agent_output,
+                    );
                     break;
                 }
             }
@@ -84,6 +107,7 @@ fn flush_pending(
     events: &mut Vec<AppEvent>,
     pending_git_refresh: &mut bool,
     pending_fs_paths: &mut HashSet<PathBuf>,
+    pending_agent_output: &mut HashMap<AgentId, Vec<u8>>,
 ) {
     if *pending_git_refresh {
         events.push(AppEvent::GitRefreshRequested);
@@ -92,6 +116,11 @@ fn flush_pending(
     if !pending_fs_paths.is_empty() {
         let paths = coalesce_paths(pending_fs_paths.drain());
         events.push(AppEvent::FsChanged { paths });
+    }
+    for (agent_id, data) in pending_agent_output.drain() {
+        if !data.is_empty() {
+            events.push(AppEvent::AgentOutput { agent_id, data });
+        }
     }
 }
 

@@ -36,7 +36,11 @@ pub use self::diff::diff_select_file_effects;
 pub use self::diff::diff_move_file_effects;
 pub use self::diff::diff_set_source_effects;
 
-use self::plugins::{reduce_plugin_install, reduce_plugin_set_enabled, reduce_set_agent};
+use self::plugins::{
+    reduce_plugin_install, reduce_plugin_install_finished, reduce_plugin_install_progress,
+    reduce_plugin_reinstall, reduce_plugin_remove, reduce_plugin_set_enabled,
+    reduce_set_agent,
+};
 use self::github::reduce_github_refresh_requested;
 use self::github::reduce_github_auth_checked;
 use self::github::reduce_github_issues_loaded;
@@ -225,6 +229,14 @@ pub fn reduce(state: &mut ReduceView<'_>, event: AppEvent) -> Vec<SideEffect> {
         AppEvent::BranchCheckoutCompleted { branch_name, error } => {
             reduce_branch_checkout_completed(state, branch_name, error)
         }
+        AppEvent::PluginInstallProgress {
+            message,
+            step,
+            total,
+        } => reduce_plugin_install_progress(state, message, step, total),
+        AppEvent::PluginInstallFinished { result, error } => {
+            reduce_plugin_install_finished(state, result, error)
+        }
     }
 }
 
@@ -360,6 +372,8 @@ pub fn reduce_command(state: &mut ReduceView<'_>, command: AppCommand) -> Vec<Si
             reduce_plugin_set_enabled(state, name, enabled)
         }
         AppCommand::PluginInstall { src_path } => reduce_plugin_install(state, src_path),
+        AppCommand::PluginRemove { name } => reduce_plugin_remove(state, name),
+        AppCommand::PluginReinstall { src_path } => reduce_plugin_reinstall(state, src_path),
         AppCommand::SetAgent { command, args } => reduce_set_agent(state, command, args),
     }
 }
@@ -2301,11 +2315,16 @@ mod tests {
     fn agent_output_updates_status_from_heuristics() {
         let mut state = test_state();
         state.active_agent_mut().running = true;
+        let payload = format!(
+            "{}{}",
+            "x".repeat(500),
+            "Thinking about the next step\n"
+        );
         run_reduce(
             &mut state,
             AppEvent::AgentOutput {
                 agent_id: AgentId::FIRST,
-                data: b"Thinking about the next step\n".to_vec(),
+                data: payload.into_bytes(),
             },
         );
         assert_eq!(state.active_agent().status, AgentStatus::Thinking);

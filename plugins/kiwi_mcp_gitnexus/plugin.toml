@@ -4,3 +4,10 @@ min_kiwi_version = "0.1.0"
 display_name = "MCP GitNexus"
 description = "MCP server providing GitNexus code intelligence."
 author = "PacificNM"
+
+[install]
+kind = "cargo"
+package = "kiwi_mcp_gitnexus"
+library = "kiwi_mcp_gitnexus"
+profile = "release"
+binaries = ["kiwi-mcp-gitnexus"]

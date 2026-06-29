@@ -147,69 +147,18 @@ impl PluginRegistry {
 
 /// Install a plugin from `src_path` into the default plugins directory and return
 /// the registry entry. Does NOT save to disk — callers must call `registry.register` then `registry.save`.
-pub fn install_plugin(src_path: &Path) -> Result<PluginRegistryEntry, String> {
-    let manifest_path = src_path.join("plugin.toml");
-    let manifest_str = std::fs::read_to_string(&manifest_path)
-        .map_err(|e| format!("Cannot read {}: {e}", manifest_path.display()))?;
-    let manifest: kiwi_plugin_api::PluginManifest = toml::from_str(&manifest_str)
-        .map_err(|e| format!("Invalid plugin.toml: {e}"))?;
-
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .ok_or_else(|| "HOME is not set".to_string())?;
-    let plugins_dir = crate::config::default_plugins_directory(Some(&home));
-    let dest_dir = plugins_dir.join(&manifest.name);
-
-    if dest_dir.exists() {
-        return Err(format!(
-            "Plugin directory already exists at {}. Remove it first or use `kiwi plugin remove {}`.",
-            dest_dir.display(),
-            manifest.name
-        ));
-    }
-
-    copy_dir_recursive(src_path, &dest_dir)
-        .map_err(|e| format!("Failed to copy plugin files: {e}"))?;
-
-    let ext = if cfg!(target_os = "macos") { "dylib" } else { "so" };
-    let lib_filename = find_library_filename(&dest_dir, ext)
-        .unwrap_or_else(|| manifest.entry.clone());
-
-    Ok(PluginRegistryEntry {
-        name: manifest.name.clone(),
-        display_name: manifest.display_name.clone(),
-        version: manifest.version.clone(),
-        enabled: true,
-        installed_path: dest_dir,
-        entry: lib_filename,
-        source: "local".to_string(),
-    })
+pub fn install_plugin(src_path: &Path) -> Result<super::install::PluginInstallResult, String> {
+    super::install::install_plugin_from_source(src_path)
 }
 
-fn copy_dir_recursive(src: &Path, dest: &Path) -> std::io::Result<()> {
-    fs::create_dir_all(dest)?;
-    for item in fs::read_dir(src)? {
-        let item = item?;
-        let dest_path = dest.join(item.file_name());
-        if item.file_type()?.is_dir() {
-            copy_dir_recursive(&item.path(), &dest_path)?;
-        } else {
-            fs::copy(item.path(), dest_path)?;
-        }
-    }
-    Ok(())
+/// Reinstall a plugin from `src_path` (remove existing install, then install fresh).
+pub fn reinstall_plugin(src_path: &Path) -> Result<super::install::PluginInstallResult, String> {
+    super::install::reinstall_plugin_from_source(src_path)
 }
 
-fn find_library_filename(dir: &Path, ext: &str) -> Option<String> {
-    let Ok(entries) = fs::read_dir(dir) else { return None };
-    for item in entries.flatten() {
-        let name = item.file_name();
-        let s = name.to_string_lossy();
-        if s.ends_with(&format!(".{ext}")) {
-            return Some(s.into_owned());
-        }
-    }
-    None
+/// Remove an installed plugin from disk. Does NOT update the registry.
+pub fn remove_plugin(name: &str) -> Result<super::install::PluginRemoveResult, String> {
+    super::install::remove_plugin_from_disk(name)
 }
 
 /// Default registry path: `~/.config/kiwi/plugin-registry.toml`.

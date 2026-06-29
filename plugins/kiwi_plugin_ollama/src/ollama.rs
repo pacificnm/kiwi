@@ -9,6 +9,8 @@ pub struct OllamaClient {
     pub base_url: String,
     pub model: String,
     pub embed_model: String,
+    /// `Some(false)` after Ollama rejects tool-calling for this model.
+    pub chat_tools_supported: Option<bool>,
 }
 
 /// A single message in the conversation, compatible with Ollama's /api/chat.
@@ -103,6 +105,80 @@ struct EmbedResponse {
     embeddings: Vec<Vec<f32>>,
 }
 
+#[derive(Deserialize)]
+struct TagsResponse {
+    models: Vec<TagModel>,
+}
+
+#[derive(Deserialize)]
+struct TagModel {
+    name: String,
+}
+
+/// Prefer instruct/chat tags over `-base` pretrain weights when several tags match.
+fn model_preference(name: &str) -> (u8, &str) {
+    let lower = name.to_ascii_lowercase();
+    if lower.contains("-base") || lower.ends_with(":base") {
+        (2, name)
+    } else if lower.ends_with(":latest") {
+        (0, name)
+    } else {
+        (1, name)
+    }
+}
+
+/// Pick an installed Ollama model name matching `requested`.
+///
+/// Accepts an exact tag match, or a base name like `qwen2.5-coder` when only
+/// `qwen2.5-coder:7b` (etc.) is installed.
+#[must_use]
+pub fn resolve_model_name(requested: &str, available: &[String]) -> Option<String> {
+    if available.iter().any(|name| name == requested)
+        && !requested.to_ascii_lowercase().contains("-base")
+    {
+        return Some(requested.to_string());
+    }
+
+    let base = requested.split(':').next().unwrap_or(requested);
+    let mut matches: Vec<&String> = available
+        .iter()
+        .filter(|name| name.split(':').next() == Some(base))
+        .collect();
+
+    if matches.is_empty() {
+        return None;
+    }
+
+    matches.sort_unstable_by(|a, b| model_preference(a).cmp(&model_preference(b)));
+    Some(matches[0].clone())
+}
+
+fn chat_error_tools_unsupported(err: &anyhow::Error) -> bool {
+    format!("{err:#}")
+        .to_ascii_lowercase()
+        .contains("does not support tools")
+}
+
+fn format_ureq_error(action: &str, base_url: &str, err: ureq::Error) -> anyhow::Error {
+    match err {
+        ureq::Error::Status(code, response) => {
+            let detail = response.into_string().unwrap_or_default();
+            let detail = detail.trim();
+            let detail = if detail.is_empty() {
+                String::new()
+            } else {
+                format!(" — {detail}")
+            };
+            anyhow::anyhow!("Ollama {action} failed (HTTP {code} at {base_url}){detail}")
+        }
+        ureq::Error::Transport(transport) => {
+            anyhow::anyhow!(
+                "could not reach Ollama at {base_url} during {action}: {transport}"
+            )
+        }
+    }
+}
+
 // ── ChatStream ────────────────────────────────────────────────────────────────
 
 pub struct ChatStream {
@@ -165,11 +241,105 @@ impl Iterator for ChatStream {
 
 impl OllamaClient {
     pub fn new(base_url: String, model: String, embed_model: String) -> Self {
-        Self { base_url, model, embed_model }
+        Self {
+            base_url,
+            model,
+            embed_model,
+            chat_tools_supported: None,
+        }
+    }
+
+    pub fn model_likely_supports_tools(&self) -> bool {
+        !self
+            .model
+            .to_ascii_lowercase()
+            .contains("-base")
+    }
+
+    /// List model names reported by `GET /api/tags`.
+    pub fn list_models(&self) -> Result<Vec<String>> {
+        let url = format!("{}/api/tags", self.base_url);
+        let response = ureq::get(&url)
+            .call()
+            .map_err(|err| format_ureq_error("model list", &self.base_url, err))?;
+        let tags: TagsResponse = response
+            .into_json()
+            .context("error: failed to parse Ollama /api/tags response")?;
+        Ok(tags.models.into_iter().map(|m| m.name).collect())
+    }
+
+    /// Resolve `model` against installed tags and update the client in place.
+    pub fn resolve_chat_model(&mut self) -> Result<()> {
+        let available = self.list_models()?;
+        let resolved = resolve_model_name(&self.model, &available).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Ollama chat model `{}` is not installed. Available models: {}",
+                self.model,
+                available.join(", ")
+            )
+        })?;
+        if resolved != self.model {
+            println!(
+                "note: using Ollama model `{resolved}` (configured as `{}`)",
+                self.model
+            );
+        }
+        self.model = resolved.clone();
+        if !self.model_likely_supports_tools() {
+            self.chat_tools_supported = Some(false);
+            eprintln!(
+                "warning: model `{resolved}` is a base/pretrain tag and usually cannot call tools; \
+                 MCP memory/context/git context gathering still works"
+            );
+        }
+        Ok(())
+    }
+
+    /// Resolve `embed_model` against installed tags when needed.
+    pub fn resolve_embed_model(&mut self) -> Result<()> {
+        let available = self.list_models()?;
+        if let Some(resolved) = resolve_model_name(&self.embed_model, &available) {
+            if resolved != self.embed_model {
+                println!(
+                    "note: using Ollama embed model `{resolved}` (configured as `{}`)",
+                    self.embed_model
+                );
+            }
+            self.embed_model = resolved;
+        }
+        Ok(())
     }
 
     /// Stream a chat response. Pass `tools` to enable model tool-calling.
+    /// Retries without tools when the model rejects tool support.
     pub fn chat_stream(
+        &mut self,
+        messages: &[ChatMessage],
+        tools: Option<&[OllamaTool]>,
+    ) -> Result<ChatStream> {
+        let use_tools = tools.filter(|t| !t.is_empty() && self.chat_tools_supported != Some(false));
+
+        match self.chat_stream_inner(messages, use_tools) {
+            Ok(stream) => {
+                if use_tools.is_some() {
+                    self.chat_tools_supported = Some(true);
+                }
+                Ok(stream)
+            }
+            Err(err) if use_tools.is_some() && chat_error_tools_unsupported(&err) => {
+                self.chat_tools_supported = Some(false);
+                eprintln!(
+                    "warning: model `{}` does not support Ollama tool-calling; \
+                     MCP context is still used, but git/GitHub tools are disabled for chat",
+                    self.model
+                );
+                self.chat_stream_inner(messages, None)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    fn chat_stream_inner(
         &self,
         messages: &[ChatMessage],
         tools: Option<&[OllamaTool]>,
@@ -187,12 +357,7 @@ impl OllamaClient {
         }
         let response = ureq::post(&url)
             .send_json(&body)
-            .with_context(|| {
-                format!(
-                    "error: cannot connect to Ollama at {} — is the server running?",
-                    self.base_url
-                )
-            })?;
+            .map_err(|err| format_ureq_error("chat", &self.base_url, err))?;
         Ok(ChatStream {
             reader: BufReader::new(Box::new(response.into_reader())),
             pending: VecDeque::new(),
@@ -205,14 +370,10 @@ impl OllamaClient {
             "model": self.embed_model,
             "input": text,
         });
-        let response: EmbedResponse = ureq::post(&url)
+        let response = ureq::post(&url)
             .send_json(&body)
-            .with_context(|| {
-                format!(
-                    "error: embed request to Ollama at {} failed",
-                    self.base_url
-                )
-            })?
+            .map_err(|err| format_ureq_error("embed", &self.base_url, err))?;
+        let response: EmbedResponse = response
             .into_json()
             .context("error: failed to parse embed response from Ollama")?;
         response
@@ -220,5 +381,61 @@ impl OllamaClient {
             .into_iter()
             .next()
             .ok_or_else(|| anyhow::anyhow!("error: empty embeddings in Ollama response"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_model_name;
+
+    #[test]
+    fn resolve_model_name_exact_match() {
+        let available = vec!["qwen2.5-coder:7b".to_string()];
+        assert_eq!(
+            resolve_model_name("qwen2.5-coder:7b", &available).as_deref(),
+            Some("qwen2.5-coder:7b")
+        );
+    }
+
+    #[test]
+    fn resolve_model_name_matches_base_name_to_tagged_model() {
+        let available = vec![
+            "nomic-embed-text:latest".to_string(),
+            "qwen2.5-coder:7b".to_string(),
+        ];
+        assert_eq!(
+            resolve_model_name("qwen2.5-coder", &available).as_deref(),
+            Some("qwen2.5-coder:7b")
+        );
+    }
+
+    #[test]
+    fn resolve_model_name_prefers_latest_tag() {
+        let available = vec![
+            "llama3.2:3b".to_string(),
+            "llama3.2:latest".to_string(),
+        ];
+        assert_eq!(
+            resolve_model_name("llama3.2", &available).as_deref(),
+            Some("llama3.2:latest")
+        );
+    }
+
+    #[test]
+    fn resolve_model_name_prefers_non_base_tag() {
+        let available = vec![
+            "qwen2.5-coder:1.5b-base".to_string(),
+            "qwen2.5-coder:7b".to_string(),
+        ];
+        assert_eq!(
+            resolve_model_name("qwen2.5-coder", &available).as_deref(),
+            Some("qwen2.5-coder:7b")
+        );
+    }
+
+    #[test]
+    fn resolve_model_name_returns_none_when_missing() {
+        let available = vec!["qwen2.5-coder:7b".to_string()];
+        assert!(resolve_model_name("mistral", &available).is_none());
     }
 }

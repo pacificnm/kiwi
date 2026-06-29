@@ -8,6 +8,7 @@ UX and interaction design for Kiwi. These documents describe how the product sho
 |----------|-------------|
 | [layout.md](./layout.md) | Overall TUI layout, regions, and proportions |
 | [navigation.md](./navigation.md) | Tab model, focus, and pane behavior |
+| [../agents/pty-pipeline.md](../agents/pty-pipeline.md) | Agent PTY streaming pipeline (tool/plugin authors) |
 | [../development/pty-panes.md](../development/pty-panes.md) | Agent and shell PTY focus, scrollback, quit |
 | [themes.md](./themes.md) | Visual design, colors, and built-in themes |
 | [mouse-interaction.md](./mouse-interaction.md) | Mouse affordances, double-click preview, in-app selection |

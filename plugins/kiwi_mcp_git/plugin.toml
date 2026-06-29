@@ -2,5 +2,12 @@ name = "kiwi-mcp-git"
 version = "0.1.0"
 min_kiwi_version = "0.1.0"
 display_name = "MCP Git"
-description = "MCP server providing Git operations."
+description = "MCP server providing Git and GitHub operations."
 author = "PacificNM"
+
+[install]
+kind = "cargo"
+package = "kiwi_mcp_git"
+library = "kiwi_mcp_git"
+profile = "release"
+binaries = ["kiwi-mcp-git"]

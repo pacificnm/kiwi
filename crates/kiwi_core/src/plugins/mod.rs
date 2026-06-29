@@ -1,6 +1,15 @@
+pub mod install;
 pub mod registry;
 
-pub use registry::{default_registry_path, install_plugin, PluginRegistry, PluginRegistryEntry};
+pub use install::{
+    install_plugin_from_source, install_plugin_from_source_with_progress,
+    reinstall_plugin_from_source, reinstall_plugin_from_source_with_progress,
+    remove_plugin_from_disk, InstallProgressUpdate, PluginInstallResult, PluginRemoveResult,
+};
+pub use registry::{
+    default_registry_path, install_plugin, reinstall_plugin, remove_plugin, PluginRegistry,
+    PluginRegistryEntry,
+};
 
 /// If `name` is not in `registry`, reads its `plugin.toml` from
 /// `install_dir/<name>/plugin.toml` and registers it as enabled.

@@ -340,6 +340,12 @@ pub fn default_plugins_directory(home: Option<&Path>) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".config/kiwi/plugins"))
 }
 
+/// Default directory for plugin-provided executables (`~/.local/bin`).
+pub fn default_plugin_bin_directory(home: Option<&Path>) -> PathBuf {
+    home.map(|dir| dir.join(".local/bin"))
+        .unwrap_or_else(|| PathBuf::from(".local/bin"))
+}
+
 fn default_shell_command() -> String {
     std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string())
 }

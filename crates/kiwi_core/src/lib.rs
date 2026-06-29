@@ -10,6 +10,7 @@ pub mod commands;
 pub mod config;
 pub mod diff;
 pub mod editor;
+pub mod env;
 pub mod events;
 pub mod file_tree;
 pub mod git;

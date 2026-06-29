@@ -95,7 +95,7 @@ impl ContextDb {
     pub fn search(
         &mut self,
         query_embedding: &[f32],
-        limit: i32,
+        limit: i64,
         session_key: &str,
     ) -> Result<Vec<ContextEntry>> {
         let vec = Vector::from(query_embedding.to_vec());
@@ -124,7 +124,7 @@ impl ContextDb {
         Ok(rows.into_iter().map(row_to_entry).collect())
     }
 
-    pub fn list(&mut self, limit: i32, session_key: &str) -> Result<Vec<ContextEntry>> {
+    pub fn list(&mut self, limit: i64, session_key: &str) -> Result<Vec<ContextEntry>> {
         let rows = if session_key.is_empty() {
             self.client.query(
                 "SELECT id, session_key, title, content, tags,
@@ -181,8 +181,8 @@ impl ContextDb {
 
         if let Some(row) = rows.first() {
             let typmod: i32 = row.get(0);
-            if typmod > 4 {
-                return Ok(Some((typmod - 4) as usize));
+            if typmod > 0 {
+                return Ok(Some(typmod as usize));
             }
         }
         Ok(None)

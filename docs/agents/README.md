@@ -2,7 +2,7 @@
 
 Kiwi's agent system spawns any configured binary as a PTY process and renders its output in the **Agent tab**. The binary receives stdin from the keyboard and writes to stdout; Kiwi infers live status from keyword patterns in the output.
 
-See [SPEC-010 Agent Service](../specs/SPEC-010-agent-service.md) for the full PTY contract and [ADR-017](../architecture/adr/ADR-017-multi-agent-future-design.md) for multi-agent plans.
+See [SPEC-010 Agent Service](../specs/SPEC-010-agent-service.md) for the full PTY contract, [PTY pipeline](./pty-pipeline.md) for the end-to-end streaming architecture (required reading for tool authors), and [ADR-017](../architecture/adr/ADR-017-multi-agent-future-design.md) for multi-agent plans.
 
 ## Available agents
 

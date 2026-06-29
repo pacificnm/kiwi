@@ -91,7 +91,7 @@ impl MemoryDb {
     pub fn search(
         &mut self,
         query_embedding: &[f32],
-        limit: i32,
+        limit: i64,
     ) -> Result<Vec<SearchResult>> {
         let vec = Vector::from(query_embedding.to_vec());
         let rows = self
@@ -190,7 +190,7 @@ impl MemoryDb {
     pub fn search_knowledge(
         &mut self,
         query_embedding: &[f32],
-        limit: i32,
+        limit: i64,
         collection: Option<&str>,
     ) -> Result<Vec<KnowledgeResult>> {
         let vec = Vector::from(query_embedding.to_vec());
@@ -253,8 +253,8 @@ impl MemoryDb {
 
         if let Some(row) = rows.first() {
             let typmod: i32 = row.get(0);
-            if typmod > 4 {
-                return Ok(Some((typmod - 4) as usize));
+            if typmod > 0 {
+                return Ok(Some(typmod as usize));
             }
         }
         Ok(None)
@@ -280,9 +280,8 @@ impl MemoryDb {
 
         if let Some(row) = rows.first() {
             let typmod: i32 = row.get(0);
-            // pgvector stores dim as (dim + 4) in typmod
-            if typmod > 4 {
-                return Ok(Some((typmod - 4) as usize));
+            if typmod > 0 {
+                return Ok(Some(typmod as usize));
             }
         }
         Ok(None)

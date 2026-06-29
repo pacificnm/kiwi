@@ -10,6 +10,7 @@ pub fn agent_spawn_effects_if_needed(state: &mut ReduceView<'_>) -> Vec<SideEffe
         return Vec::new();
     }
 
+    refresh_active_agent_status_heuristic(state);
     agent_spawn_effects_for(state, state.agent_manager.active_id())
 }
 
@@ -43,16 +44,31 @@ pub(super) fn reduce_agent_output(
     agent_id: crate::agent::AgentId,
     data: Vec<u8>,
 ) -> Vec<SideEffect> {
-    let Some(pty) = state.agent_manager.pty_mut(agent_id) else {
-        return Vec::new();
-    };
+    let refresh_manager = {
+        let Some(pty) = state.agent_manager.pty_mut(agent_id) else {
+            return Vec::new();
+        };
 
-    let cols = pty.cols;
-    pty.scrollback.set_cols(cols);
-    pty.scrollback.append_bytes(&data);
-    if let Some(status) = infer_status_from_scrollback(&pty.scrollback) {
-        pty.status = status;
+        let cols = pty.cols;
+        pty.scrollback.set_cols(cols);
+        pty.scrollback.append_bytes(&data);
+
+        if state.navigation.main_tab == MainTab::Agent {
+            pty.status_check_accum += data.len();
+            if pty.status_check_accum >= 512 {
+                pty.status_check_accum = 0;
+                apply_status_heuristic(pty)
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    };
+    if refresh_manager {
+        state.agent_manager.refresh_status_label();
     }
+
     state.set_dirty();
     Vec::new()
 }
@@ -67,6 +83,7 @@ pub(super) fn reduce_agent_exited(
     };
 
     pty.apply_exit(code);
+    state.agent_manager.refresh_status_label();
     state.set_dirty();
     Vec::new()
 }
@@ -151,4 +168,27 @@ pub(super) fn reduce_agent_scroll_lines(state: &mut ReduceView<'_>, lines: i32) 
     state.active_agent_mut().scroll_by_lines(lines, page_size);
     state.set_dirty();
     Vec::new()
+}
+
+fn refresh_active_agent_status_heuristic(state: &mut ReduceView<'_>) {
+    let id = state.agent_manager.active_id();
+    let mut refresh_manager = false;
+    if let Some(pty) = state.agent_manager.pty_mut(id) {
+        pty.status_check_accum = 0;
+        refresh_manager = apply_status_heuristic(pty);
+    }
+    if refresh_manager {
+        state.agent_manager.refresh_status_label();
+    }
+}
+
+fn apply_status_heuristic(pty: &mut crate::state::AgentState) -> bool {
+    if let Some(status) = infer_status_from_scrollback(&pty.scrollback) {
+        if pty.status != status {
+            pty.status = status;
+            pty.refresh_status_bar_label();
+            return true;
+        }
+    }
+    false
 }

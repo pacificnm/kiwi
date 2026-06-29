@@ -41,7 +41,10 @@ fn render_agent_chrome(ui: &mut Ui, ctx: &PanelContext<'_>) {
             ctx.theme.role(SemanticRole::Muted),
             ctx.state.agent_manager.status_bar_label(),
         );
-        if agent.scrollback.line_count() > 0 {
+        let streaming = agent.running
+            && agent.follow_tail
+            && agent.scrollback.has_pending_line();
+        if agent.scrollback.line_count() > 0 && !streaming {
             ui.colored_label(
                 ctx.theme.role(SemanticRole::Muted),
                 format!("{} lines", agent.scrollback.line_count()),

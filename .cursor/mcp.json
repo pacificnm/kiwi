@@ -1,17 +1,11 @@
 {
   "mcpServers": {
     "kiwi-memory": {
-      "command": "/home/jaimie/kiwi/.venv/bin/python",
-      "args": [
-        "/home/jaimie/kiwi/tools/mcp_memory_server.py"
-      ],
+      "command": "/home/jaimie/.local/bin/kiwi-mcp-memory",
       "cwd": "/home/jaimie/kiwi"
     },
     "kiwi-context-memory": {
-      "command": "/home/jaimie/kiwi/.venv/bin/python",
-      "args": [
-        "/home/jaimie/kiwi/tools/mcp_context_memory_server.py"
-      ],
+      "command": "/home/jaimie/.local/bin/kiwi-mcp-context",
       "cwd": "/home/jaimie/kiwi"
     }
   }

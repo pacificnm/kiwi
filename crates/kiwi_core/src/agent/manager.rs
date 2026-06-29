@@ -70,6 +70,7 @@ pub struct AgentManager {
     active_agent: AgentId,
     next_id: u32,
     max_agents: usize,
+    cached_status_label: String,
 }
 
 impl AgentManager {
@@ -79,12 +80,15 @@ impl AgentManager {
         let label = default_label_for_index(1, &pty);
         let mut agents = HashMap::new();
         agents.insert(id, ManagedAgentSession::new(id, label, pty));
-        Self {
+        let mut manager = Self {
             agents,
             active_agent: id,
             next_id: id.as_u32() + 1,
             max_agents: DEFAULT_MAX_AGENTS,
-        }
+            cached_status_label: String::new(),
+        };
+        manager.refresh_status_label();
+        manager
     }
 
     #[must_use]
@@ -146,6 +150,7 @@ impl AgentManager {
         let len = ids.len() as i32;
         let next = (current as i32 + delta).rem_euclid(len) as usize;
         self.active_agent = ids[next];
+        self.refresh_status_label();
         self.active_agent
     }
 
@@ -189,6 +194,7 @@ impl AgentManager {
             return Err(AgentManagerError::UnknownAgent(id));
         }
         self.active_agent = id;
+        self.refresh_status_label();
         Ok(())
     }
 
@@ -225,6 +231,7 @@ impl AgentManager {
         };
         self.agents.insert(id, session);
         self.active_agent = id;
+        self.refresh_status_label();
         Ok(id)
     }
 
@@ -246,6 +253,7 @@ impl AgentManager {
         if let Some(next) = next_active {
             self.active_agent = next;
         }
+        self.refresh_status_label();
         Ok(())
     }
 
@@ -257,15 +265,20 @@ impl AgentManager {
 
     /// Status-bar label for the agent segment (ADR-017 future UX).
     #[must_use]
-    pub fn status_bar_label(&self) -> String {
-        let active = self.active_pty();
-        if self.session_count() <= 1 {
-            return active.status.status_bar_label(active.running).to_string();
-        }
+    pub fn status_bar_label(&self) -> &str {
+        &self.cached_status_label
+    }
 
-        let total = self.session_count();
-        let running = self.running_count();
-        format!("{total} Agents ({running} Running)")
+    pub fn refresh_status_label(&mut self) {
+        self.cached_status_label = if self.session_count() <= 1 {
+            self.active_pty().status_bar_label.clone()
+        } else {
+            format!(
+                "{} Agents ({} Running)",
+                self.session_count(),
+                self.running_count()
+            )
+        };
     }
 
     fn ordered_ids(&self) -> impl Iterator<Item = AgentId> + '_ {
@@ -368,8 +381,13 @@ mod tests {
     #[test]
     fn status_bar_label_single_agent_uses_pty_status() {
         let mut manager = AgentManager::with_initial_agent(sample_pty("cursor"));
-        manager.active_pty_mut().running = true;
-        manager.active_pty_mut().status = AgentStatus::Idle;
+        {
+            let pty = manager.active_pty_mut();
+            pty.running = true;
+            pty.status = AgentStatus::Idle;
+            pty.refresh_status_bar_label();
+        }
+        manager.refresh_status_label();
         assert_eq!(manager.status_bar_label(), "Agent Running");
     }
 

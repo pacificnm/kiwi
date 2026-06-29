@@ -8,3 +8,7 @@ author = "PacificNM"
 [agent]
 command = "agent"
 args = []
+
+[install]
+kind = "copy"
+files = ["plugin.toml"]

@@ -1,5 +1,6 @@
 mod db;
 mod embed;
+mod env;
 mod mcp;
 
 use anyhow::{Context, Result};
@@ -18,18 +19,22 @@ struct Cli {
 }
 
 fn main() -> Result<()> {
+    env::load_mcp_env();
     let cli = Cli::parse();
 
     let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
         "postgresql:///kiwi_memory?host=/var/run/postgresql".into()
     });
 
-    let embed = EmbedClient::from_env()?;
+    let mut db = ContextDb::connect(&db_url)?;
+    let mut embed = EmbedClient::from_env()?;
+    if let Some(table_dim) = db.existing_dim()? {
+        embed = embed.align_to_table_dim(table_dim)?;
+    }
+    let needed = embed.dim();
 
     if cli.setup_db {
-        let mut db = ContextDb::connect(&db_url)?;
         let existing = db.existing_dim()?;
-        let needed = embed.dim();
         if let Some(dim) = existing {
             if dim != needed {
                 anyhow::bail!(
@@ -46,10 +51,7 @@ fn main() -> Result<()> {
     }
 
     // MCP server mode
-    let mut db = ContextDb::connect(&db_url)?;
-    let existing = db.existing_dim()?;
-    let needed = embed.dim();
-    if let Some(dim) = existing {
+    if let Some(dim) = db.existing_dim()? {
         if dim != needed {
             anyhow::bail!(
                 "schema dimension mismatch: table has {dim}-dim vectors but \
