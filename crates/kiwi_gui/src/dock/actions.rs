@@ -27,6 +27,10 @@ impl TabActions<'_> {
     }
 
     pub fn close_tab(&mut self, tab: KiwiTab) {
+        if !tab.is_closeable() {
+            return;
+        }
+
         let Some((node, tab_index)) = self.dock_state.find_main_surface_tab(&tab) else {
             return;
         };
@@ -92,7 +96,7 @@ mod tests {
     use crate::dock::DockShell;
 
     #[test]
-    fn close_and_reopen_git_status_in_left_region() {
+    fn pinned_left_tabs_cannot_be_closed() {
         let mut dock = initial_dock_state();
         let mut last_region = HashMap::new();
         let mut actions = TabActions {
@@ -102,15 +106,36 @@ mod tests {
 
         assert!(actions.is_open(KiwiTab::GitStatus));
         actions.close_tab(KiwiTab::GitStatus);
-        assert!(!actions.is_open(KiwiTab::GitStatus));
-
-        actions.show_tab(KiwiTab::GitStatus, None);
         assert!(actions.is_open(KiwiTab::GitStatus));
+
+        actions.close_tab(KiwiTab::Explorer);
+        assert!(actions.is_open(KiwiTab::Explorer));
+
+        actions.close_tab(KiwiTab::GitHubIssues);
+        assert!(actions.is_open(KiwiTab::GitHubIssues));
+    }
+
+    #[test]
+    fn close_and_reopen_search_in_left_region() {
+        let mut dock = initial_dock_state();
+        let mut last_region = HashMap::new();
+        let mut actions = TabActions {
+            dock_state: &mut dock,
+            last_region: &mut last_region,
+        };
+
+        actions.ensure_tab(KiwiTab::Search, true, None);
+        assert!(actions.is_open(KiwiTab::Search));
+        actions.close_tab(KiwiTab::Search);
+        assert!(!actions.is_open(KiwiTab::Search));
+
+        actions.show_tab(KiwiTab::Search, None);
+        assert!(actions.is_open(KiwiTab::Search));
 
         let left = find_leaf_for_region(&dock, DockRegion::Left).expect("left leaf");
         let (node, _) = dock
-            .find_main_surface_tab(&KiwiTab::GitStatus)
-            .expect("git status open");
+            .find_main_surface_tab(&KiwiTab::Search)
+            .expect("search open");
         assert_eq!(node, left);
     }
 

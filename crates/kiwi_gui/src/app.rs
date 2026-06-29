@@ -9,10 +9,9 @@ use kiwi_core::status_bar::{compute_status_bar, StatusBarSnapshot};
 use kiwi_core::workspace::{try_merge_save_gui, try_save_from_reduce_view, GuiWorkspaceSnapshot};
 
 use crate::chrome::{
-    palette_keyboard_action, palette_open_shortcut_action, render_about_modal,
-    render_command_palette, render_menu_bar, render_reset_layout_modal, render_shortcuts_modal,
-    render_status_bar,
-    render_toast,
+    github_picker_keyboard_action, palette_keyboard_action, palette_open_shortcut_action,
+    render_about_modal, render_command_palette, render_github_picker_overlays, render_menu_bar,
+    render_reset_layout_modal, render_shortcuts_modal, render_status_bar, render_toast,
 };
 use crate::dock::{
     collect_github_keyboard, collect_pty_input, collect_search_keyboard, explorer_keyboard_action,
@@ -198,6 +197,10 @@ impl KiwiApp {
     }
 
     fn handle_input_shortcuts(&mut self, ctx: &egui::Context) -> bool {
+        if let Some(command) = github_picker_keyboard_action(ctx, &self.runtime.state) {
+            return self.dispatch_command(command);
+        }
+
         if self.runtime.state.palette.open {
             let prompt_mode = self.runtime.state.palette.prompt.is_some();
             let input_empty = self.runtime.state.palette.input.is_empty();
@@ -215,8 +218,19 @@ impl KiwiApp {
 
         if ctx.input(|input| input.key_pressed(egui::Key::F5)) {
             match self.dock.focused_tab() {
-                Some(KiwiTab::GitHubIssues) | Some(KiwiTab::Issues) | Some(KiwiTab::GitHubPrs) => {
+                Some(KiwiTab::GitHubIssues) => {
+                    if self.runtime.state.github.left_pane == kiwi_core::github::GitHubLeftPane::Branches
+                    {
+                        let _ = self.dispatch_command(AppCommand::BranchRefresh);
+                    } else {
+                        let _ = self.dispatch_command(AppCommand::GitHubRefresh);
+                    }
+                }
+                Some(KiwiTab::Issues) | Some(KiwiTab::GitHubPrs) => {
                     let _ = self.dispatch_command(AppCommand::GitHubRefresh);
+                }
+                Some(KiwiTab::GitLog) => {
+                    let _ = self.dispatch_command(AppCommand::BranchRefresh);
                 }
                 Some(KiwiTab::Search) => {
                     if !self.runtime.state.search.query.is_empty() {
@@ -314,7 +328,7 @@ impl eframe::App for KiwiApp {
             self.status_bar = compute_status_bar(&self.runtime.state);
         }
 
-        let menu_action = render_menu_bar(ctx, &mut self.dock);
+        let menu_action = render_menu_bar(ctx, &self.gui_theme, &mut self.dock);
         if menu_action.reset_layout_requested {
             self.reset_layout_prompt = true;
         }
@@ -412,6 +426,15 @@ impl eframe::App for KiwiApp {
         render_about_modal(ctx, &mut self.about_open);
 
         if let Some(command) = render_command_palette(ctx, &self.gui_theme, &mut self.runtime.state)
+        {
+            if self.dispatch_command(command) {
+                self.close_window(ctx);
+                return;
+            }
+        }
+
+        if let Some(command) =
+            render_github_picker_overlays(ctx, &self.gui_theme, &mut self.runtime.state)
         {
             if self.dispatch_command(command) {
                 self.close_window(ctx);

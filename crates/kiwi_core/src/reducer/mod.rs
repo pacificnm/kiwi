@@ -23,7 +23,7 @@ pub use self::workspace::file_tree_startup_effects;
 pub use self::workspace::workspace_expand_pending_effects;
 pub use self::workspace::workspace_restore_effects;
 pub use self::git::git_refresh_effects;
-pub use self::git::branch_list_access_effects;
+pub use self::git::{branch_detail_access_effects, branch_list_access_effects};
 pub use self::git::branch_checkout_effects;
 pub use self::github::github_refresh_effects;
 pub use self::github::github_first_access_effects;
@@ -65,6 +65,11 @@ use self::github::reduce_github_label_picker_move;
 use self::github::reduce_github_label_picker_toggle;
 use self::github::reduce_github_label_picker_apply;
 use self::github::reduce_github_label_picker_cancel;
+use self::github::reduce_github_repo_milestones_loaded;
+use self::github::reduce_github_issue_milestone_assigned;
+use self::github::reduce_github_milestone_picker_move;
+use self::github::reduce_github_milestone_picker_apply;
+use self::github::reduce_github_milestone_picker_cancel;
 use self::github::reduce_github_context_menu_open;
 use self::github::reduce_github_context_menu_move;
 use self::github::reduce_github_context_menu_select;
@@ -73,6 +78,10 @@ use self::github::reduce_github_list_action;
 use self::github::reduce_github_context_menu_cancel;
 use self::github::reduce_github_open_in_browser;
 use self::github::reduce_github_open_browser_completed;
+use self::github::reduce_github_issue_create_completed;
+use self::github::reduce_github_issue_create_cancel;
+use self::github::reduce_github_issue_create_open;
+use self::github::reduce_github_issue_create_submit;
 use self::github::reduce_github_pr_create_completed;
 use self::github::reduce_github_pr_merge_completed;
 use self::git::reduce_git_refresh_requested;
@@ -81,8 +90,10 @@ use self::git::reduce_branch_refresh;
 use self::git::reduce_branch_move_selection;
 use self::git::reduce_branch_select;
 use self::git::reduce_branch_checkout_selected;
-use self::git::reduce_branch_list_loaded;
-use self::git::reduce_branch_checkout_completed;
+use self::git::{
+    reduce_branch_checkout_completed, reduce_branch_detail_loaded, reduce_branch_detail_scroll,
+    reduce_branch_list_loaded,
+};
 use self::shell::reduce_shell_output;
 use self::shell::reduce_shell_exited;
 use self::agent::reduce_agent_output;
@@ -214,6 +225,15 @@ pub fn reduce(state: &mut ReduceView<'_>, event: AppEvent) -> Vec<SideEffect> {
         AppEvent::GitHubIssueLabelsApplied { number, result } => {
             reduce_github_issue_labels_applied(state, number, result)
         }
+        AppEvent::GitHubRepoMilestonesLoaded { result } => {
+            reduce_github_repo_milestones_loaded(state, result)
+        }
+        AppEvent::GitHubIssueMilestoneAssigned { number, result } => {
+            reduce_github_issue_milestone_assigned(state, number, result)
+        }
+        AppEvent::GitHubIssueCreateCompleted { outcome } => {
+            reduce_github_issue_create_completed(state, outcome)
+        }
         AppEvent::GitHubOpenBrowserCompleted { target, result } => {
             reduce_github_open_browser_completed(state, target, result)
         }
@@ -225,6 +245,9 @@ pub fn reduce(state: &mut ReduceView<'_>, event: AppEvent) -> Vec<SideEffect> {
         }
         AppEvent::BranchListLoaded { entries, error } => {
             reduce_branch_list_loaded(state, entries, error)
+        }
+        AppEvent::BranchDetailLoaded { name, detail, error } => {
+            reduce_branch_detail_loaded(state, name, detail, error)
         }
         AppEvent::BranchCheckoutCompleted { branch_name, error } => {
             reduce_branch_checkout_completed(state, branch_name, error)
@@ -251,6 +274,7 @@ pub fn reduce_command(state: &mut ReduceView<'_>, command: AppCommand) -> Vec<Si
             effects.extend(github_issue_detail_access_effects(state, false));
             effects.extend(github_pr_detail_access_effects(state, false));
             effects.extend(branch_list_access_effects(state, false));
+            effects.extend(branch_detail_access_effects(state, false));
             effects
         }
         AppCommand::Quit => {
@@ -285,6 +309,14 @@ pub fn reduce_command(state: &mut ReduceView<'_>, command: AppCommand) -> Vec<Si
         AppCommand::GitHubLabelPickerToggle => reduce_github_label_picker_toggle(state),
         AppCommand::GitHubLabelPickerApply => reduce_github_label_picker_apply(state),
         AppCommand::GitHubLabelPickerCancel => reduce_github_label_picker_cancel(state),
+        AppCommand::GitHubMilestonePickerMove(delta) => {
+            reduce_github_milestone_picker_move(state, delta)
+        }
+        AppCommand::GitHubMilestonePickerApply => reduce_github_milestone_picker_apply(state),
+        AppCommand::GitHubMilestonePickerCancel => reduce_github_milestone_picker_cancel(state),
+        AppCommand::GitHubIssueCreateOpen => reduce_github_issue_create_open(state),
+        AppCommand::GitHubIssueCreateCancel => reduce_github_issue_create_cancel(state),
+        AppCommand::GitHubIssueCreateSubmit => reduce_github_issue_create_submit(state),
         AppCommand::GitHubContextMenuOpen {
             anchor_x,
             anchor_y,
@@ -333,6 +365,7 @@ pub fn reduce_command(state: &mut ReduceView<'_>, command: AppCommand) -> Vec<Si
         AppCommand::BranchSelect(index) => reduce_branch_select(state, index),
         AppCommand::BranchCheckoutSelected => reduce_branch_checkout_selected(state),
         AppCommand::BranchRefresh => reduce_branch_refresh(state),
+        AppCommand::BranchDetailScroll(delta) => reduce_branch_detail_scroll(state, delta),
         AppCommand::PreviewFile { path, line } => reduce_preview_file(state, path, line),
         AppCommand::PreviewScroll(delta) => reduce_preview_scroll(state, delta),
         AppCommand::PreviewPageScroll(delta) => reduce_preview_page_scroll(state, delta),
@@ -498,7 +531,7 @@ mod tests {
             ))),
         );
         assert_eq!(state.navigation.left_tab, LeftNavTab::Gh);
-        assert_eq!(state.github.left_pane, GitHubLeftPane::Prs);
+        assert_eq!(state.github.left_pane, GitHubLeftPane::Branches);
     }
 
     #[test]
@@ -1683,7 +1716,7 @@ mod tests {
         assert_eq!(state.github.selected_issue, Some(42));
         let menu = state.github.context_menu.as_ref().expect("menu open");
         assert_eq!(menu.anchor_x, 12);
-        assert_eq!(menu.items.len(), 6);
+        assert_eq!(menu.items.len(), 7);
     }
 
     #[test]
@@ -2063,6 +2096,63 @@ mod tests {
                 }
             )
         }));
+    }
+
+    #[test]
+    fn github_issue_create_submit_spawns_side_effect() {
+        let mut state = test_state();
+        state.github.auth_ok = true;
+        state.github.issue_create_modal.open = true;
+        state.github.issue_create_modal.title = "Bug report".to_string();
+        state.github.issue_create_modal.body = "Details".to_string();
+
+        let effects = run_reduce(
+            &mut state,
+            AppEvent::Command(AppCommand::GitHubIssueCreateSubmit),
+        );
+
+        assert!(state.github.issue_create_modal.submitting);
+        assert!(effects.iter().any(|effect| matches!(
+            effect,
+            SideEffect::GitHub(GitHubEffect::SpawnIssueCreate { .. })
+        )));
+    }
+
+    #[test]
+    fn github_issue_create_completed_refreshes_issue_list() {
+        use crate::github::{IssueActionResult, IssueCreateResult};
+
+        let mut state = test_state();
+        state.github.auth_ok = true;
+        state.github.issue_create_modal.open = true;
+        state.github.issue_create_modal.submitting = true;
+        state
+            .navigation
+            .apply(crate::navigation::NavCommand::SelectLeftTab(
+                crate::navigation::LeftNavTab::Gh,
+            ));
+
+        let effects = run_reduce(
+            &mut state,
+            AppEvent::GitHubIssueCreateCompleted {
+                outcome: IssueCreateResult {
+                    result: IssueActionResult {
+                        success: true,
+                        error: None,
+                        detail: Some("https://github.com/o/r/issues/7".to_string()),
+                    },
+                    number: Some(7),
+                },
+            },
+        );
+
+        assert!(!state.github.issue_create_modal.open);
+        assert_eq!(state.github.selected_issue, Some(7));
+        assert!(effects.contains(&SideEffect::GitHub(GitHubEffect::SpawnIssueList)));
+        assert!(effects.iter().any(|effect| matches!(
+            effect,
+            SideEffect::GitHub(GitHubEffect::SpawnIssueDetail { number: 7 })
+        )));
     }
 
     #[test]

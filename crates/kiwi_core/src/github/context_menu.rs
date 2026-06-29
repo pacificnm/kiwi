@@ -4,6 +4,7 @@ pub enum GhContextMenuAction {
     CreateBranch,
     Comment,
     AddLabels,
+    AssignMilestone,
     Merge,
     OpenInBrowser,
     SendToAgent,
@@ -17,6 +18,7 @@ impl GhContextMenuAction {
             Self::CreateBranch => "Create Branch",
             Self::Comment => "Comment",
             Self::AddLabels => "Add Labels",
+            Self::AssignMilestone => "Assign Milestone",
             Self::Merge => "Merge into main",
             Self::OpenInBrowser => "Open in Browser",
             Self::SendToAgent => "Send To Agent",
@@ -53,6 +55,7 @@ impl GhContextMenuState {
                 GhContextMenuAction::CreateBranch,
                 GhContextMenuAction::Comment,
                 GhContextMenuAction::AddLabels,
+                GhContextMenuAction::AssignMilestone,
                 GhContextMenuAction::OpenInBrowser,
                 GhContextMenuAction::SendToAgent,
             ],
@@ -118,10 +121,11 @@ mod tests {
     #[test]
     fn issue_menu_includes_github_actions() {
         let menu = GhContextMenuState::new(GhContextTarget::Issue { list_index: 0 }, 10, 5, false);
-        assert_eq!(menu.items.len(), 6);
+        assert_eq!(menu.items.len(), 7);
         assert!(menu.items.contains(&GhContextMenuAction::CreateBranch));
         assert!(menu.items.contains(&GhContextMenuAction::Comment));
         assert!(menu.items.contains(&GhContextMenuAction::AddLabels));
+        assert!(menu.items.contains(&GhContextMenuAction::AssignMilestone));
         assert!(menu.items.contains(&GhContextMenuAction::OpenInBrowser));
     }
 

@@ -107,8 +107,12 @@ mod tests {
 
     fn sync_opens(nav: NavigationState, tab: KiwiTab) {
         let mut dock = DockShell::new();
-        dock.close_tab(tab);
-        assert!(!dock.is_tab_open(tab));
+        if tab.is_closeable() {
+            dock.close_tab(tab);
+            assert!(!dock.is_tab_open(tab));
+        } else {
+            assert!(dock.is_tab_open(tab));
+        }
         sync_dock_from_navigation(&mut dock, &nav, GitHubLeftPane::Issues);
         assert!(dock.is_tab_open(tab));
     }

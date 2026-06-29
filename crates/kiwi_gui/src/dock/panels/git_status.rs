@@ -7,7 +7,7 @@ use kiwi_core::git::{
 };
 use kiwi_core::theme::SemanticRole;
 
-use super::layout::render_virtual_rows;
+use super::layout::{render_virtual_rows, selectable_label};
 use crate::dock::context::PanelContext;
 
 const ROW_HEIGHT: f32 = 18.0;
@@ -75,10 +75,14 @@ fn render_file_list(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
         return;
     }
 
-    clamp_git_scroll(&mut ctx.state.git, &rows, 1);
+    clamp_git_scroll(
+        &mut ctx.state.git,
+        &rows,
+        total_rows.saturating_sub(1),
+    );
 
     let mut scroll_offset = ctx.state.git.scroll_offset;
-    let viewport_rows = render_virtual_rows(
+    let layout = render_virtual_rows(
         ui,
         ROW_HEIGHT,
         total_rows,
@@ -88,8 +92,8 @@ fn render_file_list(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
         },
     );
     ctx.state.git.scroll_offset = scroll_offset;
-    ctx.state.viewport.git_rows = viewport_rows;
-    clamp_git_scroll(&mut ctx.state.git, &rows, viewport_rows);
+    ctx.state.viewport.git_rows = layout.viewport_rows;
+    clamp_git_scroll(&mut ctx.state.git, &rows, layout.max_start);
 }
 
 fn render_row(
@@ -118,9 +122,9 @@ fn render_row(
 
             ui.horizontal(|ui| {
                 ui.set_min_height(ROW_HEIGHT);
-                let response = ui.add(
-                    egui::Label::new(RichText::new(label).color(color).monospace())
-                        .sense(egui::Sense::click()),
+                let response = selectable_label(
+                    ui,
+                    RichText::new(label).color(color).monospace(),
                 );
                 if response.clicked() {
                     let _ = (ctx.dispatch)(AppCommand::GitSelect(row_index));

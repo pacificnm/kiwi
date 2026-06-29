@@ -100,6 +100,63 @@ pub fn create_branch_from_issue(repo_root: &Path, command: &str, number: u32) ->
     }
 }
 
+pub fn assign_issue_milestone(
+    repo_root: &Path,
+    command: &str,
+    number: u32,
+    milestone_title: &str,
+) -> IssueActionResult {
+    let trimmed = milestone_title.trim();
+    if trimmed.is_empty() {
+        return IssueActionResult {
+            success: false,
+            error: Some("Select a milestone".to_string()),
+            detail: None,
+        };
+    }
+
+    if !command_on_path(command) {
+        return IssueActionResult {
+            success: false,
+            error: Some(format!("GitHub CLI ({command}) not found on PATH")),
+            detail: None,
+        };
+    }
+
+    let output = Command::new(command)
+        .args([
+            "issue",
+            "edit",
+            &number.to_string(),
+            "--milestone",
+            trimmed,
+        ])
+        .current_dir(repo_root)
+        .output();
+
+    match output {
+        Ok(result) if result.status.success() => IssueActionResult {
+            success: true,
+            error: None,
+            detail: None,
+        },
+        Ok(result) => IssueActionResult {
+            success: false,
+            error: Some(format_action_failure(
+                "gh issue edit",
+                &result.stderr,
+                &result.stdout,
+            )),
+            detail: None,
+        },
+        Err(err) => IssueActionResult {
+            success: false,
+            error: Some(format!("Failed to run `{command} issue edit`: {err}")),
+            detail: None,
+        },
+    }
+}
+
 pub fn add_issue_labels(
     repo_root: &Path,
     command: &str,
@@ -183,6 +240,13 @@ mod tests {
             result.error.as_deref(),
             Some("Comment body cannot be empty")
         );
+    }
+
+    #[test]
+    fn assign_issue_milestone_rejects_empty_title_without_subprocess() {
+        let result = assign_issue_milestone(Path::new("."), "gh-nonexistent-kiwi-test", 1, "   ");
+        assert!(!result.success);
+        assert_eq!(result.error.as_deref(), Some("Select a milestone"));
     }
 
     #[test]

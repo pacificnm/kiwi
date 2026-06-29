@@ -164,7 +164,7 @@ fn render_content(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
 
     let lines = &ctx.state.preview.lines;
     let mut scroll_offset = ctx.state.preview.scroll_offset;
-    let viewport_rows = render_virtual_rows(
+    let layout = render_virtual_rows(
         ui,
         ROW_HEIGHT,
         lines.len(),
@@ -175,7 +175,7 @@ fn render_content(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
         },
     );
     ctx.state.preview.scroll_offset = scroll_offset;
-    ctx.state.viewport.preview_rows = viewport_rows.max(1);
+    ctx.state.viewport.preview_rows = layout.viewport_rows.max(1);
 }
 
 fn render_line_row(

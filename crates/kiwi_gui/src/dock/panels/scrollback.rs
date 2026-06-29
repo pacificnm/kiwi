@@ -43,14 +43,15 @@ pub fn render_pty_scrollback(
     let font_id = monospace_font_id(ui, theme.font_size);
     let max_cols = max_cols_for_ui(ui, &font_id);
     let viewport_estimate = row_count_for_height(ui.clip_rect().height(), PTY_ROW_HEIGHT);
-    let mut scroll_row = pane.scrollback.viewport_start(
-        viewport_estimate,
-        pane.follow_tail,
-        pane.viewport_offset,
-    );
+    let mut scroll_row = if pane.follow_tail {
+        usize::MAX
+    } else {
+        pane.scrollback
+            .viewport_start(viewport_estimate, false, pane.viewport_offset)
+    };
 
     let include_pending = *follow_tail;
-    let viewport_rows = render_virtual_rows(
+    let layout = render_virtual_rows(
         ui,
         PTY_ROW_HEIGHT,
         line_count,
@@ -70,12 +71,11 @@ pub fn render_pty_scrollback(
 
     sync_viewport_scroll(
         scroll_row,
-        line_count,
-        viewport_rows,
+        layout.max_start,
         follow_tail,
         viewport_offset,
     );
-    *viewport_rows_out = viewport_rows;
+    *viewport_rows_out = layout.viewport_rows;
 }
 
 pub fn render_pty_footer(ui: &mut Ui, theme: &GuiTheme, footer: Option<&str>) {
@@ -88,13 +88,11 @@ pub fn render_pty_footer(ui: &mut Ui, theme: &GuiTheme, footer: Option<&str>) {
 
 fn sync_viewport_scroll(
     scroll_row: usize,
-    line_count: usize,
-    viewport_rows: usize,
+    max_start: usize,
     follow_tail: &mut bool,
     viewport_offset: &mut usize,
 ) {
-    let max_start = line_count.saturating_sub(viewport_rows.max(1));
-    if scroll_row >= max_start && line_count > 0 {
+    if scroll_row >= max_start {
         *follow_tail = true;
         *viewport_offset = 0;
     } else {
@@ -244,7 +242,7 @@ mod tests {
     fn sync_viewport_scroll_at_bottom_sets_follow_tail() {
         let mut follow = false;
         let mut offset = 5;
-        sync_viewport_scroll(10, 12, 3, &mut follow, &mut offset);
+        sync_viewport_scroll(10, 10, &mut follow, &mut offset);
         assert!(follow);
         assert_eq!(offset, 0);
     }
@@ -253,7 +251,7 @@ mod tests {
     fn sync_viewport_scroll_mid_buffer_clears_follow_tail() {
         let mut follow = true;
         let mut offset = 0;
-        sync_viewport_scroll(2, 20, 5, &mut follow, &mut offset);
+        sync_viewport_scroll(2, 20, &mut follow, &mut offset);
         assert!(!follow);
         assert_eq!(offset, 2);
     }

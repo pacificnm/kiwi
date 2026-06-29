@@ -3,8 +3,8 @@ mod reduce_view;
 mod viewport;
 
 pub use domains::{
-    AgentState, BranchState, CommandPaletteState, DiffState, GitHubPrCreatePrompt,
-    GitHubPrCreateStep, GitHubState, GitState, LogEntry, LogLevel, LogsState, ModalState,
+    AgentState, BranchState, CommandPaletteState, DiffState, GitHubIssueCreateModal,
+    GitHubPrCreatePrompt, GitHubPrCreateStep, GitHubState, GitState, LogEntry, LogLevel, LogsState, ModalState,
     AvailablePlugin, NotificationState, PalettePrompt, PluginEntry, PluginPaletteCommand,
     PluginStatus, PluginsState, SettingsState,
     ShellState, StatusBarState, ToastState, WorkspaceMeta, MAX_PALETTE_HISTORY_ENTRIES,

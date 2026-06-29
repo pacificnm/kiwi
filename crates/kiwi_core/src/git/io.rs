@@ -80,6 +80,21 @@ pub fn load_branch_list_snapshot(repo_root: &Path) -> BranchListSnapshot {
     }
 }
 
+pub fn spawn_branch_detail(repo_root: PathBuf, branch_name: String, sender: EventSender) {
+    std::thread::spawn(move || {
+        let result = super::branch_ops::load_branch_detail(&repo_root, &branch_name);
+        let (detail, error) = match result {
+            Ok(detail) => (Some(detail), None),
+            Err(err) => (None, Some(err.to_string())),
+        };
+        let _ = sender.send(AppEvent::BranchDetailLoaded {
+            name: branch_name,
+            detail,
+            error,
+        });
+    });
+}
+
 pub fn spawn_branch_list(repo_root: PathBuf, sender: EventSender) {
     std::thread::spawn(move || {
         let snapshot = load_branch_list_snapshot(&repo_root);

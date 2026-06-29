@@ -1,10 +1,10 @@
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
-use crate::git::{branch_row_at_viewport, branch_selected_row_index};
+use crate::git::branch_selected_name;
 use crate::state::AppState;
 use crate::theme::SemanticRole;
 use crate::theme::ThemePalette;
@@ -12,39 +12,6 @@ use crate::theme::ThemePalette;
 use super::scrollbar::{render_vertical_scrollbar, split_for_scrollbar};
 
 const STATUS_ROWS: u16 = 1;
-
-pub fn branch_interaction_at(state: &AppState, area: Rect, column: u16, row: u16) -> Option<usize> {
-    if area.width == 0 || area.height == 0 {
-        return None;
-    }
-
-    if column < area.x
-        || column >= area.x.saturating_add(area.width)
-        || row < area.y
-        || row >= area.y.saturating_add(area.height)
-    {
-        return None;
-    }
-
-    let inner = pane_inner(area)?;
-
-    let list_area = branches_list_area(inner);
-    if column < list_area.x
-        || column >= list_area.x.saturating_add(list_area.width)
-        || row < list_area.y
-        || row >= list_area.y.saturating_add(list_area.height)
-    {
-        return None;
-    }
-
-    let viewport_index = usize::from(row.saturating_sub(list_area.y));
-    let row_index = state.branches.scroll_offset.saturating_add(viewport_index);
-    if row_index >= state.branches.entries.len() {
-        return None;
-    }
-
-    Some(row_index)
-}
 
 pub fn render_branches_pane(
     frame: &mut Frame<'_>,
@@ -64,7 +31,7 @@ pub fn render_branches_pane(
     };
 
     let block = Block::default()
-        .title("Branches")
+        .title(branch_detail_title(state))
         .borders(Borders::ALL)
         .border_style(border_style)
         .style(chrome_style(theme));
@@ -86,9 +53,15 @@ pub fn render_branches_pane(
         height: STATUS_ROWS.min(inner.height),
     };
 
-    let list_area = branches_list_area(inner);
-    if list_area.height > 0 && list_area.width > 0 {
-        render_branch_list(frame, list_area, focused, theme, state);
+    let content_area = Rect {
+        x: inner.x,
+        y: inner.y,
+        width: inner.width,
+        height: inner.height.saturating_sub(status_area.height),
+    };
+
+    if content_area.height > 0 && content_area.width > 0 {
+        render_branch_detail_content(frame, content_area, focused, theme, state);
     }
 
     if status_area.height > 0 {
@@ -96,7 +69,19 @@ pub fn render_branches_pane(
     }
 }
 
-fn render_branch_list(
+fn branch_detail_title(state: &AppState) -> String {
+    let mut title = String::from("Branches");
+    if state.branches.detail_loading {
+        title.push_str(" · loading");
+    } else if state.branches.detail_error.is_some() {
+        title.push_str(" · error");
+    } else if let Some(name) = branch_selected_name(&state.branches) {
+        title.push_str(&format!(" · {name}"));
+    }
+    title
+}
+
+fn render_branch_detail_content(
     frame: &mut Frame<'_>,
     area: Rect,
     focused: bool,
@@ -104,61 +89,70 @@ fn render_branch_list(
     state: &AppState,
 ) {
     if !state.workspace_meta.is_git_repo {
-        frame.render_widget(
-            Paragraph::new("Not a git repository").style(theme.get(SemanticRole::Muted)),
+        render_detail_message(
+            frame,
             area,
+            theme,
+            &["Not a git repository"],
         );
         return;
     }
 
-    if state.branches.loading && state.branches.entries.is_empty() {
-        frame.render_widget(
-            Paragraph::new("Loading branches…").style(theme.get(SemanticRole::Muted)),
+    if branch_selected_name(&state.branches).is_none() {
+        render_detail_message(
+            frame,
             area,
+            theme,
+            &["Select a branch in the GH panel and press Enter or double-click"],
         );
         return;
     }
 
-    if let Some(error) = &state.branches.error {
-        frame.render_widget(
-            Paragraph::new(truncate_line(error, area.width as usize))
-                .style(theme.get(SemanticRole::AgentError)),
-            area,
-        );
+    if state.branches.detail_loading && state.branches.detail.is_none() {
+        render_detail_message(frame, area, theme, &["Loading branch details…"]);
         return;
     }
 
-    if state.branches.entries.is_empty() {
-        frame.render_widget(
-            Paragraph::new("No local branches").style(theme.get(SemanticRole::Muted)),
-            area,
-        );
+    if let Some(error) = &state.branches.detail_error {
+        render_detail_message(frame, area, theme, &[error.as_str()]);
         return;
     }
 
+    let Some(detail) = &state.branches.detail else {
+        render_detail_message(
+            frame,
+            area,
+            theme,
+            &["Double-click a branch in the GH panel to view details"],
+        );
+        return;
+    };
+
+    let lines = detail.display_lines(state.git.ahead, state.git.behind);
     let (content, scrollbar) = split_for_scrollbar(area);
     let viewport_rows = content.height as usize;
     let max_width = content.width as usize;
-    let total_rows = state.branches.entries.len();
-    let selected_row = branch_selected_row_index(&state.branches);
-    let mut lines = Vec::new();
+    let start = state.branches.detail_scroll_offset;
+    let mut rendered = Vec::new();
 
     for viewport_index in 0..viewport_rows {
-        let Some(entry) = branch_row_at_viewport(&state.branches, viewport_index) else {
+        let line_index = start + viewport_index;
+        let Some(line) = lines.get(line_index) else {
             break;
         };
-        let row_index = state.branches.scroll_offset + viewport_index;
-        let selected = focused && selected_row == Some(row_index);
-        lines.push(render_branch_line(entry, selected, max_width, theme));
+        rendered.push(Line::from(Span::styled(
+            truncate_line(line, max_width),
+            theme.get(SemanticRole::Fg),
+        )));
     }
 
-    frame.render_widget(Paragraph::new(lines), content);
+    frame.render_widget(Paragraph::new(rendered), content);
     if let Some(scrollbar_area) = scrollbar {
         render_vertical_scrollbar(
             frame,
             scrollbar_area,
-            state.branches.scroll_offset,
-            total_rows,
+            start,
+            lines.len(),
             viewport_rows,
             focused,
             theme,
@@ -166,40 +160,40 @@ fn render_branch_list(
     }
 }
 
-fn render_branch_line(
-    entry: &crate::git::BranchEntry,
-    selected: bool,
-    max_width: usize,
+fn render_detail_message(
+    frame: &mut Frame<'_>,
+    area: Rect,
     theme: &ThemePalette,
-) -> Line<'static> {
-    let marker = if entry.is_current { "* " } else { "  " };
-    let mut style = if entry.is_current {
-        theme.get(SemanticRole::Accent)
-    } else {
-        theme.get(SemanticRole::Fg)
-    };
-
-    if selected {
-        style = style.add_modifier(Modifier::REVERSED);
-    }
-
-    Line::from(Span::styled(
-        truncate_line(&format!("{marker}{}", entry.name), max_width),
-        style,
-    ))
+    lines: &[&str],
+) {
+    let max_width = area.width as usize;
+    let rendered = lines
+        .iter()
+        .map(|line| {
+            Line::from(Span::styled(
+                truncate_line(line, max_width),
+                theme.get(SemanticRole::Muted),
+            ))
+        })
+        .collect::<Vec<_>>();
+    frame.render_widget(Paragraph::new(rendered), area);
 }
 
 fn render_status_line(frame: &mut Frame<'_>, area: Rect, state: &AppState, theme: &ThemePalette) {
     let status = if !state.workspace_meta.is_git_repo {
         "Git features disabled"
+    } else if branch_selected_name(&state.branches).is_none() {
+        "Select a branch in GH · Enter/double-click to open"
+    } else if state.branches.detail_loading {
+        "Loading branch details…"
     } else if state.branches.checkout_loading {
         "Checking out…"
     } else if let Some(error) = &state.branches.checkout_error {
         error.as_str()
-    } else if state.branches.loading {
-        "Refreshing…"
+    } else if state.branches.detail.is_some() {
+        "j/k scroll · Enter checkout · R refresh"
     } else {
-        "j/k move · Enter checkout · double-click checkout · R refresh"
+        "Double-click branch in GH · R refresh"
     };
 
     let style = if state.branches.checkout_error.is_some() {
@@ -212,15 +206,6 @@ fn render_status_line(frame: &mut Frame<'_>, area: Rect, state: &AppState, theme
         Paragraph::new(truncate_line(status, area.width as usize)).style(style),
         area,
     );
-}
-
-fn branches_list_area(inner: Rect) -> Rect {
-    Rect {
-        x: inner.x,
-        y: inner.y,
-        width: inner.width,
-        height: inner.height.saturating_sub(STATUS_ROWS),
-    }
 }
 
 fn pane_inner(area: Rect) -> Option<Rect> {
@@ -263,7 +248,7 @@ mod tests {
     use ratatui::Terminal;
 
     use crate::config::ResolvedConfig;
-    use crate::git::BranchEntry;
+    use crate::git::{BranchDetail, BranchEntry};
     use crate::layout::compute_layout;
     use crate::state::{AppState, BranchState};
     use crate::theme::capabilities::TerminalCapabilities;
@@ -295,13 +280,22 @@ mod tests {
                 },
             ],
             selected_index: Some(0),
+            detail: Some(BranchDetail {
+                name: "main".to_string(),
+                is_current: true,
+                tip_sha: "abc1234".to_string(),
+                tip_subject: "Initial commit".to_string(),
+                tip_author: "Kiwi".to_string(),
+                tip_date: "2026-01-01".to_string(),
+            }),
+            detail_for_branch: Some("main".to_string()),
             ..BranchState::default()
         };
         state
     }
 
     #[test]
-    fn render_branches_pane_lists_local_branches() {
+    fn render_branches_pane_shows_branch_detail() {
         let state = test_state();
         let backend = TestBackend::new(80, 12);
         let mut terminal = Terminal::new(backend).expect("terminal");
@@ -319,6 +313,6 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect::<String>();
         assert!(text.contains("main"));
-        assert!(text.contains("dev"));
+        assert!(text.contains("Initial commit"));
     }
 }

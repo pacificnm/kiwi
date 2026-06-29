@@ -137,7 +137,7 @@ fn left_pane_scrollable(state: &AppState) -> bool {
         LeftNavTab::Files | LeftNavTab::Git | LeftNavTab::Search => true,
         LeftNavTab::Gh => matches!(
             state.github.left_pane,
-            GitHubLeftPane::Issues | GitHubLeftPane::Prs
+            GitHubLeftPane::Issues | GitHubLeftPane::Prs | GitHubLeftPane::Branches
         ),
     }
 }
@@ -173,6 +173,7 @@ fn left_wheel_command(state: &AppState, delta: i32) -> Option<AppCommand> {
         LeftNavTab::Gh => match state.github.left_pane {
             GitHubLeftPane::Issues => Some(AppCommand::GitHubMoveIssueSelection(delta)),
             GitHubLeftPane::Prs => Some(AppCommand::GitHubMovePrSelection(delta)),
+            GitHubLeftPane::Branches => Some(AppCommand::BranchMoveSelection(delta)),
         },
     }
 }

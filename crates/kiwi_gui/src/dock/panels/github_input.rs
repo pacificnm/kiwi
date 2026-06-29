@@ -2,13 +2,14 @@
 
 use egui::{Context, Key};
 use kiwi_core::events::AppCommand;
+use kiwi_core::git::branch_selected_row_index;
 use kiwi_core::github::{
     issue_selected_row_index, pr_selected_row_index, GitHubLeftPane,
 };
 use kiwi_core::navigation::{LeftNavTab, MainTab, NavCommand};
 use kiwi_core::state::AppState;
 
-use super::github_common::{select_issue_commands, select_pr_commands};
+use super::github_common::{select_branch_commands, select_issue_commands, select_pr_commands};
 use crate::dock::tab::KiwiTab;
 
 /// Sync TUI navigation state when a GitHub dock tab is focused (list fetch gating in core).
@@ -17,6 +18,7 @@ pub fn navigation_sync_commands(state: &AppState, tab: KiwiTab) -> Vec<AppComman
         KiwiTab::GitHubIssues => github_issues_list_sync_commands(state),
         KiwiTab::Issues => github_issues_detail_sync_commands(state),
         KiwiTab::GitHubPrs => github_prs_detail_sync_commands(state),
+        KiwiTab::GitLog => github_branches_detail_sync_commands(state),
         _ => Vec::new(),
     }
 }
@@ -28,11 +30,7 @@ fn github_issues_list_sync_commands(state: &AppState) -> Vec<AppCommand> {
             LeftNavTab::Gh,
         )));
     }
-    if state.github.left_pane != GitHubLeftPane::Issues {
-        commands.push(AppCommand::GitHubSelectLeftPane(
-            GitHubLeftPane::Issues,
-        ));
-    }
+    // Preserve hub selection (Issues | PRs | Branches); do not force Issues here.
     commands
 }
 
@@ -46,6 +44,21 @@ fn github_issues_detail_sync_commands(state: &AppState) -> Vec<AppCommand> {
     if state.github.left_pane != GitHubLeftPane::Issues {
         commands.push(AppCommand::GitHubSelectLeftPane(
             GitHubLeftPane::Issues,
+        ));
+    }
+    commands
+}
+
+fn github_branches_detail_sync_commands(state: &AppState) -> Vec<AppCommand> {
+    let mut commands = Vec::new();
+    if state.navigation.main_tab != MainTab::Branches {
+        commands.push(AppCommand::Navigation(NavCommand::SelectMainTabUnpaired(
+            MainTab::Branches,
+        )));
+    }
+    if state.github.left_pane != GitHubLeftPane::Branches {
+        commands.push(AppCommand::GitHubSelectLeftPane(
+            GitHubLeftPane::Branches,
         ));
     }
     commands
@@ -78,9 +91,11 @@ pub fn collect_github_keyboard(ctx: &Context, tab: KiwiTab, state: &AppState) ->
         KiwiTab::GitHubIssues => match state.github.left_pane {
             GitHubLeftPane::Issues => issues_list_keyboard(action, state),
             GitHubLeftPane::Prs => prs_list_keyboard(action, state),
+            GitHubLeftPane::Branches => branches_list_keyboard(action, state),
         },
         KiwiTab::Issues => issues_detail_keyboard(action, state),
         KiwiTab::GitHubPrs => prs_detail_keyboard(action, state),
+        KiwiTab::GitLog => branches_detail_keyboard(action, state),
         _ => Vec::new(),
     }
 }
@@ -138,6 +153,28 @@ fn issues_list_keyboard(action: GithubKeyAction, state: &AppState) -> Vec<AppCom
     }
 }
 
+fn branches_list_keyboard(action: GithubKeyAction, state: &AppState) -> Vec<AppCommand> {
+    match action {
+        GithubKeyAction::MoveDown => vec![AppCommand::BranchMoveSelection(1)],
+        GithubKeyAction::MoveUp => vec![AppCommand::BranchMoveSelection(-1)],
+        GithubKeyAction::Enter => enter_branch_commands(state),
+        GithubKeyAction::Refresh => vec![AppCommand::BranchRefresh],
+        GithubKeyAction::OpenBrowser => Vec::new(),
+        GithubKeyAction::PageDown | GithubKeyAction::PageUp => Vec::new(),
+    }
+}
+
+fn branches_detail_keyboard(action: GithubKeyAction, _state: &AppState) -> Vec<AppCommand> {
+    match action {
+        GithubKeyAction::MoveDown => vec![AppCommand::BranchDetailScroll(1)],
+        GithubKeyAction::MoveUp => vec![AppCommand::BranchDetailScroll(-1)],
+        GithubKeyAction::Enter => vec![AppCommand::BranchCheckoutSelected],
+        GithubKeyAction::Refresh => vec![AppCommand::BranchRefresh],
+        GithubKeyAction::OpenBrowser => Vec::new(),
+        GithubKeyAction::PageDown | GithubKeyAction::PageUp => Vec::new(),
+    }
+}
+
 fn prs_list_keyboard(action: GithubKeyAction, state: &AppState) -> Vec<AppCommand> {
     match action {
         GithubKeyAction::MoveDown => vec![AppCommand::GitHubMovePrSelection(1)],
@@ -180,6 +217,13 @@ fn enter_issue_commands(state: &AppState) -> Vec<AppCommand> {
     select_issue_commands(row_index).into()
 }
 
+fn enter_branch_commands(state: &AppState) -> Vec<AppCommand> {
+    let Some(row_index) = branch_selected_row_index(&state.branches) else {
+        return Vec::new();
+    };
+    select_branch_commands(row_index).to_vec()
+}
+
 fn enter_pr_commands(state: &AppState) -> Vec<AppCommand> {
     let Some(row_index) = pr_selected_row_index(&state.github) else {
         return Vec::new();
@@ -215,9 +259,9 @@ mod tests {
     }
 
     #[test]
-    fn github_issues_list_sync_selects_gh_left_and_issues_pane() {
+    fn github_issues_list_sync_selects_gh_left_and_preserves_hub_pane() {
         let mut state = test_state();
-        state.github.left_pane = GitHubLeftPane::Prs;
+        state.github.left_pane = GitHubLeftPane::Branches;
         let commands = navigation_sync_commands(&state, KiwiTab::GitHubIssues);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
@@ -227,11 +271,17 @@ mod tests {
             cmd,
             AppCommand::Navigation(NavCommand::SelectMainTab(_))
                 | AppCommand::Navigation(NavCommand::SelectMainTabUnpaired(_))
+                | AppCommand::GitHubSelectLeftPane(_)
         )));
-        assert!(commands.iter().any(|cmd| matches!(
-            cmd,
-            AppCommand::GitHubSelectLeftPane(GitHubLeftPane::Issues)
-        )));
+    }
+
+    #[test]
+    fn github_issues_list_sync_does_not_reset_prs_hub_selection() {
+        let mut state = test_state();
+        state.navigation.left_tab = LeftNavTab::Gh;
+        state.github.left_pane = GitHubLeftPane::Prs;
+        let commands = navigation_sync_commands(&state, KiwiTab::GitHubIssues);
+        assert!(commands.is_empty());
     }
 
     #[test]

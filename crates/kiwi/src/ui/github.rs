@@ -20,6 +20,56 @@ const GH_HUB_ROWS: u16 = 1;
 const ISSUES_STATUS_ROWS: u16 = 1;
 const ISSUE_DETAIL_STATUS_ROWS: u16 = 1;
 
+pub fn github_issue_interaction_at(
+    state: &AppState,
+    area: Rect,
+    column: u16,
+    row: u16,
+) -> Option<usize> {
+    if state.github.left_pane != GitHubLeftPane::Issues {
+        return None;
+    }
+
+    if state.github.loading && !state.github.auth_checked {
+        return None;
+    }
+
+    if github_auth_message(state).is_some() {
+        return None;
+    }
+
+    if area.width == 0 || area.height == 0 {
+        return None;
+    }
+
+    if column < area.x
+        || column >= area.x.saturating_add(area.width)
+        || row < area.y
+        || row >= area.y.saturating_add(area.height)
+    {
+        return None;
+    }
+
+    let list_area = github_issues_list_area(area)?;
+    if column < list_area.x
+        || column >= list_area.x.saturating_add(list_area.width)
+        || row < list_area.y
+        || row >= list_area.y.saturating_add(list_area.height)
+    {
+        return None;
+    }
+
+    let viewport_index = usize::from(row.saturating_sub(list_area.y));
+    issue_at_viewport(&state.github, viewport_index)?;
+
+    Some(
+        state
+            .github
+            .issues_scroll_offset
+            .saturating_add(viewport_index),
+    )
+}
+
 pub fn github_pr_interaction_at(
     state: &AppState,
     area: Rect,
@@ -70,21 +120,13 @@ pub fn github_pr_interaction_at(
     )
 }
 
-pub fn github_issue_interaction_at(
+pub fn github_branch_interaction_at(
     state: &AppState,
     area: Rect,
     column: u16,
     row: u16,
 ) -> Option<usize> {
-    if state.github.left_pane != GitHubLeftPane::Issues {
-        return None;
-    }
-
-    if state.github.loading && !state.github.auth_checked {
-        return None;
-    }
-
-    if github_auth_message(state).is_some() {
+    if state.github.left_pane != GitHubLeftPane::Branches {
         return None;
     }
 
@@ -110,14 +152,12 @@ pub fn github_issue_interaction_at(
     }
 
     let viewport_index = usize::from(row.saturating_sub(list_area.y));
-    issue_at_viewport(&state.github, viewport_index)?;
+    let row_index = state.branches.scroll_offset.saturating_add(viewport_index);
+    if row_index >= state.branches.entries.len() {
+        return None;
+    }
 
-    Some(
-        state
-            .github
-            .issues_scroll_offset
-            .saturating_add(viewport_index),
-    )
+    Some(row_index)
 }
 
 fn github_issues_list_area(area: Rect) -> Option<Rect> {
@@ -233,6 +273,9 @@ pub fn render_github_left_pane(
                 render_issue_list(frame, list_area, focused, theme, state);
             }
             GitHubLeftPane::Prs => render_pr_list(frame, list_area, focused, theme, state),
+            GitHubLeftPane::Branches => {
+                render_github_branch_list(frame, list_area, focused, theme, state);
+            }
         }
     }
 
@@ -242,6 +285,9 @@ pub fn render_github_left_pane(
                 render_issues_list_status_line(frame, status_area, state, theme);
             }
             GitHubLeftPane::Prs => render_prs_list_status_line(frame, status_area, state, theme),
+            GitHubLeftPane::Branches => {
+                render_branches_list_status_line(frame, status_area, state, theme);
+            }
         }
     }
 }
@@ -432,6 +478,15 @@ fn github_hub_label(state: &AppState, pane: GitHubLeftPane) -> String {
             }
             label
         }
+        GitHubLeftPane::Branches => {
+            let mut label = String::from("Branches");
+            if state.branches.loading {
+                label.push_str(" …");
+            } else if !state.branches.entries.is_empty() {
+                label.push_str(&format!(" · {}", state.branches.entries.len()));
+            }
+            label
+        }
     }
 }
 
@@ -445,9 +500,13 @@ fn render_github_hub_line(
     let selected = state.github.left_pane.index();
     let mut spans = Vec::new();
 
-    for (index, pane) in [GitHubLeftPane::Issues, GitHubLeftPane::Prs]
-        .iter()
-        .enumerate()
+    for (index, pane) in [
+        GitHubLeftPane::Issues,
+        GitHubLeftPane::Prs,
+        GitHubLeftPane::Branches,
+    ]
+    .iter()
+    .enumerate()
     {
         if index > 0 {
             spans.push(separator_span(theme));
@@ -582,6 +641,119 @@ fn render_prs_list_status_line(
         "R refresh"
     } else {
         "j/k move · Enter view · right-click menu · i/p switch · R refresh"
+    };
+
+    frame.render_widget(
+        Paragraph::new(truncate_line(status, area.width as usize))
+            .style(theme.get(SemanticRole::Muted)),
+        area,
+    );
+}
+
+fn render_github_branch_list(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    focused: bool,
+    theme: &ThemePalette,
+    state: &AppState,
+) {
+    if !state.workspace_meta.is_git_repo {
+        frame.render_widget(
+            Paragraph::new("Not a git repository").style(theme.get(SemanticRole::Muted)),
+            area,
+        );
+        return;
+    }
+
+    if state.branches.loading && state.branches.entries.is_empty() {
+        frame.render_widget(
+            Paragraph::new("Loading branches…").style(theme.get(SemanticRole::Muted)),
+            area,
+        );
+        return;
+    }
+
+    if let Some(error) = &state.branches.error {
+        frame.render_widget(
+            Paragraph::new(truncate_line(error, area.width as usize))
+                .style(theme.get(SemanticRole::AgentError)),
+            area,
+        );
+        return;
+    }
+
+    if state.branches.entries.is_empty() {
+        frame.render_widget(
+            Paragraph::new("No local branches").style(theme.get(SemanticRole::Muted)),
+            area,
+        );
+        return;
+    }
+
+    let (content, scrollbar) = split_for_scrollbar(area);
+    let viewport_rows = content.height as usize;
+    let max_width = content.width as usize;
+    let total_rows = state.branches.entries.len();
+    let selected_row = crate::git::branch_selected_row_index(&state.branches);
+    let mut lines = Vec::new();
+
+    for viewport_index in 0..viewport_rows {
+        let Some(entry) = crate::git::branch_row_at_viewport(&state.branches, viewport_index) else {
+            break;
+        };
+        let row_index = state.branches.scroll_offset + viewport_index;
+        let selected = focused && selected_row == Some(row_index);
+        let marker = if entry.is_current {
+            "* "
+        } else if selected {
+            "▸"
+        } else {
+            "  "
+        };
+        let mut style = if entry.is_current {
+            theme.get(SemanticRole::Accent)
+        } else {
+            theme.get(SemanticRole::Fg)
+        };
+        if selected {
+            style = style.add_modifier(Modifier::REVERSED);
+        }
+        lines.push(Line::from(Span::styled(
+            truncate_line(&format!("{marker}{}", entry.name), max_width),
+            style,
+        )));
+    }
+
+    frame.render_widget(Paragraph::new(lines), content);
+    if let Some(scrollbar_area) = scrollbar {
+        render_vertical_scrollbar(
+            frame,
+            scrollbar_area,
+            state.branches.scroll_offset,
+            total_rows,
+            viewport_rows,
+            focused,
+            theme,
+        );
+    }
+}
+
+fn render_branches_list_status_line(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &AppState,
+    theme: &ThemePalette,
+) {
+    let status = if !state.workspace_meta.is_git_repo {
+        "Git features disabled"
+    } else if state.branches.loading {
+        "Loading branches…"
+    } else if state.branches.error.is_some() {
+        "j/k move · R refresh"
+    } else if state.branches.entries.is_empty() {
+        "R refresh"
+    } else {
+        "j/k move · Enter view · i/p switch · R refresh"
     };
 
     frame.render_widget(

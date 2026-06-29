@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::events::{AppEvent, EventSender};
 
-use super::actions::{add_issue_labels, create_branch_from_issue, post_issue_comment};
+use super::actions::{add_issue_labels, assign_issue_milestone, create_branch_from_issue, post_issue_comment};
 use super::auth::check_github_auth;
 use super::create_pr::create_pull_request;
 use super::detail::load_issue_detail;
@@ -12,7 +12,9 @@ use super::pr::load_pr_list;
 use super::pr_detail::load_pr_detail;
 use super::pr_merge::merge_pull_request;
 use super::repo_labels::load_repo_labels;
-use super::types::{GitHubBrowserTarget, PrCreateRequest};
+use super::repo_milestones::load_repo_milestones;
+use super::create_issue::create_issue;
+use super::types::{GitHubBrowserTarget, IssueCreateRequest, PrCreateRequest};
 
 pub fn spawn_github_auth_check(command: String, sender: EventSender) {
     std::thread::spawn(move || {
@@ -79,6 +81,26 @@ pub fn spawn_github_repo_labels_load(repo_root: PathBuf, command: String, sender
     });
 }
 
+pub fn spawn_github_repo_milestones_load(repo_root: PathBuf, command: String, sender: EventSender) {
+    std::thread::spawn(move || {
+        let result = load_repo_milestones(&repo_root, &command);
+        let _ = sender.send(AppEvent::GitHubRepoMilestonesLoaded { result });
+    });
+}
+
+pub fn spawn_github_issue_milestone_assign(
+    repo_root: PathBuf,
+    command: String,
+    number: u32,
+    milestone_title: String,
+    sender: EventSender,
+) {
+    std::thread::spawn(move || {
+        let result = assign_issue_milestone(&repo_root, &command, number, &milestone_title);
+        let _ = sender.send(AppEvent::GitHubIssueMilestoneAssigned { number, result });
+    });
+}
+
 pub fn spawn_github_issue_label_apply(
     repo_root: PathBuf,
     command: String,
@@ -113,6 +135,18 @@ pub fn spawn_github_pr_detail_load(
     std::thread::spawn(move || {
         let result = load_pr_detail(&repo_root, &command, number);
         let _ = sender.send(AppEvent::GitHubPrDetailLoaded { number, result });
+    });
+}
+
+pub fn spawn_github_issue_create(
+    repo_root: PathBuf,
+    command: String,
+    request: IssueCreateRequest,
+    sender: EventSender,
+) {
+    std::thread::spawn(move || {
+        let outcome = create_issue(&repo_root, &command, &request);
+        let _ = sender.send(AppEvent::GitHubIssueCreateCompleted { outcome });
     });
 }
 

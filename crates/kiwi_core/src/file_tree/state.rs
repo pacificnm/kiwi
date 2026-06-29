@@ -146,16 +146,14 @@ impl FileTreeState {
     }
 
     /// Keep scroll offset valid when the visible row count shrinks (e.g. after workspace restore).
-    pub fn clamp_scroll_to_viewport(&mut self, viewport_rows: usize) {
+    pub fn clamp_scroll_to_viewport(&mut self, max_scroll_offset: usize) {
         let total = self.visible_rows().len();
         if total == 0 {
             self.scroll_offset = 0;
             return;
         }
-        let viewport = viewport_rows.max(1);
-        let max_offset = total.saturating_sub(viewport);
-        if self.scroll_offset > max_offset {
-            self.scroll_offset = max_offset;
+        if self.scroll_offset > max_scroll_offset {
+            self.scroll_offset = max_scroll_offset;
         }
     }
 
@@ -389,7 +387,7 @@ mod tests {
         let root = PathBuf::from("/tmp/kiwi");
         let mut state = FileTreeState::at_root(root.clone());
         state.scroll_offset = 50;
-        state.clamp_scroll_to_viewport(5);
+        state.clamp_scroll_to_viewport(0);
         assert_eq!(state.scroll_offset, 0);
     }
 

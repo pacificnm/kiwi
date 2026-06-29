@@ -150,6 +150,18 @@ pub struct IssueActionResult {
     pub detail: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IssueCreateRequest {
+    pub title: String,
+    pub body: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IssueCreateResult {
+    pub result: IssueActionResult,
+    pub number: Option<u32>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GitHubBrowserTarget {
     Issue(u32),
@@ -166,6 +178,58 @@ pub struct RepoLabel {
 pub struct RepoLabelsLoadResult {
     pub labels: Vec<RepoLabel>,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepoMilestone {
+    pub number: u32,
+    pub title: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepoMilestonesLoadResult {
+    pub milestones: Vec<RepoMilestone>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MilestonePickerState {
+    pub issue_number: u32,
+    pub milestones: Vec<RepoMilestone>,
+    pub cursor: usize,
+    pub loading: bool,
+    pub applying: bool,
+    pub error: Option<String>,
+}
+
+impl MilestonePickerState {
+    pub fn new(issue_number: u32) -> Self {
+        Self {
+            issue_number,
+            milestones: Vec::new(),
+            cursor: 0,
+            loading: true,
+            applying: false,
+            error: None,
+        }
+    }
+
+    pub fn move_cursor(&mut self, delta: i32) {
+        if self.milestones.is_empty() {
+            self.cursor = 0;
+            return;
+        }
+
+        let len = self.milestones.len() as i32;
+        let next = (self.cursor as i32 + delta).rem_euclid(len);
+        self.cursor = usize::try_from(next).unwrap_or(0);
+    }
+
+    #[must_use]
+    pub fn selected_milestone(&self) -> Option<&RepoMilestone> {
+        self.milestones.get(self.cursor)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -250,6 +314,7 @@ pub enum GitHubLeftPane {
     #[default]
     Issues,
     Prs,
+    Branches,
 }
 
 impl GitHubLeftPane {
@@ -258,6 +323,7 @@ impl GitHubLeftPane {
         match self {
             Self::Issues => 0,
             Self::Prs => 1,
+            Self::Branches => 2,
         }
     }
 }

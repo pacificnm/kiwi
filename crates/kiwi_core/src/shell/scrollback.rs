@@ -256,8 +256,8 @@ impl ScrollbackBuffer {
                     let next = (self.cursor_col / 8 + 1) * 8;
                     self.write_str(&" ".repeat(next - self.cursor_col));
                 }
-                b'\x08' => {
-                    self.cursor_col = self.cursor_col.saturating_sub(1);
+                b'\x08' | b'\x7f' => {
+                    self.erase_char_before_cursor();
                 }
                 _ => {}
             }
@@ -305,7 +305,10 @@ impl ScrollbackBuffer {
             EscapeAction::Ignore => {}
             EscapeAction::ClearScreen => self.clear_screen(),
             EscapeAction::ClearBelow => self.clear_below(),
+            EscapeAction::ClearAbove => self.clear_above(),
             EscapeAction::ClearLine => self.clear_line(),
+            EscapeAction::EraseToEndOfLine => self.erase_to_end_of_line(),
+            EscapeAction::EraseFromStartToCursor => self.erase_from_start_to_cursor(),
             EscapeAction::CursorPosition { row, col } => {
                 self.cursor_row = row.saturating_sub(1);
                 self.cursor_col = col.saturating_sub(1);
@@ -338,11 +341,19 @@ impl ScrollbackBuffer {
     }
 
     fn clear_below(&mut self) {
-        self.clear_line();
+        self.erase_to_end_of_line();
         if self.cursor_row + 1 < self.screen.len() {
             self.screen.truncate(self.cursor_row + 1);
         }
         self.ensure_screen_row(self.cursor_row);
+    }
+
+    fn clear_above(&mut self) {
+        self.erase_from_start_to_cursor();
+        if self.cursor_row > 0 {
+            self.screen.drain(0..self.cursor_row);
+            self.cursor_row = 0;
+        }
     }
 
     fn clear_line(&mut self) {
@@ -350,6 +361,39 @@ impl ScrollbackBuffer {
         self.screen[self.cursor_row].clear();
         self.cursor_col = 0;
         self.overwrite_line = true;
+    }
+
+    fn erase_to_end_of_line(&mut self) {
+        self.ensure_screen_row(self.cursor_row);
+        let line = &mut self.screen[self.cursor_row];
+        let visible_len = crate::ansi::visible_width(line);
+        if self.cursor_col >= visible_len {
+            return;
+        }
+        let (prefix, _) = split_at_visible(line, self.cursor_col);
+        *line = prefix;
+    }
+
+    fn erase_from_start_to_cursor(&mut self) {
+        self.ensure_screen_row(self.cursor_row);
+        let line = &mut self.screen[self.cursor_row];
+        let (_, suffix) = split_at_visible(line, self.cursor_col);
+        *line = suffix;
+        self.cursor_col = 0;
+    }
+
+    fn erase_char_before_cursor(&mut self) {
+        if self.cursor_col == 0 {
+            return;
+        }
+
+        self.ensure_screen_row(self.cursor_row);
+        let line = &mut self.screen[self.cursor_row];
+        let new_col = self.cursor_col - 1;
+        let (left, _) = split_at_visible(line, new_col);
+        let (_, right) = split_at_visible(line, self.cursor_col);
+        *line = format!("{left}{right}");
+        self.cursor_col = new_col;
     }
 
     fn commit_line(&mut self) {
@@ -428,7 +472,10 @@ enum EscapeAction {
     Ignore,
     ClearScreen,
     ClearBelow,
+    ClearAbove,
     ClearLine,
+    EraseToEndOfLine,
+    EraseFromStartToCursor,
     CursorPosition { row: usize, col: usize },
     CursorUp(usize),
     CursorDown(usize),
@@ -541,10 +588,14 @@ fn decode_csi(final_byte: u8, params: &str) -> EscapeAction {
         b'D' => EscapeAction::CursorBack(n(0).max(1)),
         b'J' => match n(0) {
             0 => EscapeAction::ClearBelow,
-            1 => EscapeAction::Ignore,
+            1 => EscapeAction::ClearAbove,
             _ => EscapeAction::ClearScreen,
         },
-        b'K' => EscapeAction::ClearLine,
+        b'K' => match n(0) {
+            0 => EscapeAction::EraseToEndOfLine,
+            1 => EscapeAction::EraseFromStartToCursor,
+            _ => EscapeAction::ClearLine,
+        },
         b'h' | b'l' if first == "?1049" => {
             if final_byte == b'h' {
                 EscapeAction::ClearScreen
@@ -836,6 +887,31 @@ mod tests {
             split_at_visible("abc", 10),
             ("abc".to_string(), String::new())
         );
+    }
+
+    #[test]
+    fn backspace_erases_previous_character() {
+        let mut buffer = ScrollbackBuffer::new();
+        buffer.append_bytes(b"hello");
+        buffer.append_bytes(b"\x7f");
+        assert_eq!(buffer.lines_for_display(true), vec!["hell".to_string()]);
+    }
+
+    #[test]
+    fn erase_to_end_of_line_preserves_prefix() {
+        let mut buffer = ScrollbackBuffer::new();
+        buffer.append_bytes(b"hello world");
+        buffer.append_bytes(b"\x1b[5D"); // cursor back 5 (onto the space)
+        buffer.append_bytes(b"\x1b[K");
+        assert_eq!(buffer.lines_for_display(true), vec!["hello ".to_string()]);
+    }
+
+    #[test]
+    fn backspace_space_backspace_pattern_erases_character() {
+        let mut buffer = ScrollbackBuffer::new();
+        buffer.append_bytes(b"prompt");
+        buffer.append_bytes(b"\x08 \x08");
+        assert_eq!(buffer.lines_for_display(true), vec!["promp".to_string()]);
     }
 
     #[test]

@@ -5,7 +5,7 @@ use kiwi_core::events::AppCommand;
 use kiwi_core::search::{SearchMode, SearchResult};
 use kiwi_core::theme::SemanticRole;
 
-use super::layout::render_virtual_rows;
+use super::layout::{render_virtual_rows, selectable_label};
 use crate::dock::context::PanelContext;
 use crate::dock::tab::KiwiTab;
 
@@ -75,7 +75,7 @@ fn render_results(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
 
     let selected = ctx.state.search.selected;
     let mut scroll_offset = ctx.state.search.scroll_offset;
-    let viewport_rows = render_virtual_rows(
+    let layout = render_virtual_rows(
         ui,
         ROW_HEIGHT,
         total_rows,
@@ -85,7 +85,7 @@ fn render_results(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
         },
     );
     ctx.state.search.scroll_offset = scroll_offset;
-    ctx.state.viewport.search_rows = viewport_rows;
+    ctx.state.viewport.search_rows = layout.viewport_rows;
 }
 
 fn render_result_row(
@@ -112,9 +112,9 @@ fn render_result_row(
 
     ui.horizontal(|ui| {
         ui.set_min_height(ROW_HEIGHT);
-        let response = ui.add(
-            egui::Label::new(RichText::new(label).color(color).monospace())
-                .sense(egui::Sense::click()),
+        let response = selectable_label(
+            ui,
+            RichText::new(label).color(color).monospace(),
         );
         if response.clicked() {
             let _ = (ctx.dispatch)(AppCommand::SearchSelect(row_index));
