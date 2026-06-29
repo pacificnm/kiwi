@@ -12,6 +12,7 @@ pub(crate) enum ApiStreamEvent {
     MessageStop,
     Ping,
     ContentBlockStart {
+        #[allow(dead_code)]
         index: usize,
         content_block: ContentBlockStart,
     },

@@ -12,7 +12,7 @@ pub use api::{
     PluginRegistrar, PluginResult, StaticStr,
 };
 pub use manifest::{
-    AgentPluginConfig, PluginCapabilities, PluginExtraPackage, PluginInstallConfig,
+    AgentMode, AgentPluginConfig, PluginCapabilities, PluginExtraPackage, PluginInstallConfig,
     PluginInstallKind, PluginManifest,
 };
 pub use version::{

@@ -324,8 +324,15 @@ pub enum AppCommand {
     PluginRemove { name: String },
     /// Remove and reinstall a plugin from a local directory.
     PluginReinstall { src_path: std::path::PathBuf },
-    /// Switch the active AI agent command. Updates config immediately; persisted via SideEffect.
-    SetAgent { command: String, args: Vec<String> },
+    /// Switch the active AI agent. Updates config immediately; persisted via SideEffect.
+    /// `mode` = `"api"` activates native chat; omit or `"pty"` uses PTY subprocess.
+    SetAgent {
+        command: String,
+        args: Vec<String>,
+        mode: Option<String>,
+        provider: Option<String>,
+        model: Option<String>,
+    },
     // --- Native chat commands (Phase 2+) ---
     /// User submitted a message in the chat input box.
     AgentUserSend { agent_id: AgentId, text: String },
@@ -438,6 +445,8 @@ pub enum SideEffect {
     PluginInstallFailed,
     /// Persist the chosen agent command to ~/.config/kiwi/config.toml.
     PersistAgentConfig { command: String, args: Vec<String> },
+    /// Persist api-mode agent settings (mode, provider, model) to user config.
+    PersistAgentMode { provider: String, model: String },
 }
 
 impl AppCommand {

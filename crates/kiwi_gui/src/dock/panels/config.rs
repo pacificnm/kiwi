@@ -109,13 +109,14 @@ pub fn render(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
     ui.add_space(4.0);
 
     // Agents section — dropdown of agent plugins with an explicit Apply button.
+    // Shows both PTY-mode plugins (have an agent_command) and API-mode plugins (mode = "api").
     {
         let agent_plugins: Vec<_> = ctx
             .state
             .plugins
             .available
             .iter()
-            .filter(|p| p.agent_command.is_some())
+            .filter(|p| p.agent_command.is_some() || p.agent_mode.as_deref() == Some("api"))
             .cloned()
             .collect();
 
@@ -123,58 +124,83 @@ pub fn render(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
             egui::CollapsingHeader::new(RichText::new("Agents").color(accent))
                 .default_open(true)
                 .show(ui, |ui| {
-                    let current_cmd = ctx.state.config.agent.command.clone();
+                    // Detect which plugin is currently active by name.
+                    let current_mode = &ctx.state.config.agent.mode;
+                    let current_cmd = &ctx.state.config.agent.command;
+                    let current_provider = ctx.state.config.agent.provider.as_deref().unwrap_or("");
+                    let active_plugin_name = agent_plugins
+                        .iter()
+                        .find(|p| {
+                            if p.agent_mode.as_deref() == Some("api") {
+                                *current_mode == kiwi_core::config::AgentMode::Api
+                                    && p.agent_provider.as_deref().unwrap_or("") == current_provider
+                            } else {
+                                p.agent_command.as_deref() == Some(current_cmd.as_str())
+                            }
+                        })
+                        .map(|p| p.name.clone())
+                        .unwrap_or_default();
 
-                    // Persistent pending selection — survives across frames without
-                    // changing the live config until the user clicks Apply.
-                    let pending_id = egui::Id::new("agent_pending_selection");
-                    let mut pending: (String, Vec<String>) = ui
+                    // Persistent pending selection (plugin name) — survives frames without
+                    // changing live config until the user clicks Apply.
+                    let pending_id = egui::Id::new("agent_pending_name");
+                    let mut pending_name: String = ui
                         .ctx()
-                        .data_mut(|d| d.get_temp::<(String, Vec<String>)>(pending_id))
-                        .unwrap_or_else(|| (current_cmd.clone(), ctx.state.config.agent.args.clone()));
+                        .data_mut(|d| d.get_temp::<String>(pending_id))
+                        .unwrap_or_else(|| active_plugin_name.clone());
 
-                    // Determine display label for the current pending selection.
                     let pending_label = agent_plugins
                         .iter()
-                        .find(|p| p.agent_command.as_deref() == Some(&pending.0))
+                        .find(|p| p.name == pending_name)
                         .map(|p| p.display_name.clone())
-                        .unwrap_or_else(|| format!("Custom ({})", pending.0));
+                        .unwrap_or_else(|| "Select agent…".to_string());
 
                     egui::ComboBox::from_id_salt("agent_select")
                         .selected_text(&pending_label)
                         .width(200.0)
                         .show_ui(ui, |ui| {
                             for plugin in &agent_plugins {
-                                let cmd = plugin.agent_command.as_deref().unwrap_or("").to_string();
-                                let args = plugin.agent_args.clone();
                                 if ui
-                                    .selectable_label(pending.0 == cmd, &plugin.display_name)
+                                    .selectable_label(pending_name == plugin.name, &plugin.display_name)
                                     .clicked()
                                 {
-                                    pending = (cmd, args);
+                                    pending_name = plugin.name.clone();
                                 }
                             }
                         });
 
                     // Persist the pending selection across frames.
-                    ui.ctx().data_mut(|d| d.insert_temp(pending_id, pending.clone()));
+                    ui.ctx().data_mut(|d| d.insert_temp(pending_id, pending_name.clone()));
 
                     ui.add_space(4.0);
 
-                    let changed = pending.0 != current_cmd;
-                    let btn = ui.add_enabled(changed, egui::Button::new("Apply & Restart Agent"));
+                    let changed = pending_name != active_plugin_name;
+                    let btn_label = if agent_plugins
+                        .iter()
+                        .any(|p| p.name == pending_name && p.agent_mode.as_deref() == Some("api"))
+                    {
+                        "Apply Agent"
+                    } else {
+                        "Apply & Restart Agent"
+                    };
+                    let btn = ui.add_enabled(changed, egui::Button::new(btn_label));
                     if btn.clicked() {
-                        (ctx.dispatch)(AppCommand::SetAgent {
-                            command: pending.0.clone(),
-                            args: pending.1.clone(),
-                        });
+                        if let Some(plugin) = agent_plugins.iter().find(|p| p.name == pending_name) {
+                            (ctx.dispatch)(AppCommand::SetAgent {
+                                command: plugin.agent_command.clone().unwrap_or_default(),
+                                args: plugin.agent_args.clone(),
+                                mode: plugin.agent_mode.clone(),
+                                provider: plugin.agent_provider.clone(),
+                                model: plugin.agent_model.clone(),
+                            });
+                        }
                     }
 
                     if !changed {
                         ui.add_space(2.0);
                         let active_label = agent_plugins
                             .iter()
-                            .find(|p| p.agent_command.as_deref() == Some(&current_cmd))
+                            .find(|p| p.name == active_plugin_name)
                             .map(|p| p.display_name.as_str())
                             .unwrap_or("Custom");
                         ui.label(
