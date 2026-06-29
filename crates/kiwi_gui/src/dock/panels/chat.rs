@@ -21,11 +21,16 @@ pub fn render(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
 
     render_chrome(ui, ctx, agent_id, &mut commands);
 
+    // Reserve space for the input box at the bottom before sizing the scroll area,
+    // so the input is always visible without scrolling.
+    let input_reserve = 100.0_f32;
+    let list_height = (ui.available_height() - input_reserve).max(60.0);
+
     // Message list — immutable borrow ends before input_box borrow begins.
     {
         let agent = ctx.state.active_agent();
         if let Some(chat) = &agent.chat {
-            render_message_list(ui, ctx.theme, chat, agent_id, &mut commands);
+            render_message_list(ui, ctx.theme, chat, agent_id, &mut commands, list_height);
         } else {
             ui.centered_and_justified(|ui| {
                 ui.colored_label(ctx.theme.role(SemanticRole::Muted), "No chat session active.");
@@ -138,13 +143,15 @@ fn render_message_list(
     chat: &ChatSession,
     agent_id: AgentId,
     commands: &mut Vec<AppCommand>,
+    max_height: f32,
 ) {
     let is_streaming = chat.is_streaming;
 
     ScrollArea::vertical()
         .id_salt("chat_msg_scroll")
         .stick_to_bottom(is_streaming && chat.follow_tail)
-        .auto_shrink([false; 2])
+        .max_height(max_height)
+        .auto_shrink([false, true])
         .show(ui, |ui| {
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
 

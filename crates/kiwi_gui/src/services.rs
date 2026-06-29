@@ -556,16 +556,35 @@ fn handle_execute_tool(
 }
 
 fn spawn_claude_stream_effect(ctx: &mut ServiceContext<'_>, agent_id: kiwi_core::agent::AgentId) {
-    let api_key = match std::env::var("ANTHROPIC_API_KEY") {
-        Ok(k) if !k.is_empty() => k,
-        _ => {
-            let _ = ctx.events.sender().send(AppEvent::AgentApiError {
-                agent_id,
-                message: "ANTHROPIC_API_KEY environment variable not set".to_string(),
-            });
-            return;
+    let env_var_name = ctx.state.config.agent.api_key_env.clone();
+    let api_key = match std::env::var(&env_var_name) {
+        Ok(k) => {
+            let k = k.trim().to_string();
+            if k.is_empty() {
+                String::new()
+            } else {
+                k
+            }
         }
+        Err(_) => String::new(),
     };
+
+    if api_key.is_empty() {
+        let _ = ctx.events.sender().send(AppEvent::AgentApiError {
+            agent_id,
+            message: format!(
+                "API key not set — export {env_var_name}=<your-key> in your shell"
+            ),
+        });
+        return;
+    }
+
+    // Clear any previous error now that we have a key and are starting a new stream.
+    if let Some(pty) = ctx.state.agent_manager.pty_mut(agent_id) {
+        if let Some(chat) = &mut pty.chat {
+            chat.error = None;
+        }
+    }
 
     let snapshot = ctx
         .state
