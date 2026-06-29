@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use arboard::Clipboard;
 
+use kiwi_core::agent::{spawn_claude_stream, StreamCancelHandle};
 use kiwi_core::diff::spawn_file_diff_load;
 use kiwi_core::editor::{
     launch_gui_editor, prepare_editor_launch, run_terminal_editor, EditorLaunchMode,
@@ -317,6 +318,8 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
                 );
             }
             AgentEffect::Restart(id) => {
+                // Cancel any native-chat stream before restarting the PTY process.
+                ctx.pty.cancel_stream(id);
                 let repo_root = ctx.state.repo_root.clone();
                 let config = ctx.state.config.clone();
                 ctx.pty.restart_agent(
@@ -330,6 +333,12 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
             AgentEffect::Write(data) => {
                 let id = ctx.state.agent_manager.active_id();
                 let _ = ctx.pty.write_agent(id, &data);
+            }
+            AgentEffect::StreamRequest(id) => {
+                spawn_claude_stream_effect(ctx, id);
+            }
+            AgentEffect::CancelStream(id) => {
+                ctx.pty.cancel_stream(id);
             }
             _ => {} // #[non_exhaustive] forward-compat
         },
@@ -502,6 +511,38 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
         _ => {}
     }
     false
+}
+
+fn spawn_claude_stream_effect(ctx: &mut ServiceContext<'_>, agent_id: kiwi_core::agent::AgentId) {
+    let api_key = match std::env::var("ANTHROPIC_API_KEY") {
+        Ok(k) if !k.is_empty() => k,
+        _ => {
+            let _ = ctx.events.sender().send(AppEvent::AgentApiError {
+                agent_id,
+                message: "ANTHROPIC_API_KEY environment variable not set".to_string(),
+            });
+            return;
+        }
+    };
+
+    let snapshot = ctx
+        .state
+        .agent_manager
+        .pty(agent_id)
+        .and_then(|s| s.chat.as_ref())
+        .map(|chat| (chat.messages.clone(), chat.model.clone()));
+
+    let Some((messages, model)) = snapshot else {
+        return;
+    };
+    if messages.is_empty() {
+        return;
+    }
+
+    let cancel = StreamCancelHandle::default();
+    ctx.pty.register_stream(agent_id, cancel.clone());
+
+    spawn_claude_stream(agent_id, api_key, model, messages, cancel, ctx.events.sender());
 }
 
 fn refresh_available_plugins(ctx: &mut ServiceContext<'_>) {

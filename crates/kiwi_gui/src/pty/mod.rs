@@ -5,7 +5,7 @@ mod resize;
 
 use std::path::Path;
 
-use kiwi_core::agent::{AgentId, AgentSession};
+use kiwi_core::agent::{AgentId, AgentSession, StreamCancelHandle};
 use kiwi_core::config::{AgentSettings, ResolvedConfig, ShellSettings};
 use kiwi_core::events::EventSender;
 use kiwi_core::navigation::MainTab;
@@ -163,6 +163,16 @@ impl PtyRuntime {
 
     pub fn resize_agent(&mut self, id: AgentId, cols: u16, rows: u16) -> bool {
         self.agent.resize(id, cols, rows)
+    }
+
+    /// Register a cancel handle for a native-chat API stream, cancelling any prior stream.
+    pub fn register_stream(&mut self, id: AgentId, cancel: StreamCancelHandle) {
+        self.agent.register_stream(id, cancel);
+    }
+
+    /// Cancel the active API stream for the given agent, if any.
+    pub fn cancel_stream(&mut self, id: AgentId) {
+        self.agent.cancel_stream(id);
     }
 
     #[must_use]

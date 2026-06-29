@@ -3,12 +3,14 @@
 use std::collections::HashMap;
 use std::io::Read;
 
-use kiwi_core::agent::{AgentId, AgentOutputReader, AgentSession};
+use kiwi_core::agent::{AgentId, AgentOutputReader, AgentSession, StreamCancelHandle};
 use kiwi_core::events::EventSender;
 
 pub struct AgentRuntime {
     sessions: HashMap<AgentId, AgentSession>,
     readers: HashMap<AgentId, AgentOutputReader>,
+    /// Cancel handles for in-progress native-chat API streams.
+    stream_cancels: HashMap<AgentId, StreamCancelHandle>,
 }
 
 impl AgentRuntime {
@@ -17,6 +19,28 @@ impl AgentRuntime {
         Self {
             sessions: HashMap::new(),
             readers: HashMap::new(),
+            stream_cancels: HashMap::new(),
+        }
+    }
+
+    /// Register a cancel handle for a native-chat stream, cancelling any prior stream for this agent.
+    pub fn register_stream(&mut self, id: AgentId, cancel: StreamCancelHandle) {
+        if let Some(prev) = self.stream_cancels.remove(&id) {
+            prev.cancel();
+        }
+        self.stream_cancels.insert(id, cancel);
+    }
+
+    /// Cancel the active stream for the given agent, if any.
+    pub fn cancel_stream(&mut self, id: AgentId) {
+        if let Some(cancel) = self.stream_cancels.remove(&id) {
+            cancel.cancel();
+        }
+    }
+
+    fn cancel_all_streams(&mut self) {
+        for (_, cancel) in self.stream_cancels.drain() {
+            cancel.cancel();
         }
     }
 
@@ -85,6 +109,7 @@ impl AgentRuntime {
     }
 
     pub fn shutdown_all(&mut self) {
+        self.cancel_all_streams();
         let ids: Vec<AgentId> = self.sessions.keys().copied().collect();
         for id in ids {
             self.shutdown(id);

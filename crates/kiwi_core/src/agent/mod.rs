@@ -1,3 +1,4 @@
+pub mod api_client;
 pub mod chat;
 pub mod command;
 mod error;
@@ -6,7 +7,9 @@ mod io;
 mod manager;
 mod session;
 mod status;
+mod stream_event;
 
+pub use api_client::{spawn_claude_stream, StreamCancelHandle};
 pub use chat::{
     AgentProvider, ChatMessage, ChatSession, ContentBlock, MessageRole, ToolResult, ToolUse,
 };
