@@ -152,6 +152,9 @@ pub(super) fn reduce_set_agent(
                 model: model_str.clone(),
                 api_url: None,
                 tool_profile: None,
+                tool_model: None,
+                code_model: None,
+                embedding_model: None,
             });
         entry.model = model_str.clone();
         if let Some(ref env) = api_key_env {

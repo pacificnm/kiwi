@@ -34,6 +34,8 @@ pub struct ChatSession {
     pub model: String,
     /// Which API provider backs this session.
     pub provider: AgentProvider,
+    /// Tool calls executed since the last user message (loop guard).
+    pub tool_rounds_this_turn: u8,
 }
 
 impl Default for ChatSession {
@@ -51,6 +53,7 @@ impl Default for ChatSession {
             status_bar_label: AgentStatus::Idle.status_bar_label(false).to_string(),
             model: "claude-opus-4-8".to_string(),
             provider: AgentProvider::Claude,
+            tool_rounds_this_turn: 0,
         }
     }
 }
@@ -71,6 +74,7 @@ impl ChatSession {
     }
 
     pub fn append_user_message(&mut self, text: String) {
+        self.tool_rounds_this_turn = 0;
         self.messages.push(ChatMessage {
             role: MessageRole::User,
             blocks: vec![ContentBlock::Text(text)],
@@ -95,6 +99,7 @@ impl ChatSession {
         }
         self.is_streaming = false;
         self.active_tool_call = None;
+        self.tool_rounds_this_turn = 0;
     }
 
     pub fn append_tool_use(&mut self, tool: ToolUse) {
@@ -140,6 +145,7 @@ impl ChatSession {
         self.scroll_offset = 0;
         self.follow_tail = true;
         self.error = None;
+        self.tool_rounds_this_turn = 0;
         self.status = AgentStatus::Idle;
         self.refresh_status_bar_label();
     }

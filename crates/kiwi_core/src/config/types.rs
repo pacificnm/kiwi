@@ -65,6 +65,12 @@ pub struct ProviderSection {
     pub model: Option<String>,
     pub api_url: Option<String>,
     pub tool_profile: Option<String>,
+    /// Ollama: model for tool orchestration (e.g. `llama3.1:8b`).
+    pub tool_model: Option<String>,
+    /// Ollama: model for code synthesis after tools (e.g. `qwen2.5-coder:7b`).
+    pub code_model: Option<String>,
+    /// Ollama: embedding model for RAG plugins (e.g. `nomic-embed-text`).
+    pub embedding_model: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
@@ -236,6 +242,12 @@ pub struct ProviderSettings {
     pub api_url: Option<String>,
     /// Optional per-provider tool profile override.
     pub tool_profile: Option<String>,
+    /// Ollama: model for tool orchestration (e.g. `llama3.1:8b`).
+    pub tool_model: Option<String>,
+    /// Ollama: model for code synthesis after tools (e.g. `qwen2.5-coder:7b`).
+    pub code_model: Option<String>,
+    /// Ollama: embedding model for RAG plugins (e.g. `nomic-embed-text`).
+    pub embedding_model: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -482,6 +494,9 @@ impl RawConfig {
                             model: "claude-opus-4-8".to_string(),
                             api_url: None,
                             tool_profile: None,
+                            tool_model: None,
+                            code_model: None,
+                            embedding_model: None,
                         });
                     if let Some(v) = &section.api_key_env {
                         entry.api_key_env = v.clone();
@@ -497,6 +512,15 @@ impl RawConfig {
                     }
                     if let Some(v) = &section.tool_profile {
                         entry.tool_profile = Some(v.clone());
+                    }
+                    if let Some(v) = &section.tool_model {
+                        entry.tool_model = Some(v.clone());
+                    }
+                    if let Some(v) = &section.code_model {
+                        entry.code_model = Some(v.clone());
+                    }
+                    if let Some(v) = &section.embedding_model {
+                        entry.embedding_model = Some(v.clone());
                     }
                 }
             }
@@ -516,6 +540,9 @@ impl RawConfig {
                         model: "claude-opus-4-8".to_string(),
                         api_url: None,
                         tool_profile: None,
+                        tool_model: None,
+                        code_model: None,
+                        embedding_model: None,
                     });
                 if let Some(v) = &agent.api_key_env {
                     entry.api_key_env = v.clone();

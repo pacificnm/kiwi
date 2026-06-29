@@ -12,8 +12,8 @@ pub mod tool_executor;
 pub mod tools;
 
 pub use api_client::{
-    spawn_claude_stream, spawn_cursor_stream, spawn_ollama_stream, spawn_openai_stream,
-    StreamCancelHandle,
+    resolve_ollama_stream, spawn_claude_stream, spawn_cursor_stream, spawn_ollama_stream,
+    spawn_openai_stream, OllamaHistoryFormat, OllamaStreamPlan, StreamCancelHandle,
 };
 pub use chat::{
     AgentProvider, ChatMessage, ChatSession, ContentBlock, MessageRole, ToolResult, ToolUse,
@@ -29,7 +29,11 @@ pub use session::AgentSession;
 pub use status::{infer_status_from_scrollback, infer_status_from_text, AgentStatus};
 pub use tool_executor::{execute_tool, ExecutionResult};
 pub use tools::{
-    ollama_supports_tools, resolve_tool_profile, tool_profile_by_name, tools_for_claude,
-    tools_for_openai, KiwiTool, KiwiToolDef, OpenAiToolSchema, ToolParseError, ToolProfile,
-    ToolRegistry, ToolSchema,
+    kiwi_tool_id_from_openai, normalize_tool_arguments, normalize_tool_arguments_json,
+    ollama_split_models, ollama_supports_tools, ollama_uses_native_tool_calls,
+    openai_tool_name, parse_ollama_content_tool_calls, resolve_tool_profile,
+    tools_for_ollama, MAX_TOOL_ROUNDS_PER_TURN, streaming_text_is_ollama_tool_json,
+    tool_profile_by_name,
+    tools_for_claude, tools_for_openai, KiwiTool, KiwiToolDef, OpenAiToolSchema, ToolParseError,
+    ToolProfile, ToolRegistry, ToolSchema,
 };

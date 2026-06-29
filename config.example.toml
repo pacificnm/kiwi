@@ -65,6 +65,21 @@ command = "agent"
 # OLLAMA_MODEL = "qwen2.5-coder"
 # OLLAMA_EMBED_MODEL = "nomic-embed-text"
 
+# ── Ollama split setup (recommended) ─────────────────────────────────────────
+# llama3.1 handles tool calls; qwen2.5-coder synthesizes code/reviews.
+#
+# [agent]
+# mode = "api"
+# active = "ollama"
+# tool_profile = "coding"
+#
+# [agent.providers.ollama]
+# api_url = "http://localhost:11434"
+# model = "qwen2.5-coder:7b"          # legacy fallback when split fields omitted
+# tool_model = "llama3.1:8b"          # orchestration + tool calls
+# code_model = "qwen2.5-coder:7b"     # post-tool code review / summary
+# embedding_model = "nomic-embed-text:latest"
+
 [shell]
 command = "bash"
 # args = ["-l"]
