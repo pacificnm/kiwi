@@ -60,13 +60,17 @@ pub fn persist_user_theme(home: &Path, name: &str) -> Result<(), ConfigError> {
     Ok(())
 }
 
-/// Persist `[agent]` API-mode settings (`mode`, `provider`, `model`) to the user config.
+/// Persist API-mode agent settings to the user config.
 ///
-/// Leaves `command`, `args`, and unrelated sections untouched.
+/// Writes `[agent] active` and `[agent.providers.<provider>]` so each provider
+/// keeps its own key/model/url and switching providers never clobbers another's settings.
+/// Also writes the legacy `mode`/`provider`/`model` flat fields for backward compat.
 pub fn persist_user_agent_mode(
     home: &Path,
     provider: &str,
     model: &str,
+    api_key_env: Option<&str>,
+    api_url: Option<&str>,
 ) -> Result<(), ConfigError> {
     let path = user_config_path(home);
     if let Some(parent) = path.parent() {
@@ -81,26 +85,44 @@ pub fn persist_user_agent_mode(
         toml::Value::Table(toml::map::Map::new())
     };
 
-    let Some(table) = doc.as_table_mut() else {
+    let Some(root) = doc.as_table_mut() else {
         return Err(ConfigError::validation("config root must be a table"));
     };
 
-    let agent = table
+    let agent = root
         .entry("agent")
         .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
     let Some(agent_table) = agent.as_table_mut() else {
         return Err(ConfigError::validation("[agent] must be a table"));
     };
 
-    agent_table.insert("mode".to_string(), toml::Value::String("api".to_string()));
-    agent_table.insert(
-        "provider".to_string(),
-        toml::Value::String(provider.to_string()),
-    );
-    agent_table.insert(
-        "model".to_string(),
-        toml::Value::String(model.to_string()),
-    );
+    // Top-level agent fields.
+    agent_table.insert("mode".to_string(),     toml::Value::String("api".to_string()));
+    agent_table.insert("active".to_string(),   toml::Value::String(provider.to_string()));
+    // Legacy flat fields so old readers still work.
+    agent_table.insert("provider".to_string(), toml::Value::String(provider.to_string()));
+    agent_table.insert("model".to_string(),    toml::Value::String(model.to_string()));
+
+    // Per-provider sub-table: [agent.providers.<provider>]
+    let providers = agent_table
+        .entry("providers")
+        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+    let Some(providers_table) = providers.as_table_mut() else {
+        return Err(ConfigError::validation("[agent.providers] must be a table"));
+    };
+    let provider_entry = providers_table
+        .entry(provider.to_string())
+        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+    let Some(p) = provider_entry.as_table_mut() else {
+        return Err(ConfigError::validation("provider entry must be a table"));
+    };
+    p.insert("model".to_string(), toml::Value::String(model.to_string()));
+    if let Some(env) = api_key_env {
+        p.insert("api_key_env".to_string(), toml::Value::String(env.to_string()));
+    }
+    if let Some(url) = api_url {
+        p.insert("api_url".to_string(), toml::Value::String(url.to_string()));
+    }
 
     let serialized =
         toml::to_string_pretty(&doc).map_err(|err| ConfigError::validation(err.to_string()))?;

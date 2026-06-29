@@ -106,6 +106,10 @@ pub struct AgentPluginConfig {
     pub provider: Option<String>,
     /// Default model to request from the API (e.g. `"claude-opus-4-8"`).
     pub model: Option<String>,
+    /// Environment variable that holds the API key (e.g. `"OPENAI_API_KEY"`).
+    pub api_key_env: Option<String>,
+    /// Base URL for the API endpoint; used by Ollama (`"http://localhost:11434"`).
+    pub api_url: Option<String>,
 }
 
 impl PluginManifest {

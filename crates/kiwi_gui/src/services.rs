@@ -445,10 +445,13 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
         SideEffect::PluginInstallFailed => {
             refresh_available_plugins(ctx);
         }
-        SideEffect::PersistAgentMode { provider, model } => {
+        SideEffect::PersistAgentMode { provider, model, api_key_env, api_url } => {
             let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
             if let Some(home) = home {
-                if let Err(e) = kiwi_core::config::persist_user_agent_mode(&home, &provider, &model) {
+                if let Err(e) = kiwi_core::config::persist_user_agent_mode(
+                    &home, &provider, &model,
+                    api_key_env.as_deref(), api_url.as_deref(),
+                ) {
                     ctx.state.notifications.show_toast(format!("Failed to save agent mode: {e}"));
                     ctx.state.dirty = true;
                 }
@@ -582,64 +585,56 @@ fn spawn_claude_stream_effect(ctx: &mut ServiceContext<'_>, agent_id: kiwi_core:
     ctx.pty.register_stream(agent_id, cancel.clone());
     let sender = ctx.events.sender();
 
+    // Look up per-provider settings; fall back to legacy flat fields.
+    let active_name = ctx.state.config.agent.active_provider.as_deref().unwrap_or("claude");
+    let provider_settings = ctx.state.config.agent.providers.get(active_name).cloned();
+
+    let resolve_api_key = |default_env: &str| -> String {
+        let env_var = provider_settings.as_ref().map(|p| p.api_key_env.as_str())
+            .unwrap_or(default_env);
+        let config_key = provider_settings.as_ref().and_then(|p| p.api_key.clone())
+            .or_else(|| ctx.state.config.agent.api_key.clone());
+        std::env::var(env_var)
+            .ok()
+            .map(|k| k.trim().to_string())
+            .filter(|k| !k.is_empty())
+            .or_else(|| config_key.map(|k| k.trim().to_string()).filter(|k| !k.is_empty()))
+            .unwrap_or_default()
+    };
+
     match provider {
         AgentProvider::Ollama => {
-            let api_url = ctx
-                .state
-                .config
-                .agent
-                .api_url
-                .clone()
+            let api_url = provider_settings
+                .as_ref()
+                .and_then(|p| p.api_url.clone())
+                .or_else(|| ctx.state.config.agent.api_url.clone())
                 .unwrap_or_else(|| "http://localhost:11434".to_string());
-            kiwi_core::agent::spawn_ollama_stream(
-                agent_id, api_url, model, messages, cancel, sender,
-            );
+            kiwi_core::agent::spawn_ollama_stream(agent_id, api_url, model, messages, cancel, sender);
         }
         AgentProvider::OpenAI => {
-            let env_var_name = ctx.state.config.agent.api_key_env.clone();
-            let config_key = ctx.state.config.agent.api_key.clone();
-            let api_key = std::env::var(&env_var_name)
-                .ok()
-                .map(|k| k.trim().to_string())
-                .filter(|k| !k.is_empty())
-                .or_else(|| config_key.map(|k| k.trim().to_string()).filter(|k| !k.is_empty()))
-                .unwrap_or_default();
-
+            let api_key = resolve_api_key("OPENAI_API_KEY");
             if api_key.is_empty() {
                 let _ = sender.send(AppEvent::AgentApiError {
                     agent_id,
                     message: "API key not found. Export OPENAI_API_KEY in your shell, \
-                              or add  api_key = \"sk-...\"  under [agent] in \
-                              ~/.config/kiwi/config.toml"
+                              or set api_key under [agent.providers.openai] in config.toml"
                         .to_string(),
                 });
                 return;
             }
-
             kiwi_core::agent::spawn_openai_stream(agent_id, api_key, model, messages, cancel, sender);
         }
         _ => {
-            // Claude (default) — resolve API key from env var then config literal.
-            let env_var_name = ctx.state.config.agent.api_key_env.clone();
-            let config_key = ctx.state.config.agent.api_key.clone();
-            let api_key = std::env::var(&env_var_name)
-                .ok()
-                .map(|k| k.trim().to_string())
-                .filter(|k| !k.is_empty())
-                .or_else(|| config_key.map(|k| k.trim().to_string()).filter(|k| !k.is_empty()))
-                .unwrap_or_default();
-
+            let api_key = resolve_api_key("ANTHROPIC_API_KEY");
             if api_key.is_empty() {
                 let _ = sender.send(AppEvent::AgentApiError {
                     agent_id,
                     message: "API key not found. Export ANTHROPIC_API_KEY in your shell, \
-                              or add  api_key = \"sk-...\"  under [agent] in \
-                              ~/.config/kiwi/config.toml"
+                              or set api_key under [agent.providers.claude] in config.toml"
                         .to_string(),
                 });
                 return;
             }
-
             spawn_claude_stream(agent_id, api_key, model, messages, cancel, sender);
         }
     }

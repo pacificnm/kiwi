@@ -9,6 +9,7 @@ author = "PacificNM"
 mode = "api"
 provider = "ollama"
 model = "qwen2.5-coder:7b"
+api_url = "http://localhost:11434"
 
 [install]
 kind = "cargo"

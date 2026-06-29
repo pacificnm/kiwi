@@ -69,12 +69,28 @@ impl AppState {
         let shell_spec = shell_launch_spec(&config.shell);
         let agent_spec = agent_launch_spec(&config.agent);
         let agent_mode = config.agent.mode.clone();
-        let agent_model = config.agent.model.clone();
-        let agent_provider = match config.agent.provider.as_deref() {
-            Some("ollama") => crate::agent::AgentProvider::Ollama,
-            Some("openai") => crate::agent::AgentProvider::OpenAI,
-            _ => crate::agent::AgentProvider::Claude,
-        };
+        // Resolve model and provider from the per-provider map when available.
+        let active_name = config.agent.active_provider.as_deref().unwrap_or("claude");
+        let (agent_model, agent_provider) = config.agent.providers.get(active_name)
+            .map(|p| {
+                let model = p.model.clone();
+                let provider = match active_name {
+                    "ollama" => crate::agent::AgentProvider::Ollama,
+                    "openai" => crate::agent::AgentProvider::OpenAI,
+                    _ => crate::agent::AgentProvider::Claude,
+                };
+                (model, provider)
+            })
+            .unwrap_or_else(|| {
+                // Legacy flat-field fallback.
+                let model = config.agent.model.clone();
+                let provider = match active_name {
+                    "ollama" => crate::agent::AgentProvider::Ollama,
+                    "openai" => crate::agent::AgentProvider::OpenAI,
+                    _ => crate::agent::AgentProvider::Claude,
+                };
+                (model, provider)
+            });
         let mut file_tree = FileTreeState::at_root(repo_root.clone());
         file_tree.ensure_selection();
 

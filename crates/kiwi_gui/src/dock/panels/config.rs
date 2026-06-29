@@ -127,7 +127,7 @@ pub fn render(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
                     // Detect which plugin is currently active by name.
                     let current_mode = &ctx.state.config.agent.mode;
                     let current_cmd = &ctx.state.config.agent.command;
-                    let current_provider = ctx.state.config.agent.provider.as_deref().unwrap_or("");
+                    let current_provider = ctx.state.config.agent.active_provider.as_deref().unwrap_or("");
                     let active_plugin_name = agent_plugins
                         .iter()
                         .find(|p| {
@@ -192,6 +192,8 @@ pub fn render(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
                                 mode: plugin.agent_mode.clone(),
                                 provider: plugin.agent_provider.clone(),
                                 model: plugin.agent_model.clone(),
+                                api_key_env: plugin.agent_api_key_env.clone(),
+                                api_url: plugin.agent_api_url.clone(),
                             });
                         }
                     }

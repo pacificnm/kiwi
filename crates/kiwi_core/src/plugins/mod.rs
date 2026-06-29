@@ -68,7 +68,7 @@ pub fn scan_available_plugins(
             let on_disk = install_dir.join(&manifest.name).exists();
             let installed = reg_entry.is_some() || on_disk;
             let enabled = reg_entry.map_or(on_disk, |e| e.enabled);
-            let (agent_command, agent_args, agent_mode, agent_provider, agent_model) = manifest
+            let (agent_command, agent_args, agent_mode, agent_provider, agent_model, agent_api_key_env, agent_api_url) = manifest
                 .agent
                 .as_ref()
                 .map(|a| {
@@ -77,9 +77,9 @@ pub fn scan_available_plugins(
                         kiwi_plugin_api::AgentMode::Pty => None,
                     };
                     let cmd = if a.command.is_empty() { None } else { Some(a.command.clone()) };
-                    (cmd, a.args.clone(), mode_str, a.provider.clone(), a.model.clone())
+                    (cmd, a.args.clone(), mode_str, a.provider.clone(), a.model.clone(), a.api_key_env.clone(), a.api_url.clone())
                 })
-                .unwrap_or((None, Vec::new(), None, None, None));
+                .unwrap_or((None, Vec::new(), None, None, None, None, None));
             found.push(crate::state::AvailablePlugin {
                 display_name: manifest.effective_display_name().to_string(),
                 version: manifest.version.clone(),
@@ -94,6 +94,8 @@ pub fn scan_available_plugins(
                 agent_mode,
                 agent_provider,
                 agent_model,
+                agent_api_key_env,
+                agent_api_url,
             });
         }
     }
