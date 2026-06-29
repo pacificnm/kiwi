@@ -537,6 +537,8 @@ fn escape_needs_more(data: &[u8]) -> bool {
         None => true,
         Some(b'[') => !data[2..].iter().any(|byte| (0x40..=0x7E).contains(byte)),
         Some(b']') => !data[2..].iter().any(|&byte| byte == 0x07 || byte == b'\\'),
+        // ESC ( B / ESC ) B etc. are 3-byte charset designation sequences
+        Some(b'(' | b')' | b'*' | b'+') => data.len() < 3,
         Some(_) => data.len() < 2,
     }
 }
@@ -549,6 +551,11 @@ fn consume_non_csi_escape(data: &[u8]) -> Option<usize> {
     let next = *data.get(1)?;
     if next == b'[' || next == b']' {
         return None;
+    }
+
+    // ESC ( X / ESC ) X etc. are 3-byte charset designation sequences
+    if matches!(next, b'(' | b')' | b'*' | b'+') {
+        return Some(3.min(data.len()));
     }
 
     Some(2)
@@ -980,6 +987,25 @@ mod tests {
         buffer.append_bytes(b"tui output\n");
         buffer.append_bytes(b"\x1b[?1049l");
         assert_eq!(buffer.line_count(), 0, "no primary content to restore");
+    }
+
+    #[test]
+    fn charset_designation_esc_paren_b_not_printed() {
+        // ESC ( B = "Designate G0 Character Set: US-ASCII" — 3-byte sequence
+        // commonly emitted after Enter. The 'B' must never appear as text.
+        let mut buffer = ScrollbackBuffer::new();
+        buffer.append_bytes(b"prompt\x1b(Bnext\n");
+        let lines = buffer.lines_for_display(false);
+        assert_eq!(lines, vec!["promptnext".to_string()]);
+    }
+
+    #[test]
+    fn charset_designation_split_across_reads_not_printed() {
+        let mut buffer = ScrollbackBuffer::new();
+        buffer.append_bytes(b"a\x1b(");
+        buffer.append_bytes(b"Bb\n");
+        let lines = buffer.lines_for_display(false);
+        assert_eq!(lines, vec!["ab".to_string()]);
     }
 
     #[test]
