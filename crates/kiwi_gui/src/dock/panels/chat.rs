@@ -22,7 +22,7 @@ pub fn render(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
     render_chrome(ui, ctx, agent_id, &mut commands);
 
     // Hard-split the remaining rect: messages fill the top, input is pinned to the
-    // panel floor. allocate_ui_at_rect places each child at an explicit screen rect
+    // panel floor. allocate_new_ui places each child at an explicit screen rect
     // so the input is always visible without scrolling.
     let available = ui.available_rect_before_wrap();
     let input_height = 96.0_f32;
@@ -34,11 +34,11 @@ pub fn render(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
     {
         let agent = ctx.state.active_agent();
         if let Some(chat) = &agent.chat {
-            ui.allocate_ui_at_rect(list_rect, |ui| {
+            ui.allocate_new_ui(egui::UiBuilder::new().max_rect(list_rect), |ui| {
                 render_message_list(ui, ctx.theme, chat, agent_id, &mut commands);
             });
         } else {
-            ui.allocate_ui_at_rect(list_rect, |ui| {
+            ui.allocate_new_ui(egui::UiBuilder::new().max_rect(list_rect), |ui| {
                 ui.centered_and_justified(|ui| {
                     ui.colored_label(ctx.theme.role(SemanticRole::Muted), "No chat session active.");
                 });
@@ -50,7 +50,7 @@ pub fn render(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
     {
         let agent = ctx.state.active_agent_mut();
         if let Some(chat) = &mut agent.chat {
-            ui.allocate_ui_at_rect(input_rect, |ui| {
+            ui.allocate_new_ui(egui::UiBuilder::new().max_rect(input_rect), |ui| {
                 render_input_box(ui, ctx.theme, chat, agent_id, &mut commands);
             });
         }
