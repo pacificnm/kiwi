@@ -601,6 +601,10 @@ pub struct AvailablePlugin {
     pub agent_provider: Option<String>,
     /// Model identifier for api-mode agents (e.g. `"claude-opus-4-8"`).
     pub agent_model: Option<String>,
+    /// Env var holding the API key (e.g. `"ANTHROPIC_API_KEY"`).
+    pub agent_api_key_env: Option<String>,
+    /// Base URL for the API endpoint (e.g. `"http://localhost:11434"` for Ollama).
+    pub agent_api_url: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]

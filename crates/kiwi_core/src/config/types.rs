@@ -56,6 +56,16 @@ pub enum AgentMode {
     Api,
 }
 
+/// Per-provider settings stored under `[agent.providers.<name>]`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
+#[serde(default)]
+pub struct ProviderSection {
+    pub api_key_env: Option<String>,
+    pub api_key: Option<String>,
+    pub model: Option<String>,
+    pub api_url: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
 #[serde(default)]
 pub struct AgentSection {
@@ -64,16 +74,15 @@ pub struct AgentSection {
     pub env: Option<HashMap<String, String>>,
     /// `"api"` — native LLM API; `"pty"` — subprocess (default).
     pub mode: Option<AgentMode>,
-    /// API provider name when `mode = "api"` (e.g. `"claude"`).
+    /// Active provider name (new-style). Mirrors legacy `provider` field.
+    pub active: Option<String>,
+    /// Per-provider settings keyed by provider name.
+    pub providers: Option<HashMap<String, ProviderSection>>,
+    // ---- Legacy flat fields (backward compat) ----
     pub provider: Option<String>,
-    /// Environment variable that holds the API key (default `"ANTHROPIC_API_KEY"`).
     pub api_key_env: Option<String>,
-    /// API key literal — alternative to `api_key_env` when env var is inconvenient.
-    /// Stored in config file; prefer env var for security.
     pub api_key: Option<String>,
-    /// Default model to request (e.g. `"claude-opus-4-8"`).
     pub model: Option<String>,
-    /// Base URL for the API endpoint; used by Ollama (`http://localhost:11434`).
     pub api_url: Option<String>,
 }
 
@@ -212,22 +221,33 @@ pub struct EditorSettings {
     pub terminal: Option<bool>,
 }
 
+/// Resolved per-provider settings. Looked up by provider name at runtime.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderSettings {
+    /// Env var that holds the API key (e.g. `"ANTHROPIC_API_KEY"`).
+    pub api_key_env: String,
+    /// Literal API key from config file (fallback; prefer env var).
+    pub api_key: Option<String>,
+    /// Model to request from this provider.
+    pub model: String,
+    /// Base URL for the provider's API endpoint.
+    pub api_url: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentSettings {
     pub command: String,
     pub args: Vec<String>,
     pub env: HashMap<String, String>,
-    /// Whether to use the native API path or the PTY subprocess path.
     pub mode: AgentMode,
-    /// API provider identifier (e.g. `"claude"`); only relevant when `mode = Api`.
-    pub provider: Option<String>,
-    /// Name of the environment variable holding the API key.
+    /// Which provider is currently active (e.g. `"claude"`, `"openai"`, `"ollama"`).
+    pub active_provider: Option<String>,
+    /// Per-provider settings — each entry survives switching to another provider.
+    pub providers: HashMap<String, ProviderSettings>,
+    // ---- Legacy flat fields kept for backward compat ----
     pub api_key_env: String,
-    /// API key literal from config file (fallback when env var is not set).
     pub api_key: Option<String>,
-    /// Model to request from the API.
     pub model: String,
-    /// Base URL for the API; defaults to Anthropic for Claude, `http://localhost:11434` for Ollama.
     pub api_url: Option<String>,
 }
 
@@ -238,7 +258,8 @@ impl Default for AgentSettings {
             args: Vec::new(),
             env: HashMap::new(),
             mode: AgentMode::Pty,
-            provider: None,
+            active_provider: None,
+            providers: HashMap::new(),
             api_key_env: "ANTHROPIC_API_KEY".to_string(),
             api_key: None,
             model: "claude-opus-4-8".to_string(),
@@ -339,17 +360,7 @@ impl Default for ResolvedConfig {
                 custom: None,
             },
             editor: EditorSettings::default(),
-            agent: AgentSettings {
-                command: "agent".to_string(),
-                args: Vec::new(),
-                env: HashMap::new(),
-                mode: AgentMode::Pty,
-                provider: None,
-                api_key_env: "ANTHROPIC_API_KEY".to_string(),
-                api_key: None,
-                model: "claude-opus-4-8".to_string(),
-                api_url: None,
-            },
+            agent: AgentSettings::default(),
             shell: ShellSettings {
                 command: default_shell_command(),
                 args: Vec::new(),
@@ -447,9 +458,46 @@ impl RawConfig {
             if let Some(mode) = agent.mode {
                 resolved.agent.mode = mode;
             }
-            if let Some(provider) = &agent.provider {
-                resolved.agent.provider = Some(provider.clone());
+            // New-style: [agent] active = "claude"
+            if let Some(active) = &agent.active {
+                resolved.agent.active_provider = Some(active.clone());
             }
+            // New-style: [agent.providers.<name>] sections
+            if let Some(providers) = &agent.providers {
+                for (name, section) in providers {
+                    let entry = resolved.agent.providers.entry(name.clone()).or_insert_with(|| ProviderSettings {
+                        api_key_env: "ANTHROPIC_API_KEY".to_string(),
+                        api_key: None,
+                        model: "claude-opus-4-8".to_string(),
+                        api_url: None,
+                    });
+                    if let Some(v) = &section.api_key_env { entry.api_key_env = v.clone(); }
+                    if let Some(v) = &section.api_key    { entry.api_key = Some(v.clone()); }
+                    if let Some(v) = &section.model      { entry.model = v.clone(); }
+                    if let Some(v) = &section.api_url    { entry.api_url = Some(v.clone()); }
+                }
+            }
+            // Legacy flat fields — only migrate non-key fields (api_key_env, model, api_url)
+            // into the active provider's entry. The api_key is intentionally NOT migrated
+            // here because the flat [agent].api_key is provider-agnostic and putting it into
+            // providers[active] would corrupt other providers' entries when switching.
+            let provider_name = agent.active.as_ref().or(agent.provider.as_ref());
+            if let Some(name) = provider_name {
+                let entry = resolved.agent.providers.entry(name.clone()).or_insert_with(|| ProviderSettings {
+                    api_key_env: "ANTHROPIC_API_KEY".to_string(),
+                    api_key: None,
+                    model: "claude-opus-4-8".to_string(),
+                    api_url: None,
+                });
+                if let Some(v) = &agent.api_key_env { entry.api_key_env = v.clone(); }
+                if let Some(v) = &agent.model       { entry.model = v.clone(); }
+                if let Some(v) = &agent.api_url     { entry.api_url = Some(v.clone()); }
+                // Keep active_provider in sync when only legacy field is present
+                if resolved.agent.active_provider.is_none() && agent.provider.is_some() {
+                    resolved.agent.active_provider = Some(name.clone());
+                }
+            }
+            // Legacy flat fields also kept for services.rs fallback
             if let Some(api_key_env) = &agent.api_key_env {
                 resolved.agent.api_key_env = api_key_env.clone();
             }

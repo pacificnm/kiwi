@@ -110,6 +110,9 @@ pub(super) fn reduce_set_agent(
     mode: Option<String>,
     provider: Option<String>,
     model: Option<String>,
+    api_key_env: Option<String>,
+    api_url: Option<String>,
+    api_key: Option<String>,
 ) -> Vec<SideEffect> {
     let is_api = mode.as_deref() == Some("api");
     let new_mode = if is_api { AgentMode::Api } else { AgentMode::Pty };
@@ -117,24 +120,36 @@ pub(super) fn reduce_set_agent(
     state.config.agent.command = command.clone();
     state.config.agent.args = args.clone();
     state.config.agent.mode = new_mode;
-    if let Some(ref p) = provider {
-        state.config.agent.provider = Some(p.clone());
-    }
-    if let Some(ref m) = model {
-        state.config.agent.model = m.clone();
-    }
 
     let id = state.agent_manager.active_id();
     state.set_dirty();
 
     if is_api {
-        let model_str = model
-            .clone()
-            .unwrap_or_else(|| state.config.agent.model.clone());
+        let model_str = model.clone().unwrap_or_else(|| state.config.agent.model.clone());
         let provider_str = provider.clone().unwrap_or_else(|| "claude".to_string());
+
+        // Update per-provider settings in the resolved config map.
+        let entry = state.config.agent.providers
+            .entry(provider_str.clone())
+            .or_insert_with(|| crate::config::ProviderSettings {
+                api_key_env: "ANTHROPIC_API_KEY".to_string(),
+                api_key: None,
+                model: model_str.clone(),
+                api_url: None,
+            });
+        entry.model = model_str.clone();
+        if let Some(ref env) = api_key_env { entry.api_key_env = env.clone(); }
+        if let Some(ref url) = api_url     { entry.api_url = Some(url.clone()); }
+        // User-supplied key from Settings UI — update immediately so it's available for the session.
+        if let Some(ref key) = api_key     { entry.api_key = Some(key.clone()); }
+
+        state.config.agent.active_provider = Some(provider_str.clone());
+        // Keep legacy flat fields in sync.
+        state.config.agent.model = model_str.clone();
 
         let agent_provider = match provider_str.as_str() {
             "ollama" => crate::agent::AgentProvider::Ollama,
+            "openai" => crate::agent::AgentProvider::OpenAI,
             _ => crate::agent::AgentProvider::Claude,
         };
 
@@ -150,12 +165,19 @@ pub(super) fn reduce_set_agent(
         let display = provider.as_deref().unwrap_or("API");
         state.notifications.show_toast(format!("Switched to {display} agent (native chat)."));
 
-        vec![
-            SideEffect::PersistAgentMode {
-                provider: provider_str,
-                model: model_str,
-            },
-        ]
+        // Carry forward any api_key already stored for this provider so
+        // switching agents never drops a key that was previously persisted.
+        let existing_api_key = state.config.agent.providers
+            .get(&provider_str)
+            .and_then(|p| p.api_key.clone());
+
+        vec![SideEffect::PersistAgentMode {
+            provider: provider_str,
+            model: model_str,
+            api_key_env,
+            api_url,
+            api_key: existing_api_key,
+        }]
     } else {
         if let Some(pty) = state.agent_manager.pty_mut(id) {
             pty.chat = None;

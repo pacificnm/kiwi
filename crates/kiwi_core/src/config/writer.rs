@@ -60,13 +60,18 @@ pub fn persist_user_theme(home: &Path, name: &str) -> Result<(), ConfigError> {
     Ok(())
 }
 
-/// Persist `[agent]` API-mode settings (`mode`, `provider`, `model`) to the user config.
+/// Persist API-mode agent settings to the user config.
 ///
-/// Leaves `command`, `args`, and unrelated sections untouched.
+/// Writes `[agent] active` and `[agent.providers.<provider>]` so each provider
+/// keeps its own key/model/url and switching providers never clobbers another's settings.
+/// Also writes the legacy `mode`/`provider`/`model` flat fields for backward compat.
 pub fn persist_user_agent_mode(
     home: &Path,
     provider: &str,
     model: &str,
+    api_key_env: Option<&str>,
+    api_url: Option<&str>,
+    api_key: Option<&str>,
 ) -> Result<(), ConfigError> {
     let path = user_config_path(home);
     if let Some(parent) = path.parent() {
@@ -81,26 +86,59 @@ pub fn persist_user_agent_mode(
         toml::Value::Table(toml::map::Map::new())
     };
 
-    let Some(table) = doc.as_table_mut() else {
+    let Some(root) = doc.as_table_mut() else {
         return Err(ConfigError::validation("config root must be a table"));
     };
 
-    let agent = table
+    let agent = root
         .entry("agent")
         .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
     let Some(agent_table) = agent.as_table_mut() else {
         return Err(ConfigError::validation("[agent] must be a table"));
     };
 
-    agent_table.insert("mode".to_string(), toml::Value::String("api".to_string()));
-    agent_table.insert(
-        "provider".to_string(),
-        toml::Value::String(provider.to_string()),
-    );
-    agent_table.insert(
-        "model".to_string(),
-        toml::Value::String(model.to_string()),
-    );
+    // Read legacy flat [agent].api_key before taking sub-table borrows (borrow-checker requires this).
+    let legacy_flat_key: Option<String> = agent_table
+        .get("api_key")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    // Top-level agent fields.
+    agent_table.insert("mode".to_string(),     toml::Value::String("api".to_string()));
+    agent_table.insert("active".to_string(),   toml::Value::String(provider.to_string()));
+    // Legacy flat fields so old readers still work.
+    agent_table.insert("provider".to_string(), toml::Value::String(provider.to_string()));
+    agent_table.insert("model".to_string(),    toml::Value::String(model.to_string()));
+
+    // Per-provider sub-table: [agent.providers.<provider>]
+    let providers = agent_table
+        .entry("providers")
+        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+    let Some(providers_table) = providers.as_table_mut() else {
+        return Err(ConfigError::validation("[agent.providers] must be a table"));
+    };
+    let provider_entry = providers_table
+        .entry(provider.to_string())
+        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+    let Some(p) = provider_entry.as_table_mut() else {
+        return Err(ConfigError::validation("provider entry must be a table"));
+    };
+    p.insert("model".to_string(), toml::Value::String(model.to_string()));
+    if let Some(env) = api_key_env {
+        p.insert("api_key_env".to_string(), toml::Value::String(env.to_string()));
+    }
+    if let Some(url) = api_url {
+        p.insert("api_url".to_string(), toml::Value::String(url.to_string()));
+    }
+    // Write the api_key.  Explicit value (carried from memory) always wins and is written
+    // unconditionally so it survives provider switches.  When absent, migrate the legacy
+    // flat [agent].api_key once using or_insert_with (never overwrites an existing entry).
+    if let Some(key) = api_key {
+        p.insert("api_key".to_string(), toml::Value::String(key.to_string()));
+    } else if let Some(key) = legacy_flat_key {
+        p.entry("api_key".to_string())
+            .or_insert_with(|| toml::Value::String(key));
+    }
 
     let serialized =
         toml::to_string_pretty(&doc).map_err(|err| ConfigError::validation(err.to_string()))?;
@@ -217,5 +255,69 @@ mod tests {
         assert!(project_has_theme_override(&repo));
 
         let _ = fs::remove_dir_all(repo);
+    }
+
+    #[test]
+    fn switching_providers_migrates_flat_api_key_and_preserves_other_provider_keys() {
+        let home = TestHome::new("switch-provider");
+        let config_dir = home.home.join(".config/kiwi");
+        fs::create_dir_all(&config_dir).expect("create config dir");
+        // Simulate old flat config with an api_key
+        fs::write(
+            config_dir.join("config.toml"),
+            "[agent]\nmode = \"api\"\nprovider = \"claude\"\napi_key = \"sk-ant-MY-KEY\"\nmodel = \"claude-opus-4-8\"\n\n[theme]\nname = \"kiwi-dark\"\n",
+        ).expect("write config");
+
+        // Apply Claude — should migrate flat api_key into [agent.providers.claude]
+        persist_user_agent_mode(&home.home, "claude", "claude-opus-4-8", Some("ANTHROPIC_API_KEY"), None, None)
+            .expect("persist claude");
+        let content = fs::read_to_string(user_config_path(&home.home)).expect("read");
+        assert!(content.contains("[agent.providers.claude]"), "missing claude provider section");
+        assert!(content.contains("sk-ant-MY-KEY"), "api_key was lost during migration");
+
+        // Apply Ollama — should NOT touch Claude's key
+        persist_user_agent_mode(&home.home, "ollama", "qwen2.5-coder:7b", None, Some("http://localhost:11434"), None)
+            .expect("persist ollama");
+        let content = fs::read_to_string(user_config_path(&home.home)).expect("read");
+        assert!(content.contains("[agent.providers.claude]"), "claude section removed after switch");
+        assert!(content.contains("sk-ant-MY-KEY"), "claude api_key cleared after switching to ollama");
+        assert!(content.contains("[agent.providers.ollama]"), "missing ollama provider section");
+
+        // Theme should survive all of this
+        assert!(content.contains("kiwi-dark"), "theme was clobbered");
+    }
+
+    #[test]
+    fn per_provider_api_key_survives_switching_to_another_provider() {
+        let home = TestHome::new("per-provider-key");
+        let config_dir = home.home.join(".config/kiwi");
+        fs::create_dir_all(&config_dir).expect("create config dir");
+        // Config already has a per-provider api_key for openai (manually added by user).
+        fs::write(
+            config_dir.join("config.toml"),
+            "[agent]\nactive = \"openai\"\nmode = \"api\"\n\n\
+             [agent.providers.openai]\napi_key_env = \"OPENAI_API_KEY\"\napi_key = \"sk-openai-SECRET\"\nmodel = \"gpt-4o\"\n\n\
+             [agent.providers.claude]\napi_key_env = \"ANTHROPIC_API_KEY\"\nmodel = \"claude-opus-4-8\"\n",
+        ).expect("write config");
+
+        // Switch to Claude — OpenAI key must not be touched.
+        persist_user_agent_mode(&home.home, "claude", "claude-opus-4-8", Some("ANTHROPIC_API_KEY"), None, None)
+            .expect("persist claude");
+        let content = fs::read_to_string(user_config_path(&home.home)).expect("read");
+        assert!(content.contains("sk-openai-SECRET"), "OpenAI api_key was erased after switching to Claude");
+        assert!(content.contains("[agent.providers.claude]"), "claude section missing");
+
+        // Switch back to OpenAI carrying the key from memory — must be written unconditionally.
+        persist_user_agent_mode(&home.home, "openai", "gpt-4o", Some("OPENAI_API_KEY"), None, Some("sk-openai-SECRET"))
+            .expect("persist openai");
+        let content = fs::read_to_string(user_config_path(&home.home)).expect("read");
+        assert!(content.contains("sk-openai-SECRET"), "OpenAI api_key missing after switching back");
+
+        // Entering a new key via Settings UI should update (not just insert).
+        persist_user_agent_mode(&home.home, "openai", "gpt-4o", Some("OPENAI_API_KEY"), None, Some("sk-openai-NEWKEY"))
+            .expect("persist new key");
+        let content = fs::read_to_string(user_config_path(&home.home)).expect("read");
+        assert!(content.contains("sk-openai-NEWKEY"), "new api_key was not written");
+        assert!(!content.contains("sk-openai-SECRET"), "old api_key still present after update");
     }
 }

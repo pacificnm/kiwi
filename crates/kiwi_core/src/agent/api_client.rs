@@ -2,8 +2,9 @@
 //!
 //! - Claude: POSTs to the Anthropic Messages API, reads Anthropic SSE format.
 //! - Ollama: POSTs to `/api/chat`, reads NDJSON stream (no `data:` prefix).
+//! - OpenAI: POSTs to `/v1/chat/completions`, reads OpenAI SSE format (`data: [DONE]` sentinel).
 //!
-//! Both spawn a background thread and fire `AppEvent` variants into the `EventSender`.
+//! All implementations spawn a background thread and fire `AppEvent` variants into the `EventSender`.
 
 use std::io::BufRead;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -18,6 +19,7 @@ use super::stream_event::{ApiStreamEvent, ContentBlockStart, ContentDelta};
 
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
+const OPENAI_API_URL: &str = "https://api.openai.com/v1/chat/completions";
 const DEFAULT_MAX_TOKENS: u32 = 8192;
 
 // ---------------------------------------------------------------------------
@@ -212,6 +214,133 @@ fn build_ollama_request_body<'a>(model: &'a str, messages: &[ChatMessage]) -> Ol
     }
 
     OllamaRequestBody { model, messages: ollama_messages, stream: true }
+}
+
+// ---------------------------------------------------------------------------
+// OpenAI public API
+// ---------------------------------------------------------------------------
+
+/// Spawn a background thread that streams an OpenAI chat turn and fires events.
+///
+/// Uses the OpenAI `/v1/chat/completions` endpoint with `stream: true`.
+/// Token chunks arrive as SSE lines (`data: {...}`); the stream ends with `data: [DONE]`.
+pub fn spawn_openai_stream(
+    agent_id: AgentId,
+    api_key: String,
+    model: String,
+    messages: Vec<ChatMessage>,
+    cancel: StreamCancelHandle,
+    sender: EventSender,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        if let Err(msg) = run_openai_stream(agent_id, &api_key, &model, &messages, &cancel, &sender) {
+            if !cancel.is_cancelled() {
+                let _ = sender.send(AppEvent::AgentApiError { agent_id, message: msg });
+            }
+        }
+    })
+}
+
+fn run_openai_stream(
+    agent_id: AgentId,
+    api_key: &str,
+    model: &str,
+    messages: &[ChatMessage],
+    cancel: &StreamCancelHandle,
+    sender: &EventSender,
+) -> Result<(), String> {
+    let body = build_openai_request_body(model, messages);
+
+    let client = reqwest::blocking::Client::new();
+    let response = client
+        .post(OPENAI_API_URL)
+        .header("authorization", format!("Bearer {api_key}"))
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .map_err(|e| format!("OpenAI request failed: {e}"))?;
+
+    if !response.status().is_success() {
+        let status = response.status().as_u16();
+        let body_text = response.text().unwrap_or_default();
+        let msg = match status {
+            401 => "Authentication failed — check OPENAI_API_KEY".to_string(),
+            429 => "Rate limit exceeded — please wait and retry".to_string(),
+            _ => format!("OpenAI error {status}: {body_text}"),
+        };
+        return Err(msg);
+    }
+
+    let reader = std::io::BufReader::new(response);
+    process_openai_sse_lines(agent_id, reader, cancel, sender)
+}
+
+fn process_openai_sse_lines(
+    agent_id: AgentId,
+    reader: impl BufRead,
+    cancel: &StreamCancelHandle,
+    sender: &EventSender,
+) -> Result<(), String> {
+    for raw_line in reader.lines() {
+        if cancel.is_cancelled() {
+            return Ok(());
+        }
+
+        let line = raw_line.map_err(|e| format!("Stream read error: {e}"))?;
+        let Some(data) = line.strip_prefix("data:") else { continue };
+        let data = data.trim();
+
+        if data == "[DONE]" {
+            let _ = sender.send(AppEvent::AgentTurnComplete { agent_id });
+            return Ok(());
+        }
+
+        let obj: serde_json::Value = match serde_json::from_str(data) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        // Error object: {"error":{"message":"..."}}
+        if let Some(err) = obj.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()) {
+            return Err(err.to_string());
+        }
+
+        // Token chunk: choices[0].delta.content
+        if let Some(text) = obj
+            .get("choices")
+            .and_then(|c| c.get(0))
+            .and_then(|c| c.get("delta"))
+            .and_then(|d| d.get("content"))
+            .and_then(|t| t.as_str())
+        {
+            if !text.is_empty() {
+                let _ = sender.send(AppEvent::AgentTokenChunk {
+                    agent_id,
+                    text: text.to_string(),
+                });
+            }
+        }
+    }
+
+    let _ = sender.send(AppEvent::AgentTurnComplete { agent_id });
+    Ok(())
+}
+
+#[derive(Serialize)]
+struct OpenAIRequestBody<'a> {
+    model: &'a str,
+    messages: Vec<OllamaMessage>,
+    stream: bool,
+}
+
+fn build_openai_request_body<'a>(model: &'a str, messages: &[ChatMessage]) -> OpenAIRequestBody<'a> {
+    // OpenAI and Ollama share the same flat message format.
+    let ollama_body = build_ollama_request_body(model, messages);
+    OpenAIRequestBody {
+        model: ollama_body.model,
+        messages: ollama_body.messages,
+        stream: true,
+    }
 }
 
 // ---------------------------------------------------------------------------

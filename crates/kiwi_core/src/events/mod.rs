@@ -332,6 +332,10 @@ pub enum AppCommand {
         mode: Option<String>,
         provider: Option<String>,
         model: Option<String>,
+        api_key_env: Option<String>,
+        api_url: Option<String>,
+        /// Literal API key entered by the user in Settings; persisted to config.toml.
+        api_key: Option<String>,
     },
     // --- Native chat commands (Phase 2+) ---
     /// User submitted a message in the chat input box.
@@ -446,7 +450,7 @@ pub enum SideEffect {
     /// Persist the chosen agent command to ~/.config/kiwi/config.toml.
     PersistAgentConfig { command: String, args: Vec<String> },
     /// Persist api-mode agent settings (mode, provider, model) to user config.
-    PersistAgentMode { provider: String, model: String },
+    PersistAgentMode { provider: String, model: String, api_key_env: Option<String>, api_url: Option<String>, api_key: Option<String> },
 }
 
 impl AppCommand {
