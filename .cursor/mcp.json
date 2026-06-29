@@ -1,11 +1,11 @@
 {
   "mcpServers": {
     "kiwi-memory": {
-      "command": "/home/jaimie/.local/bin/kiwi-mcp-memory",
+      "command": "/home/jaimie/.cargo/bin/kiwi-mcp-memory",
       "cwd": "/home/jaimie/kiwi"
     },
     "kiwi-context-memory": {
-      "command": "/home/jaimie/.local/bin/kiwi-mcp-context",
+      "command": "/home/jaimie/.cargo/bin/kiwi-mcp-context",
       "cwd": "/home/jaimie/kiwi"
     }
   }

@@ -525,8 +525,8 @@ fn handle_execute_tool(
         }
     };
 
-    // RunBash is handled inline — it needs PTY write access before spawning a thread.
-    if let KiwiTool::RunBash { ref command } = tool {
+    // ShellRun is handled inline — it needs PTY write access before spawning a thread.
+    if let KiwiTool::ShellRun { ref command } = tool {
         let bytes: Vec<u8> = format!("{command}\n").into_bytes();
         let _ = ctx.pty.write_shell(&bytes);
         let content = format!(
@@ -547,7 +547,7 @@ fn handle_execute_tool(
     std::thread::spawn(move || {
         let (content, is_error) = match execute_tool(&tool, &repo_root) {
             ExecutionResult::Done { content, is_error } => (content, is_error),
-            ExecutionResult::RunBash { .. } => unreachable!("RunBash handled above"),
+            ExecutionResult::ShellRun { .. } => unreachable!("ShellRun handled above"),
         };
         let _ = sender.send(AppEvent::AgentToolResult {
             agent_id,

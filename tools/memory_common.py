@@ -18,13 +18,12 @@ _PROVIDER_KEY_VARS = {
 }
 
 
-def load_project_env() -> None:
-    """Load repo-local .env values without requiring python-dotenv."""
-    env_path = PROJECT_ROOT / ".env"
-    if not env_path.is_file():
-        return
-
-    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+def _apply_dotenv_lines(
+    lines: list[str],
+    *,
+    provider_keys_only: bool,
+) -> None:
+    for raw_line in lines:
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -32,9 +31,42 @@ def load_project_env() -> None:
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip().strip('"').strip("'")
+        is_provider = key in _PROVIDER_KEY_VARS
 
-        if key and value and key not in os.environ:
+        if provider_keys_only:
+            if not is_provider or key in os.environ:
+                continue
+        elif is_provider:
+            continue
+        elif key in os.environ:
+            continue
+
+        if key and value:
             os.environ[key] = value
+
+
+def load_project_env() -> None:
+    """Load repo-local .env values without requiring python-dotenv."""
+    env_path = PROJECT_ROOT / ".env"
+    if not env_path.is_file():
+        return
+
+    _apply_dotenv_lines(
+        env_path.read_text(encoding="utf-8").splitlines(),
+        provider_keys_only=False,
+    )
+
+
+def load_dotenv_provider_fallback() -> None:
+    """Load provider API keys from `.env` only when still unset."""
+    env_path = PROJECT_ROOT / ".env"
+    if not env_path.is_file():
+        return
+
+    _apply_dotenv_lines(
+        env_path.read_text(encoding="utf-8").splitlines(),
+        provider_keys_only=True,
+    )
 
 
 def load_kiwi_config_keys() -> None:
@@ -65,9 +97,15 @@ def load_kiwi_config_keys() -> None:
             os.environ[env_var] = key
 
 
-def database_url() -> str:
+def load_memory_env() -> None:
+    """Load MCP memory env: general `.env`, then Kiwi Settings, then provider fallback."""
     load_project_env()
     load_kiwi_config_keys()
+    load_dotenv_provider_fallback()
+
+
+def database_url() -> str:
+    load_memory_env()
     return os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
 
 
@@ -76,5 +114,4 @@ def vector_literal(values: Sequence[float]) -> str:
     return "[" + ",".join(str(float(value)) for value in values) + "]"
 
 
-load_project_env()
-load_kiwi_config_keys()
+load_memory_env()

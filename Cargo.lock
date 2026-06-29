@@ -2388,6 +2388,7 @@ dependencies = [
  "postgres",
  "serde",
  "serde_json",
+ "toml",
  "ureq",
 ]
 
