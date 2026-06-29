@@ -14,8 +14,8 @@ pub use viewport::ViewportMetrics;
 
 use std::path::PathBuf;
 
-use crate::agent::{agent_launch_spec, AgentManager};
-use crate::config::ResolvedConfig;
+use crate::agent::{agent_launch_spec, AgentManager, ChatSession};
+use crate::config::{AgentMode, ResolvedConfig};
 use crate::file_tree::FileTreeState;
 use crate::navigation::NavigationState;
 use crate::preview::PreviewState;
@@ -68,6 +68,8 @@ impl AppState {
 
         let shell_spec = shell_launch_spec(&config.shell);
         let agent_spec = agent_launch_spec(&config.agent);
+        let agent_mode = config.agent.mode.clone();
+        let agent_model = config.agent.model.clone();
         let mut file_tree = FileTreeState::at_root(repo_root.clone());
         file_tree.ensure_selection();
 
@@ -89,6 +91,14 @@ impl AppState {
             agent_manager: AgentManager::with_initial_agent(AgentState {
                 command: agent_spec.command,
                 agent_name: agent_spec.agent_name,
+                chat: if agent_mode == AgentMode::Api {
+                    Some(ChatSession {
+                        model: agent_model,
+                        ..ChatSession::default()
+                    })
+                } else {
+                    None
+                },
                 ..AgentState::default()
             }),
             shell: ShellState {

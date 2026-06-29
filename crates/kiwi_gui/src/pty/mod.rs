@@ -1,21 +1,23 @@
-//! PTY process runtime for shell and agent sessions (SPEC-010 / SPEC-011, Phase 1).
+//! PTY process runtime for the shell session (SPEC-011).
+//!
+//! Agent PTY spawn/restart/write paths were removed in Phase 6 (#334).
+//! Agents now use the native API streaming path exclusively in kiwi_gui.
 
 mod agent_runtime;
 mod resize;
 
 use std::path::Path;
 
-use kiwi_core::agent::{AgentId, AgentSession, StreamCancelHandle};
-use kiwi_core::config::{AgentSettings, ResolvedConfig, ShellSettings};
+use kiwi_core::agent::{AgentId, StreamCancelHandle};
+use kiwi_core::config::ShellSettings;
 use kiwi_core::events::EventSender;
-use kiwi_core::navigation::MainTab;
 use kiwi_core::shell::{ShellOutputReader, ShellSession};
 use kiwi_core::state::AppState;
 
 pub use agent_runtime::AgentRuntime;
 pub use resize::effective_pty_size;
 
-/// Default PTY dimensions until a terminal panel measures its viewport (Phase 4).
+/// Default PTY dimensions until a terminal panel measures its viewport.
 pub const DEFAULT_PTY_COLS: u16 = 80;
 pub const DEFAULT_PTY_ROWS: u16 = 24;
 
@@ -78,71 +80,6 @@ impl PtyRuntime {
         state.dirty = true;
     }
 
-    pub fn spawn_agent(
-        &mut self,
-        id: AgentId,
-        repo_root: &Path,
-        agent_settings: &AgentSettings,
-        state: &mut AppState,
-        sender: EventSender,
-    ) {
-        if state
-            .agent_manager
-            .pty(id)
-            .is_some_and(|pty| pty.spawned)
-            || self.agent.has_session(id)
-        {
-            return;
-        }
-
-        let (cols, rows) = effective_pty_size(state.viewport.agent_cols, state.viewport.agent_rows);
-
-        match AgentSession::spawn(repo_root, agent_settings, cols, rows) {
-            Ok(session) => {
-                if let Some(pty) = state.agent_manager.pty_mut(id) {
-                    pty.apply_spawn(
-                        &session.spec.command,
-                        &session.spec.agent_name,
-                        session.pid(),
-                        session.cols,
-                        session.rows,
-                    );
-                }
-                state.agent_manager.refresh_status_label();
-                if let Ok(reader) = session.try_clone_reader() {
-                    self.agent.attach_reader(id, reader, sender);
-                }
-                self.agent.attach_session(id, session);
-            }
-            Err(err) => {
-                if let Some(pty) = state.agent_manager.pty_mut(id) {
-                    pty.apply_spawn_error(err.to_string());
-                }
-                state.agent_manager.refresh_status_label();
-            }
-        }
-        state.dirty = true;
-    }
-
-    pub fn restart_agent(
-        &mut self,
-        id: AgentId,
-        repo_root: &Path,
-        config: &ResolvedConfig,
-        state: &mut AppState,
-        sender: EventSender,
-    ) {
-        if state.navigation.main_tab != MainTab::Agent {
-            return;
-        }
-
-        self.agent.shutdown(id);
-        if let Some(pty) = state.agent_manager.pty_mut(id) {
-            pty.prepare_restart();
-        }
-        self.spawn_agent(id, repo_root, &config.agent, state, sender);
-    }
-
     pub fn write_shell(&mut self, data: &[u8]) -> bool {
         let Some(shell) = self.shell.as_mut() else {
             return false;
@@ -150,19 +87,11 @@ impl PtyRuntime {
         shell.write(data).is_ok()
     }
 
-    pub fn write_agent(&mut self, id: AgentId, data: &[u8]) -> bool {
-        self.agent.write(id, data)
-    }
-
     pub fn resize_shell(&mut self, cols: u16, rows: u16) -> bool {
         let Some(shell) = self.shell.as_mut() else {
             return false;
         };
         shell.resize(cols, rows).is_ok()
-    }
-
-    pub fn resize_agent(&mut self, id: AgentId, cols: u16, rows: u16) -> bool {
-        self.agent.resize(id, cols, rows)
     }
 
     /// Register a cancel handle for a native-chat API stream, cancelling any prior stream.
@@ -175,11 +104,6 @@ impl PtyRuntime {
         self.agent.cancel_stream(id);
     }
 
-    #[must_use]
-    pub fn poll_agent_exits(&mut self) -> Vec<(AgentId, i32)> {
-        self.agent.poll_exits()
-    }
-
     pub fn shutdown(&mut self) {
         if self.shut_down {
             return;
@@ -189,7 +113,7 @@ impl PtyRuntime {
         if let Some(reader) = self.shell_io.take() {
             reader.abandon();
         }
-        self.agent.shutdown_all();
+        self.agent.cancel_all_streams();
         if let Some(mut shell) = self.shell.take() {
             shell.shutdown();
         }

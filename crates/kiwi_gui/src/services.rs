@@ -309,34 +309,6 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
             _ => {} // #[non_exhaustive] forward-compat
         },
         SideEffect::Agent(effect) => match effect {
-            AgentEffect::Spawn(id) => {
-                let repo_root = ctx.state.repo_root.clone();
-                let agent_settings = ctx.state.config.agent.clone();
-                ctx.pty.spawn_agent(
-                    id,
-                    &repo_root,
-                    &agent_settings,
-                    ctx.state,
-                    ctx.events.sender(),
-                );
-            }
-            AgentEffect::Restart(id) => {
-                // Cancel any native-chat stream before restarting the PTY process.
-                ctx.pty.cancel_stream(id);
-                let repo_root = ctx.state.repo_root.clone();
-                let config = ctx.state.config.clone();
-                ctx.pty.restart_agent(
-                    id,
-                    &repo_root,
-                    &config,
-                    ctx.state,
-                    ctx.events.sender(),
-                );
-            }
-            AgentEffect::Write(data) => {
-                let id = ctx.state.agent_manager.active_id();
-                let _ = ctx.pty.write_agent(id, &data);
-            }
             AgentEffect::StreamRequest(id) => {
                 spawn_claude_stream_effect(ctx, id);
             }
