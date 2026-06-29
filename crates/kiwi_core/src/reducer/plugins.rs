@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use crate::agent::{AgentStatus, ChatSession};
+use crate::config::AgentMode;
 use crate::events::{AgentEffect, SideEffect};
 use crate::state::{PluginStatus, ReduceView};
 
@@ -105,14 +107,57 @@ pub(super) fn reduce_set_agent(
     state: &mut ReduceView<'_>,
     command: String,
     args: Vec<String>,
+    mode: Option<String>,
+    provider: Option<String>,
+    model: Option<String>,
 ) -> Vec<SideEffect> {
+    let is_api = mode.as_deref() == Some("api");
+    let new_mode = if is_api { AgentMode::Api } else { AgentMode::Pty };
+
     state.config.agent.command = command.clone();
     state.config.agent.args = args.clone();
+    state.config.agent.mode = new_mode;
+    if let Some(ref p) = provider {
+        state.config.agent.provider = Some(p.clone());
+    }
+    if let Some(ref m) = model {
+        state.config.agent.model = m.clone();
+    }
+
     let id = state.agent_manager.active_id();
-    state.notifications.show_toast(format!("Switching agent to `{command}`…"));
     state.set_dirty();
-    vec![
-        SideEffect::PersistAgentConfig { command, args },
-        SideEffect::Agent(AgentEffect::Restart(id)),
-    ]
+
+    if is_api {
+        let model_str = model
+            .clone()
+            .unwrap_or_else(|| state.config.agent.model.clone());
+        let provider_str = provider.clone().unwrap_or_else(|| "claude".to_string());
+
+        if let Some(pty) = state.agent_manager.pty_mut(id) {
+            pty.chat = Some(ChatSession {
+                model: model_str.clone(),
+                status: AgentStatus::Idle,
+                ..ChatSession::default()
+            });
+        }
+
+        let display = provider.as_deref().unwrap_or("API");
+        state.notifications.show_toast(format!("Switched to {display} agent (native chat)."));
+
+        vec![
+            SideEffect::PersistAgentMode {
+                provider: provider_str,
+                model: model_str,
+            },
+        ]
+    } else {
+        if let Some(pty) = state.agent_manager.pty_mut(id) {
+            pty.chat = None;
+        }
+        state.notifications.show_toast(format!("Switching agent to `{command}`…"));
+        vec![
+            SideEffect::PersistAgentConfig { command, args },
+            SideEffect::Agent(AgentEffect::Restart(id)),
+        ]
+    }
 }

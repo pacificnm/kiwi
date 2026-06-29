@@ -445,6 +445,15 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
         SideEffect::PluginInstallFailed => {
             refresh_available_plugins(ctx);
         }
+        SideEffect::PersistAgentMode { provider, model } => {
+            let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+            if let Some(home) = home {
+                if let Err(e) = kiwi_core::config::persist_user_agent_mode(&home, &provider, &model) {
+                    ctx.state.notifications.show_toast(format!("Failed to save agent mode: {e}"));
+                    ctx.state.dirty = true;
+                }
+            }
+        }
         SideEffect::PersistAgentConfig { command, args } => {
             let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
             match home {

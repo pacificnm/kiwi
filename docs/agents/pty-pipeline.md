@@ -1,14 +1,17 @@
 # Agent PTY Pipeline
 
-> **Deprecated — prefer `mode = "api"`.**
-> The PTY subprocess pipeline described here is the legacy approach. New agents should use
-> `mode = "api"` in their `plugin.toml` and `config.toml` to get the native chat panel with
-> direct LLM API streaming. See `config.example.toml` and `plugins/kiwi_agent_claude/` for
-> reference. The PTY path will be removed in a future release.
+> **Deprecated (GUI) — prefer `mode = "api"` for new agents.**
+> The PTY subprocess pipeline described here is the legacy approach for the GUI frontend.
+> New agents should use `mode = "api"` in their `plugin.toml` and `config.toml` to get the
+> native chat panel with direct LLM API streaming. See [native-chat.md](./native-chat.md),
+> `config.example.toml`, and `plugins/kiwi_agent_claude/` for reference.
+>
+> The PTY path remains active in the TUI frontend (`crates/kiwi`) and for opaque CLI tools that
+> do not use the Kiwi API. GUI PTY support will be sunsetted in a future release.
 
 How Kiwi runs AI agents as PTY subprocesses, streams their output into the Agent tab, and
-where tool/plugin authors should hook in. This document reflects the performance-oriented
-pipeline as of the Agent tab review (issue #321 branch).
+where tool/plugin authors should hook in. This document covers the PTY pipeline only; for the
+native API-streaming path see [native-chat.md](./native-chat.md).
 
 Related contracts:
 

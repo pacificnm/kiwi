@@ -68,11 +68,18 @@ pub fn scan_available_plugins(
             let on_disk = install_dir.join(&manifest.name).exists();
             let installed = reg_entry.is_some() || on_disk;
             let enabled = reg_entry.map_or(on_disk, |e| e.enabled);
-            let (agent_command, agent_args) = manifest
+            let (agent_command, agent_args, agent_mode, agent_provider, agent_model) = manifest
                 .agent
                 .as_ref()
-                .map(|a| (Some(a.command.clone()), a.args.clone()))
-                .unwrap_or((None, Vec::new()));
+                .map(|a| {
+                    let mode_str = match a.mode {
+                        kiwi_plugin_api::AgentMode::Api => Some("api".to_string()),
+                        kiwi_plugin_api::AgentMode::Pty => None,
+                    };
+                    let cmd = if a.command.is_empty() { None } else { Some(a.command.clone()) };
+                    (cmd, a.args.clone(), mode_str, a.provider.clone(), a.model.clone())
+                })
+                .unwrap_or((None, Vec::new(), None, None, None));
             found.push(crate::state::AvailablePlugin {
                 display_name: manifest.effective_display_name().to_string(),
                 version: manifest.version.clone(),
@@ -84,6 +91,9 @@ pub fn scan_available_plugins(
                 name: manifest.name,
                 agent_command,
                 agent_args,
+                agent_mode,
+                agent_provider,
+                agent_model,
             });
         }
     }

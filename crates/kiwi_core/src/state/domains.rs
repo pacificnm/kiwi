@@ -591,10 +591,16 @@ pub struct AvailablePlugin {
     pub installed: bool,
     /// `true` if installed and enabled in the registry.
     pub enabled: bool,
-    /// If set, this plugin provides an AI agent. Value is the executable command.
+    /// If set, this plugin provides an AI agent. Value is the executable command (PTY mode).
     pub agent_command: Option<String>,
     /// Arguments for the agent command declared in `plugin.toml`.
     pub agent_args: Vec<String>,
+    /// Agent execution mode declared in plugin manifest (`"api"` or `"pty"`).
+    pub agent_mode: Option<String>,
+    /// API provider name for api-mode agents (e.g. `"claude"`).
+    pub agent_provider: Option<String>,
+    /// Model identifier for api-mode agents (e.g. `"claude-opus-4-8"`).
+    pub agent_model: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
