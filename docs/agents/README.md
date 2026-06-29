@@ -8,6 +8,8 @@ See [SPEC-010 Agent Service](../specs/SPEC-010-agent-service.md) for the full PT
 
 | Agent | Description | Guide |
 |---|---|---|
+| `agent` | Cursor Agent CLI | — |
+| `claude` | Anthropic Claude Code CLI | — |
 | `kiwi-ollama` | Ollama/qwen2.5-coder local LLM with RAG codebase indexing | [ollama-qwen-agent.md](./ollama-qwen-agent.md) |
 
 ## MCP memory servers
