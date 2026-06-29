@@ -18,6 +18,7 @@ use super::file_tree::render_file_tree_pane;
 use super::git::render_git_pane;
 use super::github::{render_github_left_pane, render_issue_detail_pane, render_pr_detail_pane};
 use super::label_picker::render_label_picker_overlay;
+use super::milestone_picker::render_milestone_picker_overlay;
 use super::logs::render_logs_pane;
 use super::notifications::render_notifications;
 use super::palette::render_palette_pane;
@@ -173,6 +174,14 @@ pub fn draw_frame(frame: &mut Frame<'_>, state: &AppState) {
     if state.github.label_picker.is_some() {
         render_label_picker_overlay(frame, state.layout.rects.main_content, &state.theme, state);
     }
+    if state.github.milestone_picker.is_some() {
+        render_milestone_picker_overlay(
+            frame,
+            state.layout.rects.main_content,
+            &state.theme,
+            state,
+        );
+    }
     if state.github.context_menu.is_some() {
         if let Some(menu) = &state.github.context_menu {
             render_github_context_menu(frame, state.layout.rects.left_content, &state.theme, menu);
@@ -318,6 +327,12 @@ mod tests {
         )
     }
 
+    fn set_agent_running(state: &mut AppState, running: bool) {
+        state.active_agent_mut().running = running;
+        state.active_agent_mut().refresh_status_bar_label();
+        state.agent_manager.refresh_status_label();
+    }
+
     #[test]
     fn draw_frame_renders_tab_labels_and_pane_titles() {
         let state = test_state();
@@ -354,7 +369,7 @@ mod tests {
             path: "src/lib.rs".to_string(),
             status: GitFileStatus::Modified,
         }];
-        state.active_agent_mut().running = true;
+        set_agent_running(&mut state, true);
         state.github.selected_issue = Some(7);
 
         let backend = TestBackend::new(120, 40);
@@ -386,7 +401,7 @@ mod tests {
                 status: GitFileStatus::Modified,
             },
         ];
-        state.active_agent_mut().running = true;
+        set_agent_running(&mut state, true);
         state.github.selected_issue = Some(99);
 
         let snapshot = compute_status_bar(&state);
@@ -547,7 +562,7 @@ mod tests {
         let mut state = test_state();
         state.navigation.focus = FocusTarget::Main;
         state.navigation.main_tab = MainTab::Agent;
-        state.active_agent_mut().running = true;
+        set_agent_running(&mut state, true);
         state.pty_cursor_blink_on = true;
         state.active_agent_mut().scrollback.append_bytes(b"agent> ");
 
@@ -578,7 +593,7 @@ mod tests {
         let mut state = test_state();
         state.navigation.focus = FocusTarget::Main;
         state.navigation.main_tab = MainTab::Agent;
-        state.active_agent_mut().running = true;
+        set_agent_running(&mut state, true);
         state.pty_cursor_blink_on = true;
         state
             .active_agent_mut()

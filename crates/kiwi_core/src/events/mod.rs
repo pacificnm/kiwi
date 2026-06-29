@@ -6,8 +6,8 @@ use crate::file_tree::DirectoryEntry;
 use crate::git::{BranchEntry, GitFileEntry};
 use crate::github::{
     GhContextMenuAction, GhContextTarget, GitHubAuthCheckResult, GitHubBrowserTarget, GitHubLeftPane,
-    IssueActionResult, IssueDetailLoadResult, IssueListLoadResult, PrCreateRequest, PrDetailLoadResult,
-    PrListLoadResult, RepoLabelsLoadResult,
+    IssueActionResult, IssueCreateRequest, IssueCreateResult, IssueDetailLoadResult, IssueListLoadResult, PrCreateRequest, PrDetailLoadResult,
+    PrListLoadResult, RepoLabelsLoadResult, RepoMilestonesLoadResult,
 };
 use crate::navigation::NavCommand;
 use crate::preview::PreviewLoadResult;
@@ -108,6 +108,16 @@ pub enum AppEvent {
         number: u32,
         result: IssueActionResult,
     },
+    GitHubRepoMilestonesLoaded {
+        result: RepoMilestonesLoadResult,
+    },
+    GitHubIssueMilestoneAssigned {
+        number: u32,
+        result: IssueActionResult,
+    },
+    GitHubIssueCreateCompleted {
+        outcome: IssueCreateResult,
+    },
     GitHubOpenBrowserCompleted {
         target: GitHubBrowserTarget,
         result: IssueActionResult,
@@ -121,6 +131,11 @@ pub enum AppEvent {
     },
     BranchListLoaded {
         entries: Vec<BranchEntry>,
+        error: Option<String>,
+    },
+    BranchDetailLoaded {
+        name: String,
+        detail: Option<crate::git::BranchDetail>,
         error: Option<String>,
     },
     BranchCheckoutCompleted {
@@ -162,6 +177,12 @@ pub enum AppCommand {
     GitHubLabelPickerToggle,
     GitHubLabelPickerApply,
     GitHubLabelPickerCancel,
+    GitHubMilestonePickerMove(i32),
+    GitHubMilestonePickerApply,
+    GitHubMilestonePickerCancel,
+    GitHubIssueCreateOpen,
+    GitHubIssueCreateCancel,
+    GitHubIssueCreateSubmit,
     GitHubContextMenuOpen {
         anchor_x: u16,
         anchor_y: u16,
@@ -213,6 +234,7 @@ pub enum AppCommand {
     BranchSelect(usize),
     BranchCheckoutSelected,
     BranchRefresh,
+    BranchDetailScroll(i32),
     PreviewFile {
         path: PathBuf,
         line: Option<u32>,
@@ -283,6 +305,7 @@ pub enum GitEffect {
     SpawnRefresh,
     SpawnBranchList,
     SpawnBranchCheckout { name: String },
+    SpawnBranchDetail { name: String },
 }
 
 #[non_exhaustive]
@@ -299,6 +322,9 @@ pub enum GitHubEffect {
     SpawnIssueCreateBranch { number: u32 },
     SpawnRepoLabels,
     SpawnIssueLabelApply { number: u32, labels: Vec<String> },
+    SpawnRepoMilestones,
+    SpawnIssueMilestoneAssign { number: u32, milestone_title: String },
+    SpawnIssueCreate { request: IssueCreateRequest },
     SpawnOpenBrowser { target: GitHubBrowserTarget },
     SpawnPrCreate { request: PrCreateRequest },
     SpawnPrMerge { number: u32 },

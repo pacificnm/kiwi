@@ -96,12 +96,15 @@ pub fn collect_pty_input(
                     .push(write_command(target, pty_paste_bytes(&text)));
             }
             Event::Text(text) if !text.is_empty() => {
-                push_write(
-                    &mut outcome.commands,
-                    target,
-                    text.into_bytes(),
-                    last_shell_interrupt,
-                );
+                let bytes = pty_text_bytes(&text);
+                if !bytes.is_empty() {
+                    push_write(
+                        &mut outcome.commands,
+                        target,
+                        bytes,
+                        last_shell_interrupt,
+                    );
+                }
             }
             Event::Key {
                 key,
@@ -143,6 +146,13 @@ fn pty_running(state: &AppState, target: PtyTarget) -> bool {
         PtyTarget::Shell => state.shell.running,
         PtyTarget::Agent => state.active_agent().running,
     }
+}
+
+fn pty_text_bytes(text: &str) -> Vec<u8> {
+    text.chars()
+        .filter(|ch| !matches!(ch, '\x7f' | '\u{8}'))
+        .flat_map(|ch| ch.to_string().into_bytes())
+        .collect()
 }
 
 fn write_command(target: PtyTarget, bytes: Vec<u8>) -> AppCommand {
@@ -319,6 +329,12 @@ mod tests {
     fn encodes_enter_and_backspace() {
         assert_eq!(encode_egui_key(Key::Enter), Some(b"\r".to_vec()));
         assert_eq!(encode_egui_key(Key::Backspace), Some(vec![0x7f]));
+    }
+
+    #[test]
+    fn pty_text_bytes_filters_backspace_controls() {
+        assert_eq!(pty_text_bytes("hi\x7f"), b"hi");
+        assert_eq!(pty_text_bytes("a\u{8}b"), b"ab");
     }
 
     #[test]

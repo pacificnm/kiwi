@@ -20,7 +20,10 @@ pub fn apply_navigation(state: &mut ReduceView<'_>, command: NavCommand) {
         state.set_dirty();
     }
     if state.navigation.left_tab == LeftNavTab::Gh
-        || matches!(state.navigation.main_tab, MainTab::Issues | MainTab::Prs)
+        || matches!(
+            state.navigation.main_tab,
+            MainTab::Issues | MainTab::Prs | MainTab::Branches
+        )
     {
         sync_github_left_pane_from_main_tab(state);
     }
@@ -44,6 +47,7 @@ pub(super) fn sync_github_left_pane_from_main_tab(state: &mut ReduceView<'_>) {
     state.github.left_pane = match state.navigation.main_tab {
         MainTab::Issues => GitHubLeftPane::Issues,
         MainTab::Prs => GitHubLeftPane::Prs,
+        MainTab::Branches => GitHubLeftPane::Branches,
         _ => state.github.left_pane,
     };
 }

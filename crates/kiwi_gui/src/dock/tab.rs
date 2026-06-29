@@ -30,7 +30,7 @@ impl KiwiTab {
             Self::Explorer => "Files",
             Self::GitStatus => "Git",
             Self::GitDiff => "Diff",
-            Self::GitLog => "Git Log",
+            Self::GitLog => "Branches",
             Self::GitHubIssues => "GH",
             Self::Issues => "Issues",
             Self::GitHubPrs => "PRs",
@@ -69,7 +69,7 @@ impl KiwiTab {
     /// Used to hide stub tabs from the View menu (#278).
     #[must_use]
     pub const fn is_placeholder(self) -> bool {
-        matches!(self, Self::Logs | Self::GitLog)
+        matches!(self, Self::Logs)
     }
 
     /// Factory-default open tabs (ADR-022); used by layout and tests.
@@ -82,6 +82,21 @@ impl KiwiTab {
             Self::Agent,
             Self::Terminal,
         ]
+    }
+
+    /// Core navigation tabs that stay open (no tab-bar close button).
+    #[must_use]
+    pub const fn is_closeable(self) -> bool {
+        !matches!(
+            self,
+            Self::Explorer | Self::GitStatus | Self::GitHubIssues | Self::Terminal
+        )
+    }
+
+    /// Only the bottom terminal strip exposes the dock collapse control.
+    #[must_use]
+    pub const fn shows_collapse_button(self) -> bool {
+        matches!(self, Self::Terminal)
     }
 }
 
@@ -100,9 +115,9 @@ mod tests {
     }
 
     #[test]
-    fn placeholder_tabs_are_logs_and_gitlog() {
+    fn placeholder_tabs_are_logs_only() {
         assert!(KiwiTab::Logs.is_placeholder());
-        assert!(KiwiTab::GitLog.is_placeholder());
+        assert!(!KiwiTab::GitLog.is_placeholder());
         assert!(!KiwiTab::Config.is_placeholder());
         assert!(!KiwiTab::Explorer.is_placeholder());
         assert!(!KiwiTab::Terminal.is_placeholder());
@@ -121,5 +136,24 @@ mod tests {
         assert!(tabs.contains(&KiwiTab::Explorer));
         assert!(tabs.contains(&KiwiTab::GitStatus));
         assert!(tabs.contains(&KiwiTab::Agent));
+    }
+
+    #[test]
+    fn left_nav_tabs_are_not_closeable() {
+        assert!(!KiwiTab::Explorer.is_closeable());
+        assert!(!KiwiTab::GitStatus.is_closeable());
+        assert!(!KiwiTab::GitHubIssues.is_closeable());
+        assert!(!KiwiTab::Terminal.is_closeable());
+        assert!(KiwiTab::Agent.is_closeable());
+        assert!(KiwiTab::Search.is_closeable());
+    }
+
+    #[test]
+    fn only_terminal_shows_collapse_button() {
+        assert!(!KiwiTab::Explorer.shows_collapse_button());
+        assert!(!KiwiTab::GitStatus.shows_collapse_button());
+        assert!(!KiwiTab::GitHubIssues.shows_collapse_button());
+        assert!(!KiwiTab::Agent.shows_collapse_button());
+        assert!(KiwiTab::Terminal.shows_collapse_button());
     }
 }

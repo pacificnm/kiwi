@@ -10,6 +10,7 @@ mod tab;
 mod viewer;
 
 pub use context::{PanelContext, PtySurfaceState};
+pub(crate) use panels::context_menu;
 pub use layout::initial_dock_state;
 pub use panels::{
     collect_github_keyboard, collect_pty_input, collect_search_keyboard, explorer_keyboard_action,
@@ -130,9 +131,9 @@ mod tests {
     #[test]
     fn reset_layout_restores_factory_tabs() {
         let mut shell = DockShell::new();
-        shell.close_tab(KiwiTab::Explorer);
         shell.close_tab(KiwiTab::Agent);
-        assert!(!shell.is_tab_open(KiwiTab::Explorer));
+        assert!(!shell.is_tab_open(KiwiTab::Agent));
+        assert!(shell.is_tab_open(KiwiTab::Explorer));
 
         shell.reset_layout();
         assert!(shell.is_tab_open(KiwiTab::Explorer));

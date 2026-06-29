@@ -18,10 +18,12 @@ use kiwi_core::events::{
 use kiwi_core::file_tree::spawn_directory_load;
 use kiwi_core::git::spawn_git_refresh;
 use kiwi_core::github::{
-    spawn_github_auth_check, spawn_github_issue_comment, spawn_github_issue_create_branch,
+    spawn_github_auth_check, spawn_github_issue_comment, spawn_github_issue_create,
+    spawn_github_issue_create_branch,
     spawn_github_issue_detail_load, spawn_github_issue_label_apply, spawn_github_issue_list_load,
-    spawn_github_open_browser, spawn_github_pr_create, spawn_github_pr_detail_load,
-    spawn_github_pr_list_load, spawn_github_pr_merge, spawn_github_repo_labels_load,
+    spawn_github_issue_milestone_assign, spawn_github_open_browser, spawn_github_pr_create,
+    spawn_github_pr_detail_load, spawn_github_pr_list_load, spawn_github_pr_merge,
+    spawn_github_repo_labels_load, spawn_github_repo_milestones_load,
 };
 use kiwi_core::preview::spawn_preview_load;
 use kiwi_core::config::persist_user_theme;
@@ -135,9 +137,32 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
                     );
                 }
             }
-            // Branch list/checkout are driven by the GUI dock directly; no service action needed.
-            GitEffect::SpawnBranchList => {}
-            GitEffect::SpawnBranchCheckout { .. } => {}
+            GitEffect::SpawnBranchList => {
+                if ctx.state.workspace_meta.is_git_repo {
+                    kiwi_core::git::spawn_branch_list(
+                        ctx.state.repo_root.clone(),
+                        ctx.events.sender(),
+                    );
+                }
+            }
+            GitEffect::SpawnBranchCheckout { name } => {
+                if ctx.state.workspace_meta.is_git_repo {
+                    kiwi_core::git::spawn_branch_checkout(
+                        ctx.state.repo_root.clone(),
+                        name,
+                        ctx.events.sender(),
+                    );
+                }
+            }
+            GitEffect::SpawnBranchDetail { name } => {
+                if ctx.state.workspace_meta.is_git_repo {
+                    kiwi_core::git::spawn_branch_detail(
+                        ctx.state.repo_root.clone(),
+                        name,
+                        ctx.events.sender(),
+                    );
+                }
+            }
             _ => {} // #[non_exhaustive] forward-compat
         },
         SideEffect::GitHub(effect) => match effect {
@@ -191,6 +216,14 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
                     ctx.events.sender(),
                 );
             }
+            GitHubEffect::SpawnIssueCreate { request } => {
+                spawn_github_issue_create(
+                    ctx.state.repo_root.clone(),
+                    ctx.state.config.github.command.clone(),
+                    request,
+                    ctx.events.sender(),
+                );
+            }
             GitHubEffect::SpawnIssueCreateBranch { number } => {
                 spawn_github_issue_create_branch(
                     ctx.state.repo_root.clone(),
@@ -212,6 +245,25 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
                     ctx.state.config.github.command.clone(),
                     number,
                     labels,
+                    ctx.events.sender(),
+                );
+            }
+            GitHubEffect::SpawnRepoMilestones => {
+                spawn_github_repo_milestones_load(
+                    ctx.state.repo_root.clone(),
+                    ctx.state.config.github.command.clone(),
+                    ctx.events.sender(),
+                );
+            }
+            GitHubEffect::SpawnIssueMilestoneAssign {
+                number,
+                milestone_title,
+            } => {
+                spawn_github_issue_milestone_assign(
+                    ctx.state.repo_root.clone(),
+                    ctx.state.config.github.command.clone(),
+                    number,
+                    milestone_title,
                     ctx.events.sender(),
                 );
             }

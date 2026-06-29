@@ -350,6 +350,7 @@ fn sync_github_left_pane(view: &mut ReduceView<'_>) {
     view.github.left_pane = match view.navigation.main_tab {
         MainTab::Issues => GitHubLeftPane::Issues,
         MainTab::Prs => GitHubLeftPane::Prs,
+        MainTab::Branches => GitHubLeftPane::Branches,
         _ => view.github.left_pane,
     };
 }

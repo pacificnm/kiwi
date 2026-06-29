@@ -4,16 +4,13 @@ use super::panel::{
     path_for_row, row_for_path, scroll_offset_for_row, selectable_row_indices, GitPanelRow,
 };
 
-pub fn clamp_git_scroll(state: &mut GitState, rows: &[GitPanelRow], viewport_rows: usize) {
-    let total = rows.len();
-    if total == 0 {
+pub fn clamp_git_scroll(state: &mut GitState, rows: &[GitPanelRow], max_scroll_offset: usize) {
+    if rows.is_empty() {
         state.scroll_offset = 0;
         return;
     }
-    let viewport = viewport_rows.max(1);
-    let max_offset = total.saturating_sub(viewport);
-    if state.scroll_offset > max_offset {
-        state.scroll_offset = max_offset;
+    if state.scroll_offset > max_scroll_offset {
+        state.scroll_offset = max_scroll_offset;
     }
 }
 
@@ -109,7 +106,7 @@ mod tests {
             ..GitState::default()
         };
         let rows = build_panel_rows(&state.file_entries, true);
-        clamp_git_scroll(&mut state, &rows, 5);
+        clamp_git_scroll(&mut state, &rows, 0);
         assert_eq!(state.scroll_offset, 0);
     }
 }

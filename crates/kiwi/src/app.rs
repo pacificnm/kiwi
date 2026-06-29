@@ -23,10 +23,12 @@ use crate::editor::{
 use crate::file_tree::spawn_directory_load;
 use crate::git::{spawn_branch_checkout, spawn_branch_list, spawn_git_refresh};
 use crate::github::{
-    spawn_github_auth_check, spawn_github_issue_comment, spawn_github_issue_create_branch,
+    spawn_github_auth_check, spawn_github_issue_comment, spawn_github_issue_create,
+    spawn_github_issue_create_branch,
     spawn_github_issue_detail_load, spawn_github_issue_label_apply, spawn_github_issue_list_load,
-    spawn_github_open_browser, spawn_github_pr_create, spawn_github_pr_detail_load,
-    spawn_github_pr_list_load, spawn_github_pr_merge, spawn_github_repo_labels_load,
+    spawn_github_issue_milestone_assign, spawn_github_open_browser, spawn_github_pr_create,
+    spawn_github_pr_detail_load, spawn_github_pr_list_load, spawn_github_pr_merge,
+    spawn_github_repo_labels_load, spawn_github_repo_milestones_load,
     GhContextTarget, GitHubLeftPane,
 };
 use crate::layout::{agent_pty_size, compute_layout, shell_pty_size, FocusTarget, Region};
@@ -43,8 +45,9 @@ use crate::state::{
     FsEffect, GitEffect, GitHubEffect, SearchEffect, ShellEffect, SideEffect,
 };
 use crate::ui::{
-    branch_interaction_at, draw_frame, file_tree_interaction_at, git_interaction_at,
-    github_context_menu_item_at, github_issue_interaction_at, github_pr_interaction_at,
+    draw_frame, file_tree_interaction_at, git_interaction_at,
+    github_branch_interaction_at, github_context_menu_item_at, github_issue_interaction_at,
+    github_pr_interaction_at,
     map_agent_session_click, map_mouse_click, map_mouse_wheel, mouse_interactions_enabled,
     palette_match_at, search_interaction_at, DoubleClickTarget, DoubleClickTracker,
     FileTreeMouseAction, WheelDirection,
@@ -584,6 +587,14 @@ impl App {
                             self.events.sender(),
                         );
                     }
+                    GitHubEffect::SpawnIssueCreate { request } => {
+                        spawn_github_issue_create(
+                            self.state.repo_root.clone(),
+                            self.state.config.github.command.clone(),
+                            request,
+                            self.events.sender(),
+                        );
+                    }
                     GitHubEffect::SpawnIssueCreateBranch { number } => {
                         spawn_github_issue_create_branch(
                             self.state.repo_root.clone(),
@@ -605,6 +616,25 @@ impl App {
                             self.state.config.github.command.clone(),
                             number,
                             labels,
+                            self.events.sender(),
+                        );
+                    }
+                    GitHubEffect::SpawnRepoMilestones => {
+                        spawn_github_repo_milestones_load(
+                            self.state.repo_root.clone(),
+                            self.state.config.github.command.clone(),
+                            self.events.sender(),
+                        );
+                    }
+                    GitHubEffect::SpawnIssueMilestoneAssign {
+                        number,
+                        milestone_title,
+                    } => {
+                        spawn_github_issue_milestone_assign(
+                            self.state.repo_root.clone(),
+                            self.state.config.github.command.clone(),
+                            number,
+                            milestone_title,
                             self.events.sender(),
                         );
                     }
@@ -923,6 +953,29 @@ impl App {
         }
 
         if self.state.navigation.left_tab == LeftNavTab::Gh
+            && self.state.github.left_pane == GitHubLeftPane::Branches
+        {
+            if let Some(index) = github_branch_interaction_at(
+                &self.state,
+                self.state.layout.rects.left_content,
+                mouse.column,
+                mouse.row,
+            ) {
+                let _ = self.dispatch(AppEvent::Command(AppCommand::Navigation(
+                    crate::navigation::NavCommand::SetFocus(FocusTarget::Left),
+                )));
+                if self
+                    .double_click
+                    .register(DoubleClickTarget::GitHubBranch(index))
+                {
+                    let _ = self.dispatch(AppEvent::Command(AppCommand::BranchSelect(index)));
+                    return self.dispatch(AppEvent::Command(AppCommand::GitHubOpenSelected));
+                }
+                return self.dispatch(AppEvent::Command(AppCommand::BranchSelect(index)));
+            }
+        }
+
+        if self.state.navigation.left_tab == LeftNavTab::Gh
             && self.state.github.left_pane == GitHubLeftPane::Prs
         {
             if let Some(index) = github_pr_interaction_at(
@@ -965,26 +1018,6 @@ impl App {
                     return self.dispatch(AppEvent::Command(AppCommand::GitHubOpenSelected));
                 }
                 return self.dispatch(AppEvent::Command(AppCommand::GitHubSelectIssue(index)));
-            }
-        }
-
-        if self.state.navigation.main_tab == MainTab::Branches
-            && self.state.navigation.focus == FocusTarget::Main
-        {
-            if let Some(index) = branch_interaction_at(
-                &self.state,
-                self.state.layout.rects.main_content,
-                mouse.column,
-                mouse.row,
-            ) {
-                let _ = self.dispatch(AppEvent::Command(AppCommand::Navigation(
-                    crate::navigation::NavCommand::SetFocus(FocusTarget::Main),
-                )));
-                if self.double_click.register(DoubleClickTarget::Branch(index)) {
-                    let _ = self.dispatch(AppEvent::Command(AppCommand::BranchSelect(index)));
-                    return self.dispatch(AppEvent::Command(AppCommand::BranchCheckoutSelected));
-                }
-                return self.dispatch(AppEvent::Command(AppCommand::BranchSelect(index)));
             }
         }
 
@@ -1074,6 +1107,10 @@ impl App {
 
         if self.state.github.label_picker.is_some() {
             return self.handle_label_picker_key(key);
+        }
+
+        if self.state.github.milestone_picker.is_some() {
+            return self.handle_milestone_picker_key(key);
         }
 
         if self.state.github.context_menu.is_some() {
@@ -1214,6 +1251,22 @@ impl App {
         }
     }
 
+    fn handle_milestone_picker_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Esc => self.dispatch(AppEvent::Command(AppCommand::GitHubMilestonePickerCancel)),
+            KeyCode::Enter => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubMilestonePickerApply))
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubMilestonePickerMove(1)))
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubMilestonePickerMove(-1)))
+            }
+            _ => false,
+        }
+    }
+
     fn handle_github_context_menu_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
         match key.code {
             KeyCode::Esc => self.dispatch(AppEvent::Command(AppCommand::GitHubContextMenuCancel)),
@@ -1296,7 +1349,7 @@ impl App {
             || (self.state.navigation.focus == FocusTarget::Main
                 && matches!(
                     self.state.navigation.main_tab,
-                    MainTab::Issues | MainTab::Prs
+                    MainTab::Issues | MainTab::Prs | MainTab::Branches
                 ))
     }
 
@@ -1311,6 +1364,10 @@ impl App {
             gh_left_focused && self.state.github.left_pane == crate::github::GitHubLeftPane::Issues;
         let gh_prs_list_focused =
             gh_left_focused && self.state.github.left_pane == crate::github::GitHubLeftPane::Prs;
+        let gh_branches_list_focused =
+            gh_left_focused && self.state.github.left_pane == crate::github::GitHubLeftPane::Branches;
+        let branches_detail_focused = self.state.navigation.focus == FocusTarget::Main
+            && self.state.navigation.main_tab == MainTab::Branches;
         let issues_detail_focused = self.state.navigation.focus == FocusTarget::Main
             && self.state.navigation.main_tab == MainTab::Issues;
         let prs_detail_focused = self.state.navigation.focus == FocusTarget::Main
@@ -1318,7 +1375,11 @@ impl App {
 
         match key.code {
             KeyCode::Char('R') => {
-                self.dispatch(AppEvent::Command(AppCommand::GitHubRefresh));
+                if gh_branches_list_focused || branches_detail_focused {
+                    self.dispatch(AppEvent::Command(AppCommand::BranchRefresh));
+                } else {
+                    self.dispatch(AppEvent::Command(AppCommand::GitHubRefresh));
+                }
                 true
             }
             KeyCode::Char('o') if self.github_input_active() => {
@@ -1335,6 +1396,20 @@ impl App {
                 self.dispatch(AppEvent::Command(AppCommand::GitHubSelectLeftPane(
                     crate::github::GitHubLeftPane::Prs,
                 )));
+                true
+            }
+            KeyCode::Char('b') if gh_left_focused => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubSelectLeftPane(
+                    crate::github::GitHubLeftPane::Branches,
+                )));
+                true
+            }
+            KeyCode::Char('j') if gh_branches_list_focused => {
+                self.dispatch(AppEvent::Command(AppCommand::BranchMoveSelection(1)));
+                true
+            }
+            KeyCode::Char('k') if gh_branches_list_focused => {
+                self.dispatch(AppEvent::Command(AppCommand::BranchMoveSelection(-1)));
                 true
             }
             KeyCode::Char('j') if gh_prs_list_focused => {
@@ -1389,6 +1464,22 @@ impl App {
                 self.dispatch(AppEvent::Command(AppCommand::GitHubPrDetailPageScroll(-1)));
                 true
             }
+            KeyCode::Char('j') if branches_detail_focused => {
+                self.dispatch(AppEvent::Command(AppCommand::BranchDetailScroll(1)));
+                true
+            }
+            KeyCode::Char('k') if branches_detail_focused => {
+                self.dispatch(AppEvent::Command(AppCommand::BranchDetailScroll(-1)));
+                true
+            }
+            KeyCode::Enter if branches_detail_focused => {
+                self.dispatch(AppEvent::Command(AppCommand::BranchCheckoutSelected));
+                true
+            }
+            KeyCode::Enter if gh_branches_list_focused => {
+                self.dispatch(AppEvent::Command(AppCommand::GitHubOpenSelected));
+                true
+            }
             KeyCode::Enter if gh_issues_list_focused => {
                 self.dispatch(AppEvent::Command(AppCommand::GitHubOpenSelected));
                 true
@@ -1424,10 +1515,10 @@ impl App {
 
         match key.code {
             KeyCode::Char('j') => {
-                self.dispatch(AppEvent::Command(AppCommand::BranchMoveSelection(1)))
+                self.dispatch(AppEvent::Command(AppCommand::BranchDetailScroll(1)))
             }
             KeyCode::Char('k') => {
-                self.dispatch(AppEvent::Command(AppCommand::BranchMoveSelection(-1)))
+                self.dispatch(AppEvent::Command(AppCommand::BranchDetailScroll(-1)))
             }
             KeyCode::Char('R') => self.dispatch(AppEvent::Command(AppCommand::BranchRefresh)),
             KeyCode::Enter => self.dispatch(AppEvent::Command(AppCommand::BranchCheckoutSelected)),

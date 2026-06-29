@@ -1,8 +1,10 @@
 //! Dock panel renderers.
 
+mod branches_detail;
 mod agent;
 mod ansi;
 mod config;
+pub(crate) mod context_menu;
 mod explorer;
 mod git_diff;
 mod git_status;
@@ -46,6 +48,7 @@ pub fn render_panel(tab: KiwiTab, ui: &mut Ui, ctx: &mut PanelContext<'_>) {
         KiwiTab::Agent => agent::render(ui, ctx),
         KiwiTab::GitHubIssues => github_left::render(ui, ctx),
         KiwiTab::Issues => issues_detail::render(ui, ctx),
+        KiwiTab::GitLog => branches_detail::render(ui, ctx),
         KiwiTab::GitHubPrs => github_prs::render(ui, ctx),
         KiwiTab::Search => search::render(ui, ctx),
         KiwiTab::Preview => preview::render(ui, ctx),
@@ -65,6 +68,7 @@ mod routing_tests {
         Agent,
         GitHubLeft,
         IssuesDetail,
+        BranchesDetail,
         GitHubPrs,
         Search,
         Preview,
@@ -78,6 +82,7 @@ mod routing_tests {
             KiwiTab::Agent => PanelRoute::Agent,
             KiwiTab::GitHubIssues => PanelRoute::GitHubLeft,
             KiwiTab::Issues => PanelRoute::IssuesDetail,
+            KiwiTab::GitLog => PanelRoute::BranchesDetail,
             KiwiTab::GitHubPrs => PanelRoute::GitHubPrs,
             KiwiTab::Search => PanelRoute::Search,
             KiwiTab::Preview => PanelRoute::Preview,
@@ -95,6 +100,7 @@ mod routing_tests {
     #[test]
     fn github_tabs_use_dedicated_panels() {
         assert_eq!(panel_route(KiwiTab::GitHubIssues), PanelRoute::GitHubLeft);
+        assert_eq!(panel_route(KiwiTab::GitLog), PanelRoute::BranchesDetail);
         assert_eq!(panel_route(KiwiTab::Issues), PanelRoute::IssuesDetail);
         assert_eq!(panel_route(KiwiTab::GitHubPrs), PanelRoute::GitHubPrs);
     }

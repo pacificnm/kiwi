@@ -3,17 +3,18 @@ use std::time::SystemTime;
 use super::agent::agent_spawn_effects_if_needed;
 use super::git::git_refresh_effects;
 
+use crate::git::branch_selected_name;
 use crate::github::{
-    apply_label_picker_load, ensure_issue_selection, ensure_pr_selection,
+    apply_label_picker_load, apply_milestone_picker_load, ensure_issue_selection, ensure_pr_selection,
     format_issue_agent_prompt, format_pr_agent_prompt, issue_body_excerpt_from_detail, issue_move_selection, issue_select_row,
     missing_browser_target_message, page_scroll_issue_detail, pr_move_selection, pr_select_row,
     pull_request_is_mergeable, resolve_browser_target, scroll_issue_detail, selected_pull_request,
     GhContextMenuAction, GhContextMenuState, GhContextTarget, GitHubLeftPane,
-    IssueDetailLoadResult, IssueListLoadResult, LabelPickerState,
+    IssueDetailLoadResult, IssueListLoadResult, LabelPickerState, MilestonePickerState,
     PrDetailLoadResult, PrListLoadResult, ISSUE_LIST_CACHE_SECS, PR_LIST_CACHE_SECS,
 };
 use crate::navigation::{FocusTarget, LeftNavTab, MainTab, NavCommand};
-use crate::state::{PalettePrompt, ReduceView};
+use crate::state::{GitHubIssueCreateModal, PalettePrompt, ReduceView};
 
 use crate::events::{AgentEffect, GitHubEffect, SideEffect};
 
@@ -418,6 +419,20 @@ pub(super) fn reduce_github_open_selected(state: &mut ReduceView<'_>) -> Vec<Sid
             state.set_dirty();
             github_pr_detail_effects(state, number, true)
         }
+        GitHubLeftPane::Branches => {
+            if branch_selected_name(state.branches).is_none() {
+                return Vec::new();
+            }
+
+            state
+                .navigation
+                .apply(NavCommand::SelectMainTab(MainTab::Branches));
+            state
+                .navigation
+                .apply(NavCommand::SetFocus(FocusTarget::Main));
+            state.set_dirty();
+            super::git::branch_detail_access_effects(state, true)
+        }
     }
 }
 
@@ -437,11 +452,17 @@ pub(super) fn reduce_github_select_left_pane(
                 .navigation
                 .apply(NavCommand::SelectMainTab(MainTab::Prs));
         }
+        GitHubLeftPane::Branches => {
+            state
+                .navigation
+                .apply(NavCommand::SelectMainTab(MainTab::Branches));
+        }
     }
     state.set_dirty();
     match pane {
         GitHubLeftPane::Issues => github_issue_list_effects(state, false),
         GitHubLeftPane::Prs => github_pr_list_effects(state, false),
+        GitHubLeftPane::Branches => super::git::branch_list_access_effects(state, false),
     }
 }
 
@@ -684,6 +705,94 @@ pub(super) fn reduce_github_label_picker_cancel(state: &mut ReduceView<'_>) -> V
     Vec::new()
 }
 
+pub(super) fn reduce_github_repo_milestones_loaded(
+    state: &mut ReduceView<'_>,
+    result: crate::github::RepoMilestonesLoadResult,
+) -> Vec<SideEffect> {
+    let Some(picker) = state.github.milestone_picker.as_mut() else {
+        return Vec::new();
+    };
+
+    apply_milestone_picker_load(picker, result);
+    state.set_dirty();
+    Vec::new()
+}
+
+pub(super) fn reduce_github_issue_milestone_assigned(
+    state: &mut ReduceView<'_>,
+    number: u32,
+    result: crate::github::IssueActionResult,
+) -> Vec<SideEffect> {
+    let Some(picker) = state.github.milestone_picker.as_mut() else {
+        return Vec::new();
+    };
+
+    if picker.issue_number != number {
+        return Vec::new();
+    }
+
+    picker.applying = false;
+
+    if result.success {
+        state.github.milestone_picker = None;
+        state.github.issue_action_message = Some(format!("Milestone updated on #{number}"));
+        state.github.issues_loaded_at = None;
+        clear_issue_detail_cache(state.github);
+        let mut effects = github_issue_list_effects(state, true);
+        effects.extend(github_issue_detail_effects(state, number, true));
+        state.set_dirty();
+        return effects;
+    }
+
+    picker.error = result.error.clone();
+    state.set_dirty();
+    Vec::new()
+}
+
+pub(super) fn reduce_github_milestone_picker_move(state: &mut ReduceView<'_>, delta: i32) -> Vec<SideEffect> {
+    if let Some(picker) = state.github.milestone_picker.as_mut() {
+        picker.move_cursor(delta);
+        state.set_dirty();
+    }
+    Vec::new()
+}
+
+pub(super) fn reduce_github_milestone_picker_apply(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
+    let Some(picker) = state.github.milestone_picker.as_mut() else {
+        return Vec::new();
+    };
+
+    if picker.loading || picker.applying {
+        return Vec::new();
+    }
+
+    let Some(milestone) = picker.selected_milestone() else {
+        state
+            .notifications
+            .show_toast("No milestones available");
+        state.set_dirty();
+        return Vec::new();
+    };
+
+    let number = picker.issue_number;
+    let milestone_title = milestone.title.clone();
+    picker.applying = true;
+    picker.error = None;
+    state.set_dirty();
+    vec![SideEffect::GitHub(GitHubEffect::SpawnIssueMilestoneAssign {
+        number,
+        milestone_title,
+    })]
+}
+
+pub(super) fn reduce_github_milestone_picker_cancel(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
+    if state.github.milestone_picker.is_some() {
+        state.github.milestone_picker = None;
+        state.set_dirty();
+    }
+    Vec::new()
+}
+
 pub(super) fn reduce_github_context_menu_open(
     state: &mut ReduceView<'_>,
     anchor_x: u16,
@@ -818,8 +927,27 @@ pub(super) fn execute_github_list_action(
             }
             github_issue_create_branch_effects(state, selected_issue_number(state.github))
         }
-        GhContextMenuAction::Comment => github_issue_comment_prompt_effects(state),
-        GhContextMenuAction::AddLabels => github_issue_label_picker_effects(state),
+        GhContextMenuAction::Comment => {
+            if let GhContextTarget::Issue { list_index } = target {
+                let viewport_rows = issues_viewport_rows(state);
+                issue_select_row(state.github, list_index, viewport_rows);
+            }
+            github_issue_comment_prompt_effects(state)
+        }
+        GhContextMenuAction::AddLabels => {
+            if let GhContextTarget::Issue { list_index } = target {
+                let viewport_rows = issues_viewport_rows(state);
+                issue_select_row(state.github, list_index, viewport_rows);
+            }
+            github_issue_label_picker_effects(state)
+        }
+        GhContextMenuAction::AssignMilestone => {
+            if let GhContextTarget::Issue { list_index } = target {
+                let viewport_rows = issues_viewport_rows(state);
+                issue_select_row(state.github, list_index, viewport_rows);
+            }
+            github_issue_milestone_picker_effects(state)
+        }
         GhContextMenuAction::Merge => github_pr_merge_effects(state),
         GhContextMenuAction::OpenInBrowser => github_open_in_browser_effects(state),
         GhContextMenuAction::SendToAgent => match target {
@@ -917,6 +1045,28 @@ pub(super) fn github_issue_label_picker_effects(state: &mut ReduceView<'_>) -> V
     state.github.label_picker = Some(LabelPickerState::new(number, existing_labels));
     state.set_dirty();
     vec![SideEffect::GitHub(GitHubEffect::SpawnRepoLabels)]
+}
+
+pub(super) fn github_issue_milestone_picker_effects(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
+    if !state.github.auth_ok {
+        state
+            .notifications
+            .show_toast("GitHub authentication required");
+        state.set_dirty();
+        return Vec::new();
+    }
+
+    let Some(number) = selected_issue_number(state.github) else {
+        state
+            .notifications
+            .show_toast("Select an issue in the GH left list first");
+        state.set_dirty();
+        return Vec::new();
+    };
+
+    state.github.milestone_picker = Some(MilestonePickerState::new(number));
+    state.set_dirty();
+    vec![SideEffect::GitHub(GitHubEffect::SpawnRepoMilestones)]
 }
 
 pub(super) fn github_open_in_browser_effects(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
@@ -1116,6 +1266,87 @@ pub(super) fn reduce_github_open_browser_completed(
             ))
         });
     } else if let Some(error) = result.error {
+        state.github.issue_action_message = Some(error);
+    }
+    state.set_dirty();
+    Vec::new()
+}
+
+pub(super) fn reduce_github_issue_create_open(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
+    if !state.github.auth_ok {
+        state
+            .notifications
+            .show_toast("GitHub authentication required");
+        state.set_dirty();
+        return Vec::new();
+    }
+
+    state.github.issue_create_modal = GitHubIssueCreateModal {
+        open: true,
+        ..Default::default()
+    };
+    state.set_dirty();
+    Vec::new()
+}
+
+pub(super) fn reduce_github_issue_create_cancel(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
+    if state.github.issue_create_modal.open {
+        state.github.issue_create_modal = GitHubIssueCreateModal::default();
+        state.set_dirty();
+    }
+    Vec::new()
+}
+
+pub(super) fn reduce_github_issue_create_submit(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
+    if !state.github.issue_create_modal.open || state.github.issue_create_modal.submitting {
+        return Vec::new();
+    }
+
+    let title = state.github.issue_create_modal.title.trim().to_string();
+    if title.is_empty() {
+        state
+            .notifications
+            .show_toast("Issue title cannot be empty");
+        state.set_dirty();
+        return Vec::new();
+    }
+
+    let request = crate::github::IssueCreateRequest {
+        title,
+        body: state.github.issue_create_modal.body.clone(),
+    };
+
+    state.github.issue_create_modal.submitting = true;
+    state.github.issue_create_modal.error = None;
+    state.set_dirty();
+    vec![SideEffect::GitHub(GitHubEffect::SpawnIssueCreate { request })]
+}
+
+pub(super) fn reduce_github_issue_create_completed(
+    state: &mut ReduceView<'_>,
+    outcome: crate::github::IssueCreateResult,
+) -> Vec<SideEffect> {
+    state.github.issue_create_modal.submitting = false;
+
+    if outcome.result.success {
+        state.github.issue_create_modal = GitHubIssueCreateModal::default();
+        state.github.issue_action_message = outcome
+            .result
+            .detail
+            .or_else(|| outcome.number.map(|n| format!("Created issue #{n}")));
+        state.github.issues_loaded_at = None;
+        clear_issue_detail_cache(state.github);
+        let mut effects = github_issue_list_effects(state, true);
+        if let Some(number) = outcome.number {
+            state.github.selected_issue = Some(number);
+            effects.extend(github_issue_detail_effects(state, number, true));
+        }
+        state.set_dirty();
+        return effects;
+    }
+
+    state.github.issue_create_modal.error = outcome.result.error.clone();
+    if let Some(error) = outcome.result.error {
         state.github.issue_action_message = Some(error);
     }
     state.set_dirty();

@@ -7,7 +7,7 @@ use kiwi_core::events::AppCommand;
 use kiwi_core::file_tree::{file_type_category, FileNode, FileTreeState, VisibleTreeRow};
 use kiwi_core::theme::SemanticRole;
 
-use super::layout::render_virtual_rows;
+use super::layout::{render_virtual_rows, selectable_label};
 use crate::dock::context::PanelContext;
 
 const ROW_HEIGHT: f32 = 18.0;
@@ -37,7 +37,7 @@ pub fn render(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
         .collect();
 
     let mut scroll_offset = ctx.state.file_tree.scroll_offset;
-    let viewport_rows = render_virtual_rows(
+    let layout = render_virtual_rows(
         ui,
         ROW_HEIGHT,
         rows.len(),
@@ -48,10 +48,10 @@ pub fn render(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
         },
     );
     ctx.state.file_tree.scroll_offset = scroll_offset;
-    ctx.state.viewport.file_tree_rows = viewport_rows;
+    ctx.state.viewport.file_tree_rows = layout.viewport_rows;
     ctx.state
         .file_tree
-        .clamp_scroll_to_viewport(viewport_rows);
+        .clamp_scroll_to_viewport(layout.max_start);
 }
 
 /// Keyboard shortcuts when the Explorer dock tab is focused ([`gui-keyboard-shortcuts.md`]).
@@ -110,15 +110,21 @@ fn render_row(
     ui.horizontal(|ui| {
         ui.set_min_height(ROW_HEIGHT);
         ui.add_space(indent);
-        let icon = ui.add(
-            egui::Label::new(RichText::new(glyph).color(chrome_color).monospace()).sense(
-                if node.is_dir {
-                    egui::Sense::click()
-                } else {
-                    egui::Sense::hover()
-                },
-            ),
-        );
+        let icon = ui
+            .add(
+                egui::Label::new(RichText::new(glyph).color(chrome_color).monospace()).sense(
+                    if node.is_dir {
+                        egui::Sense::click()
+                    } else {
+                        egui::Sense::hover()
+                    },
+                ),
+            )
+            .on_hover_cursor(if node.is_dir {
+                egui::CursorIcon::PointingHand
+            } else {
+                egui::CursorIcon::default()
+            });
         if node.is_dir && icon.clicked() {
             if node.expanded {
                 let _ = (ctx.dispatch)(AppCommand::FileTreeCollapse(path.clone()));
@@ -155,13 +161,13 @@ fn render_name_and_badge(
         if selected {
             text = text.strong();
         }
-        ui.add(egui::Label::new(text).sense(egui::Sense::click()))
+        selectable_label(ui, text)
     } else {
         let mut text = RichText::new(&node.name).color(name_color);
         if selected {
             text = text.strong();
         }
-        ui.add(egui::Label::new(text).sense(egui::Sense::click()))
+        selectable_label(ui, text)
     }
 }
 

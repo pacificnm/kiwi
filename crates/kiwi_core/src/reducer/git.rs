@@ -6,9 +6,10 @@ use crate::git::{
     branch_move_selection, branch_select_row, branch_selected_name,
     build_panel_rows, clamp_git_scroll, ensure_branch_selection,
     ensure_git_selection, git_move_selection, git_select_row, patch_git_file_entries,
-    row_for_path, BranchEntry, GitFileEntry,
+    row_for_path, BranchDetail, BranchEntry, GitFileEntry,
 };
-use crate::navigation::{FocusTarget, MainTab, NavCommand};
+use crate::github::GitHubLeftPane;
+use crate::navigation::{FocusTarget, LeftNavTab, MainTab, NavCommand};
 use crate::state::ReduceView;
 
 use crate::events::{GitEffect, SideEffect};
@@ -23,8 +24,14 @@ pub fn git_refresh_effects(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
     vec![SideEffect::Git(GitEffect::SpawnRefresh)]
 }
 
+pub fn branch_list_surface_active(state: &ReduceView<'_>) -> bool {
+    state.navigation.main_tab == MainTab::Branches
+        || (state.navigation.left_tab == LeftNavTab::Gh
+            && state.github.left_pane == GitHubLeftPane::Branches)
+}
+
 pub fn branch_list_access_effects(state: &mut ReduceView<'_>, force: bool) -> Vec<SideEffect> {
-    if state.navigation.main_tab != MainTab::Branches && !force {
+    if !branch_list_surface_active(state) && !force {
         return Vec::new();
     }
 
@@ -61,6 +68,45 @@ pub fn branch_checkout_effects(state: &mut ReduceView<'_>, branch_name: String) 
     vec![SideEffect::Git(GitEffect::SpawnBranchCheckout { name: branch_name })]
 }
 
+pub fn branch_detail_access_effects(state: &mut ReduceView<'_>, force: bool) -> Vec<SideEffect> {
+    if state.navigation.main_tab != MainTab::Branches {
+        return Vec::new();
+    }
+
+    if !state.workspace_meta.is_git_repo {
+        return Vec::new();
+    }
+
+    let Some(branch_name) = branch_selected_name(state.branches).map(str::to_string) else {
+        return Vec::new();
+    };
+
+    if state.branches.detail_loading {
+        return Vec::new();
+    }
+
+    if !force
+        && state.branches.detail_for_branch.as_deref() == Some(branch_name.as_str())
+        && state.branches.detail.is_some()
+    {
+        return Vec::new();
+    }
+
+    state.branches.detail_loading = true;
+    state.branches.detail_error = None;
+    state.set_dirty();
+    vec![SideEffect::Git(GitEffect::SpawnBranchDetail {
+        name: branch_name,
+    })]
+}
+
+fn clear_branch_detail(branches: &mut crate::state::BranchState) {
+    branches.detail = None;
+    branches.detail_for_branch = None;
+    branches.detail_error = None;
+    branches.detail_scroll_offset = 0;
+}
+
 pub(super) fn reduce_git_refresh_requested(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
     git_refresh_effects(state)
 }
@@ -94,7 +140,11 @@ pub(super) fn reduce_git_status_updated(
         sync_git_status_patch_to_file_tree(state, &file_patch);
         let git_rows = build_panel_rows(&state.git.file_entries, state.config.git.show_untracked);
         ensure_git_selection(state.git, &git_rows);
-        clamp_git_scroll(state.git, &git_rows, git_viewport_rows(state).max(1));
+        clamp_git_scroll(
+            state.git,
+            &git_rows,
+            git_rows.len().saturating_sub(git_viewport_rows(state).max(1)),
+        );
     }
 
     if let Some(path) = git_selected {
@@ -121,7 +171,9 @@ pub(super) fn reduce_git_status_updated(
 }
 
 pub(super) fn reduce_branch_refresh(state: &mut ReduceView<'_>) -> Vec<SideEffect> {
-    branch_list_access_effects(state, true)
+    let mut effects = branch_list_access_effects(state, true);
+    effects.extend(branch_detail_access_effects(state, true));
+    effects
 }
 
 pub(super) fn reduce_branch_move_selection(state: &mut ReduceView<'_>, delta: i32) -> Vec<SideEffect> {
@@ -133,7 +185,12 @@ pub(super) fn reduce_branch_move_selection(state: &mut ReduceView<'_>, delta: i3
 
 pub(super) fn reduce_branch_select(state: &mut ReduceView<'_>, index: usize) -> Vec<SideEffect> {
     let viewport_rows = state.viewport.branches_rows;
+    let previous = branch_selected_name(state.branches).map(str::to_string);
     branch_select_row(state.branches, index, viewport_rows);
+    let current = branch_selected_name(state.branches).map(str::to_string);
+    if previous != current {
+        clear_branch_detail(state.branches);
+    }
     state.set_dirty();
     Vec::new()
 }
@@ -217,6 +274,44 @@ pub(super) fn reduce_branch_checkout_completed(
     }
     state.set_dirty();
     effects
+}
+
+pub(super) fn reduce_branch_detail_loaded(
+    state: &mut ReduceView<'_>,
+    name: String,
+    detail: Option<BranchDetail>,
+    error: Option<String>,
+) -> Vec<SideEffect> {
+    state.branches.detail_loading = false;
+    if let Some(message) = error {
+        state.branches.detail = None;
+        state.branches.detail_for_branch = Some(name.clone());
+        state.branches.detail_error = Some(message.clone());
+        state
+            .logs
+            .push_error(format!("branch detail failed for {name}: {message}"));
+    } else {
+        state.branches.detail_error = None;
+        state.branches.detail_for_branch = Some(name);
+        state.branches.detail = detail;
+    }
+    state.set_dirty();
+    Vec::new()
+}
+
+pub(super) fn reduce_branch_detail_scroll(state: &mut ReduceView<'_>, delta: i32) -> Vec<SideEffect> {
+    let line_count = state
+        .branches
+        .detail
+        .as_ref()
+        .map(|detail| detail.display_lines(state.git.ahead, state.git.behind).len())
+        .unwrap_or(0);
+    let viewport_rows = state.viewport.github_detail_rows.max(1);
+    let max_offset = line_count.saturating_sub(viewport_rows);
+    let next = (state.branches.detail_scroll_offset as i32 + delta).clamp(0, max_offset as i32);
+    state.branches.detail_scroll_offset = usize::try_from(next).unwrap_or(0);
+    state.set_dirty();
+    Vec::new()
 }
 
 pub(super) fn sync_git_status_patch_to_file_tree(

@@ -14,8 +14,10 @@ pub use kiwi_core::github::{
 };
 #[allow(unused_imports)]
 pub use kiwi_core::github::{
-    spawn_github_auth_check, spawn_github_issue_comment, spawn_github_issue_create_branch,
+    spawn_github_auth_check, spawn_github_issue_comment, spawn_github_issue_create,
+    spawn_github_issue_create_branch,
     spawn_github_issue_detail_load, spawn_github_issue_label_apply, spawn_github_issue_list_load,
-    spawn_github_open_browser, spawn_github_pr_create, spawn_github_pr_detail_load,
-    spawn_github_pr_list_load, spawn_github_pr_merge, spawn_github_repo_labels_load,
+    spawn_github_issue_milestone_assign, spawn_github_open_browser, spawn_github_pr_create,
+    spawn_github_pr_detail_load, spawn_github_pr_list_load, spawn_github_pr_merge,
+    spawn_github_repo_labels_load, spawn_github_repo_milestones_load,
 };

@@ -6,6 +6,7 @@ use crate::diff::{DiffLine, DiffSource, FileDiffLoadResult};
 use crate::git::{BranchEntry, GitFileEntry};
 use crate::github::{
     GhContextMenuState, GitHubAuthErrorKind, GitHubLeftPane, Issue, IssueDetail, LabelPickerState,
+    MilestonePickerState,
     PrDetail, PullRequest,
 };
 use crate::navigation::FocusTarget;
@@ -49,6 +50,11 @@ pub struct BranchState {
     pub checkout_loading: bool,
     pub error: Option<String>,
     pub checkout_error: Option<String>,
+    pub detail: Option<crate::git::BranchDetail>,
+    pub detail_for_branch: Option<String>,
+    pub detail_loading: bool,
+    pub detail_error: Option<String>,
+    pub detail_scroll_offset: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -133,15 +139,13 @@ impl DiffState {
         self.clamp_scroll_to_viewport(1);
     }
 
-    pub fn clamp_scroll_to_viewport(&mut self, viewport_rows: usize) {
+    pub fn clamp_scroll_to_viewport(&mut self, max_scroll_offset: usize) {
         if self.lines.is_empty() {
             self.scroll_offset = 0;
             return;
         }
-        let viewport = viewport_rows.max(1);
-        let max_offset = self.lines.len().saturating_sub(viewport);
-        if self.scroll_offset > max_offset {
-            self.scroll_offset = max_offset;
+        if self.scroll_offset > max_scroll_offset {
+            self.scroll_offset = max_scroll_offset;
         }
     }
 
@@ -210,8 +214,19 @@ pub struct GitHubState {
     pub pr_detail_scroll_offset: usize,
     pub left_pane: GitHubLeftPane,
     pub label_picker: Option<LabelPickerState>,
+    pub milestone_picker: Option<MilestonePickerState>,
     pub context_menu: Option<GhContextMenuState>,
+    pub issue_create_modal: GitHubIssueCreateModal,
     pub issue_action_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GitHubIssueCreateModal {
+    pub open: bool,
+    pub title: String,
+    pub body: String,
+    pub submitting: bool,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

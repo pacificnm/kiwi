@@ -4,6 +4,7 @@ members = [
     "crates/kiwi",
     "crates/kiwi_core",
     "crates/kiwi_gui",
+    "crates/egui_dock",
     "crates/kiwi_plugin_api",
     "crates/kiwi_plugin_loader",
     "plugins/kiwi_plugin_hello",
@@ -45,7 +46,7 @@ libloading = "0.8"
 kiwi_core = { path = "crates/kiwi_core" }
 egui = "0.31"
 eframe = { version = "0.31", default-features = false, features = ["default_fonts", "glow", "persistence", "wayland", "x11"] }
-egui_dock = { version = "0.16", features = ["serde"] }
+egui_dock = { path = "crates/egui_dock", features = ["serde"] }
 ureq = { version = "2", features = ["json"] }
 walkdir = "2"
 postgres = "0.19"

@@ -118,6 +118,45 @@ pub fn select_issue_commands(row_index: usize) -> [AppCommand; 3] {
     ]
 }
 
+/// Mouse/keyboard list interaction: select only, or select and open the main detail tab.
+#[must_use]
+pub fn issue_list_click_commands(row_index: usize, open_detail: bool) -> Vec<AppCommand> {
+    if open_detail {
+        select_issue_commands(row_index).to_vec()
+    } else {
+        vec![AppCommand::GitHubSelectIssue(row_index)]
+    }
+}
+
+/// Mouse/keyboard list interaction: select only, or select and open the main detail tab.
+#[must_use]
+pub fn pr_list_click_commands(row_index: usize, open_detail: bool) -> Vec<AppCommand> {
+    if open_detail {
+        select_pr_commands(row_index).to_vec()
+    } else {
+        vec![AppCommand::GitHubSelectPr(row_index)]
+    }
+}
+
+/// Select branch row, switch to Branches main tab, and focus center (opens detail tab).
+pub fn select_branch_commands(row_index: usize) -> [AppCommand; 3] {
+    [
+        AppCommand::BranchSelect(row_index),
+        AppCommand::Navigation(NavCommand::SelectMainTabUnpaired(MainTab::Branches)),
+        AppCommand::Navigation(NavCommand::SetFocus(FocusTarget::Main)),
+    ]
+}
+
+/// Mouse/keyboard list interaction: select only, or select and open the main detail tab.
+#[must_use]
+pub fn branch_list_click_commands(row_index: usize, open_detail: bool) -> Vec<AppCommand> {
+    if open_detail {
+        select_branch_commands(row_index).to_vec()
+    } else {
+        vec![AppCommand::BranchSelect(row_index)]
+    }
+}
+
 /// Select PR row, switch to PRs main tab, and focus center (opens detail tab).
 pub fn select_pr_commands(row_index: usize) -> [AppCommand; 3] {
     [
@@ -158,7 +197,7 @@ pub fn render_detail_lines(
 
     let total_rows = lines.len();
     let mut offset = *scroll_offset;
-    let viewport_rows = render_virtual_rows(
+    let layout = render_virtual_rows(
         ui,
         DETAIL_ROW_HEIGHT,
         total_rows,
@@ -178,8 +217,8 @@ pub fn render_detail_lines(
         },
     );
     *scroll_offset = offset;
-    ctx.state.viewport.github_detail_rows = viewport_rows;
-    viewport_rows
+    ctx.state.viewport.github_detail_rows = layout.viewport_rows;
+    layout.viewport_rows
 }
 
 #[cfg(test)]
@@ -258,6 +297,26 @@ mod tests {
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
             AppCommand::Navigation(NavCommand::SetFocus(FocusTarget::Main))
+        )));
+    }
+
+    #[test]
+    fn issue_list_click_select_only_does_not_open_main_tab() {
+        let commands = issue_list_click_commands(1, false);
+        assert_eq!(commands, vec![AppCommand::GitHubSelectIssue(1)]);
+    }
+
+    #[test]
+    fn issue_list_click_open_dispatches_full_select_flow() {
+        let commands = issue_list_click_commands(1, true);
+        assert_eq!(commands.len(), 3);
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            AppCommand::GitHubSelectIssue(1)
+        )));
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            AppCommand::Navigation(NavCommand::SelectMainTabUnpaired(MainTab::Issues))
         )));
     }
 }

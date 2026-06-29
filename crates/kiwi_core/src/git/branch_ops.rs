@@ -7,6 +7,42 @@ use super::repository::GitError;
 
 use super::branches::BranchEntry;
 
+pub fn load_branch_detail(
+    repo_root: &Path,
+    branch_name: &str,
+) -> Result<super::branches::BranchDetail, GitError> {
+    use super::branches::BranchDetail;
+
+    let repo = Repository::open(repo_root).map_err(|err| GitError::Open(err.to_string()))?;
+    let branch = repo
+        .find_branch(branch_name, BranchType::Local)
+        .map_err(|err| GitError::Branches(err.to_string()))?;
+    let is_current = branch.is_head();
+    let commit = branch
+        .get()
+        .peel_to_commit()
+        .map_err(|err| GitError::Branches(err.to_string()))?;
+    let full_sha = commit.id().to_string();
+    let tip_sha = full_sha.chars().take(8).collect();
+    let tip_subject = commit.summary().unwrap_or("").to_string();
+    let author = commit.author();
+    let tip_author = author.name().unwrap_or("unknown").to_string();
+    let tip_date = format_commit_time(commit.time());
+
+    Ok(BranchDetail {
+        name: branch_name.to_string(),
+        is_current,
+        tip_sha,
+        tip_subject,
+        tip_author,
+        tip_date,
+    })
+}
+
+fn format_commit_time(time: git2::Time) -> String {
+    format!("{} ({})", time.seconds(), time.offset_minutes())
+}
+
 pub fn list_local_branches(repo_root: &Path) -> Result<Vec<BranchEntry>, GitError> {
     let repo = Repository::open(repo_root).map_err(|err| GitError::Open(err.to_string()))?;
     let mut entries = Vec::new();

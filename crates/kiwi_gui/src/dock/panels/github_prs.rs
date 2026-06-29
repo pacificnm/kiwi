@@ -78,7 +78,7 @@ fn render_pr_detail_lines(
 ) {
     let total_rows = lines.len();
     let mut offset = *scroll_offset;
-    let viewport_rows = render_virtual_rows(
+    let layout = render_virtual_rows(
         ui,
         DETAIL_ROW_HEIGHT,
         total_rows,
@@ -104,7 +104,7 @@ fn render_pr_detail_lines(
         },
     );
     *scroll_offset = offset;
-    ctx.state.viewport.github_detail_rows = viewport_rows;
+    ctx.state.viewport.github_detail_rows = layout.viewport_rows;
 }
 
 fn detail_title(ctx: &PanelContext<'_>) -> String {

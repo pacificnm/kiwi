@@ -113,7 +113,7 @@ fn render_diff_content(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
     let mono = FontId::monospace(ui.style().text_styles[&egui::TextStyle::Monospace].size);
 
     let mut scroll_offset = ctx.state.diff.scroll_offset;
-    let viewport_rows = render_virtual_rows(
+    let layout = render_virtual_rows(
         ui,
         ROW_HEIGHT,
         lines.len(),
@@ -139,8 +139,8 @@ fn render_diff_content(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
         },
     );
     ctx.state.diff.scroll_offset = scroll_offset;
-    ctx.state.viewport.preview_rows = viewport_rows;
-    ctx.state.diff.clamp_scroll_to_viewport(viewport_rows);
+    ctx.state.viewport.preview_rows = layout.viewport_rows;
+    ctx.state.diff.clamp_scroll_to_viewport(layout.max_start);
 }
 
 fn diff_message(ctx: &PanelContext<'_>) -> Option<(String, SemanticRole)> {
