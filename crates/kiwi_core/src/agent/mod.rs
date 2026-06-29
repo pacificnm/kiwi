@@ -16,7 +16,10 @@ pub use chat::{
     AgentProvider, ChatMessage, ChatSession, ContentBlock, MessageRole, ToolResult, ToolUse,
 };
 pub use tool_executor::{execute_tool, ExecutionResult};
-pub use tools::{KiwiTool, KiwiToolDef, ToolParseError, ToolRegistry, ToolSchema};
+pub use tools::{
+    tools_for_claude, tools_for_openai, KiwiTool, KiwiToolDef, OpenAiToolSchema, ToolParseError,
+    ToolRegistry, ToolSchema, ollama_supports_tools,
+};
 pub use command::{agent_display_name, agent_launch_spec, AgentLaunchSpec};
 pub use error::AgentError;
 pub use id::AgentId;
