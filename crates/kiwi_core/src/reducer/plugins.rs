@@ -112,6 +112,7 @@ pub(super) fn reduce_set_agent(
     model: Option<String>,
     api_key_env: Option<String>,
     api_url: Option<String>,
+    api_key: Option<String>,
 ) -> Vec<SideEffect> {
     let is_api = mode.as_deref() == Some("api");
     let new_mode = if is_api { AgentMode::Api } else { AgentMode::Pty };
@@ -139,6 +140,8 @@ pub(super) fn reduce_set_agent(
         entry.model = model_str.clone();
         if let Some(ref env) = api_key_env { entry.api_key_env = env.clone(); }
         if let Some(ref url) = api_url     { entry.api_url = Some(url.clone()); }
+        // User-supplied key from Settings UI — update immediately so it's available for the session.
+        if let Some(ref key) = api_key     { entry.api_key = Some(key.clone()); }
 
         state.config.agent.active_provider = Some(provider_str.clone());
         // Keep legacy flat fields in sync.

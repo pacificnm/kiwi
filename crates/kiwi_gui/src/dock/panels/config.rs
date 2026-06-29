@@ -172,9 +172,43 @@ pub fn render(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
                     // Persist the pending selection across frames.
                     ui.ctx().data_mut(|d| d.insert_temp(pending_id, pending_name.clone()));
 
+                    // Show API key input for API-mode providers that require a key.
+                    let pending_is_api = agent_plugins
+                        .iter()
+                        .find(|p| p.name == pending_name)
+                        .map(|p| p.agent_mode.as_deref() == Some("api") && p.agent_api_key_env.is_some())
+                        .unwrap_or(false);
+
+                    let api_key_id = egui::Id::new("agent_pending_api_key");
+                    let mut pending_api_key: String = ui
+                        .ctx()
+                        .data_mut(|d| d.get_temp::<String>(api_key_id))
+                        .unwrap_or_default();
+
+                    if pending_is_api {
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            ui.label("API Key:");
+                            let resp = ui.add(
+                                egui::TextEdit::singleline(&mut pending_api_key)
+                                    .password(true)
+                                    .hint_text("Leave blank to keep existing")
+                                    .desired_width(220.0),
+                            );
+                            if resp.changed() {
+                                ui.ctx().data_mut(|d| d.insert_temp(api_key_id, pending_api_key.clone()));
+                            }
+                        });
+                        ui.label(
+                            RichText::new("Saved to config.toml — survives provider switches")
+                                .color(muted)
+                                .small(),
+                        );
+                    }
+
                     ui.add_space(4.0);
 
-                    let changed = pending_name != active_plugin_name;
+                    let changed = pending_name != active_plugin_name || !pending_api_key.is_empty();
                     let btn_label = if agent_plugins
                         .iter()
                         .any(|p| p.name == pending_name && p.agent_mode.as_deref() == Some("api"))
@@ -186,6 +220,11 @@ pub fn render(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
                     let btn = ui.add_enabled(changed, egui::Button::new(btn_label));
                     if btn.clicked() {
                         if let Some(plugin) = agent_plugins.iter().find(|p| p.name == pending_name) {
+                            let entered_key = if pending_api_key.is_empty() {
+                                None
+                            } else {
+                                Some(pending_api_key.clone())
+                            };
                             (ctx.dispatch)(AppCommand::SetAgent {
                                 command: plugin.agent_command.clone().unwrap_or_default(),
                                 args: plugin.agent_args.clone(),
@@ -194,7 +233,10 @@ pub fn render(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
                                 model: plugin.agent_model.clone(),
                                 api_key_env: plugin.agent_api_key_env.clone(),
                                 api_url: plugin.agent_api_url.clone(),
+                                api_key: entered_key,
                             });
+                            // Clear key field after applying so it doesn't linger.
+                            ui.ctx().data_mut(|d| d.remove::<String>(api_key_id));
                         }
                     }
 

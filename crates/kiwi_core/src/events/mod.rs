@@ -334,6 +334,8 @@ pub enum AppCommand {
         model: Option<String>,
         api_key_env: Option<String>,
         api_url: Option<String>,
+        /// Literal API key entered by the user in Settings; persisted to config.toml.
+        api_key: Option<String>,
     },
     // --- Native chat commands (Phase 2+) ---
     /// User submitted a message in the chat input box.

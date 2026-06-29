@@ -97,12 +97,11 @@ pub fn persist_user_agent_mode(
         return Err(ConfigError::validation("[agent] must be a table"));
     };
 
-    // Read the flat api_key before taking any sub-table borrows (borrow-checker requires this).
-    let flat_api_key = api_key.map(|s| s.to_string()).or_else(|| {
-        agent_table.get("api_key")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-    });
+    // Read legacy flat [agent].api_key before taking sub-table borrows (borrow-checker requires this).
+    let legacy_flat_key: Option<String> = agent_table
+        .get("api_key")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
 
     // Top-level agent fields.
     agent_table.insert("mode".to_string(),     toml::Value::String("api".to_string()));
@@ -131,9 +130,12 @@ pub fn persist_user_agent_mode(
     if let Some(url) = api_url {
         p.insert("api_url".to_string(), toml::Value::String(url.to_string()));
     }
-    // Write the api_key (explicit from memory, or one-time migration from flat [agent]).
-    // Use `or_insert_with` so a key already in the provider section is never overwritten.
-    if let Some(key) = flat_api_key {
+    // Write the api_key.  Explicit value (carried from memory) always wins and is written
+    // unconditionally so it survives provider switches.  When absent, migrate the legacy
+    // flat [agent].api_key once using or_insert_with (never overwrites an existing entry).
+    if let Some(key) = api_key {
+        p.insert("api_key".to_string(), toml::Value::String(key.to_string()));
+    } else if let Some(key) = legacy_flat_key {
         p.entry("api_key".to_string())
             .or_insert_with(|| toml::Value::String(key));
     }
@@ -283,5 +285,39 @@ mod tests {
 
         // Theme should survive all of this
         assert!(content.contains("kiwi-dark"), "theme was clobbered");
+    }
+
+    #[test]
+    fn per_provider_api_key_survives_switching_to_another_provider() {
+        let home = TestHome::new("per-provider-key");
+        let config_dir = home.home.join(".config/kiwi");
+        fs::create_dir_all(&config_dir).expect("create config dir");
+        // Config already has a per-provider api_key for openai (manually added by user).
+        fs::write(
+            config_dir.join("config.toml"),
+            "[agent]\nactive = \"openai\"\nmode = \"api\"\n\n\
+             [agent.providers.openai]\napi_key_env = \"OPENAI_API_KEY\"\napi_key = \"sk-openai-SECRET\"\nmodel = \"gpt-4o\"\n\n\
+             [agent.providers.claude]\napi_key_env = \"ANTHROPIC_API_KEY\"\nmodel = \"claude-opus-4-8\"\n",
+        ).expect("write config");
+
+        // Switch to Claude — OpenAI key must not be touched.
+        persist_user_agent_mode(&home.home, "claude", "claude-opus-4-8", Some("ANTHROPIC_API_KEY"), None, None)
+            .expect("persist claude");
+        let content = fs::read_to_string(user_config_path(&home.home)).expect("read");
+        assert!(content.contains("sk-openai-SECRET"), "OpenAI api_key was erased after switching to Claude");
+        assert!(content.contains("[agent.providers.claude]"), "claude section missing");
+
+        // Switch back to OpenAI carrying the key from memory — must be written unconditionally.
+        persist_user_agent_mode(&home.home, "openai", "gpt-4o", Some("OPENAI_API_KEY"), None, Some("sk-openai-SECRET"))
+            .expect("persist openai");
+        let content = fs::read_to_string(user_config_path(&home.home)).expect("read");
+        assert!(content.contains("sk-openai-SECRET"), "OpenAI api_key missing after switching back");
+
+        // Entering a new key via Settings UI should update (not just insert).
+        persist_user_agent_mode(&home.home, "openai", "gpt-4o", Some("OPENAI_API_KEY"), None, Some("sk-openai-NEWKEY"))
+            .expect("persist new key");
+        let content = fs::read_to_string(user_config_path(&home.home)).expect("read");
+        assert!(content.contains("sk-openai-NEWKEY"), "new api_key was not written");
+        assert!(!content.contains("sk-openai-SECRET"), "old api_key still present after update");
     }
 }

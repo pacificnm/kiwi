@@ -431,8 +431,8 @@ pub fn reduce_command(state: &mut ReduceView<'_>, command: AppCommand) -> Vec<Si
         AppCommand::PluginInstall { src_path } => reduce_plugin_install(state, src_path),
         AppCommand::PluginRemove { name } => reduce_plugin_remove(state, name),
         AppCommand::PluginReinstall { src_path } => reduce_plugin_reinstall(state, src_path),
-        AppCommand::SetAgent { command, args, mode, provider, model, api_key_env, api_url } => {
-            reduce_set_agent(state, command, args, mode, provider, model, api_key_env, api_url)
+        AppCommand::SetAgent { command, args, mode, provider, model, api_key_env, api_url, api_key } => {
+            reduce_set_agent(state, command, args, mode, provider, model, api_key_env, api_url, api_key)
         }
         AppCommand::AgentUserSend { agent_id, text } => {
             reduce_agent_user_send(state, agent_id, text)
