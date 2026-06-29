@@ -1,0 +1,273 @@
+c#!/usr/bin/env python3
+"""Transform kiwi reducer/commands for kiwi_core (ReduceView-based)."""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+TUI_FUNCTIONS = {
+    "reduce_terminal_resize",
+    "reduce_clipboard_copy",
+    "reduce_clipboard_cut",
+    "reduce_clipboard_paste",
+    "reduce_paste_text",
+    "reduce_selection_begin",
+    "reduce_selection_extend",
+    "reduce_selection_end",
+    "reduce_selection_clear",
+    "apply_cut_mutation",
+}
+
+REDUCER_IMPORTS = """use std::path::PathBuf;
+use std::time::SystemTime;
+
+use crate::agent::infer_status_from_scrollback;
+use crate::clipboard::PasteTarget;
+use crate::commands::{execute_command, history_input_for_id, refresh_matches};
+use crate::config::{persist_user_theme, project_has_theme_override, ThemeSettings};
+use crate::file_tree::ExpandAction;
+use crate::git::{
+    adjacent_changed_file, branch_move_selection, branch_select_row, branch_selected_name,
+    build_panel_rows, changed_file_paths, ensure_branch_selection, ensure_git_selection,
+    git_move_selection, git_select_row, patch_git_file_entries, row_for_path, BranchEntry,
+    GitFileEntry,
+};
+use crate::github::{
+    advance_pr_create_prompt, apply_label_picker_load, ensure_issue_selection, ensure_pr_selection,
+    format_issue_agent_prompt, format_pr_agent_prompt, issue_move_selection, issue_select_row,
+    missing_browser_target_message, page_scroll_issue_detail, pr_move_selection, pr_select_row,
+    pull_request_is_mergeable, resolve_browser_target, scroll_issue_detail, selected_pull_request,
+    GhContextMenuAction, GhContextMenuState, GhContextTarget, GitHubLeftPane,
+    IssueDetailLoadResult, IssueListLoadResult, LabelPickerState, PrCreatePromptAdvance,
+    PrDetailLoadResult, PrListLoadResult, ISSUE_LIST_CACHE_SECS, PR_LIST_CACHE_SECS,
+};
+use crate::navigation::{FocusTarget, LeftNavTab, MainTab, NavCommand};
+use crate::settings::{ensure_settings_selection, settings_move_selection, settings_select_row};
+use crate::state::{GitHubPrCreatePrompt, PalettePrompt, ReduceView};
+use crate::theme::load_theme_with_capabilities;
+
+use crate::events::{AppCommand, AppEvent, SideEffect};
+"""
+
+COMMANDS_IMPORTS = """mod fuzzy;
+mod registry;
+
+use kiwi_plugin_api::PluginResult;
+use kiwi_plugin_loader::{invoke_plugin_command, PluginInvokeOutcome};
+
+use crate::clipboard::resolve_copy_text_for_focus;
+use crate::editor::resolve_editor_target;
+use crate::github::{missing_browser_target_message, resolve_browser_target, LabelPickerState};
+use crate::navigation::{FocusTarget, LeftNavTab, MainTab, NavCommand};
+use crate::reducer::{
+    agent_cycle_effects, agent_new_effects, apply_navigation, diff_move_file_effects,
+    diff_set_source_effects, git_refresh_effects, github_refresh_effects,
+};
+use crate::state::{GitHubPrCreatePrompt, PalettePrompt, ReduceView};
+use crate::events::SideEffect;
+
+pub use fuzzy::{best_fuzzy_score, filter_ranked};
+pub use registry::COMMANDS;
+"""
+
+
+def strip_function(content: str, name: str) -> str:
+    pattern = rf"^fn {re.escape(name)}\("
+    lines = content.splitlines(keepends=True)
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        if re.match(pattern, lines[i]):
+            depth = 0
+            started = False
+            while i < len(lines):
+                for ch in lines[i]:
+                    if ch == "{":
+                        depth += 1
+                        started = True
+                    elif ch == "}":
+                        depth -= 1
+                i += 1
+                if started and depth == 0:
+                    break
+            continue
+        out.append(lines[i])
+        i += 1
+    return "".join(out)
+
+
+def transform_reducer_body(body: str) -> str:
+    body = re.sub(r"&mut AppState\b", "&mut ReduceView<'_>", body)
+    body = re.sub(r"state\.apply_core_theme\([^)]+\);", "", body)
+    body = re.sub(
+        r"state\.theme\.name",
+        "state.config.theme.name",
+        body,
+    )
+    body = re.sub(
+        r"assert_eq!\(state\.theme\.name",
+        "assert_eq!(state.config.theme.name",
+        body,
+    )
+    body = body.replace(
+        "state.theme = ThemePalette::from_core(core_theme.clone());",
+        "*state.theme = core_theme;",
+    )
+    body = re.sub(r"state\.text_selection\.clear\(\);\s*\n", "", body)
+    body = re.sub(
+        r"SideEffect::WriteShell\(crate::clipboard::pty_paste_bytes\(",
+        "SideEffect::WriteShell(crate::shell::pty_paste_bytes(",
+        body,
+    )
+    body = re.sub(
+        r"SideEffect::WriteAgent\(crate::clipboard::pty_paste_bytes\(",
+        "SideEffect::WriteAgent(crate::shell::pty_paste_bytes(",
+        body,
+    )
+    for fn in TUI_FUNCTIONS:
+        body = strip_function(body, fn)
+    # Remove TUI command arms from reduce_command
+    body = re.sub(
+        r"        AppCommand::ClipboardCopy => reduce_clipboard_copy\(state\),\n",
+        "",
+        body,
+    )
+    body = re.sub(
+        r"        AppCommand::ClipboardCut => reduce_clipboard_cut\(state\),\n",
+        "",
+        body,
+    )
+    body = re.sub(
+        r"        AppCommand::ClipboardPaste => reduce_clipboard_paste\(state\),\n",
+        "",
+        body,
+    )
+    body = re.sub(
+        r"        AppCommand::PasteText\(text\) => reduce_paste_text\(state, text\),\n",
+        "",
+        body,
+    )
+    body = re.sub(
+        r"        AppCommand::SelectionBegin \{ pane, line, col \} => \{\n"
+        r"            reduce_selection_begin\(state, pane, line, col\)\n"
+        r"        \}\n",
+        "",
+        body,
+    )
+    body = re.sub(
+        r"        AppCommand::SelectionExtend \{ line, col \} => reduce_selection_extend\(state, line, col\),\n",
+        "",
+        body,
+    )
+    body = re.sub(
+        r"        AppCommand::SelectionEnd => reduce_selection_end\(state\),\n",
+        "",
+        body,
+    )
+    body = re.sub(
+        r"        AppCommand::SelectionClear => reduce_selection_clear\(state\),\n",
+        "",
+        body,
+    )
+    return body
+
+
+def replace_import_block(content: str, new_imports: str) -> str:
+    m = re.search(r"^pub fn ", content, re.MULTILINE)
+    if not m:
+        raise RuntimeError("could not find first pub fn")
+    return new_imports + "\n" + content[m.start() :]
+
+
+def transform_commands(body: str) -> str:
+    body = re.sub(r"&mut AppState\b", "&mut ReduceView<'_>", body)
+    body = re.sub(r"&AppState\b", "&ReduceView<'_>", body)
+    body = re.sub(r"&'a AppState\b", "&'a ReduceView<'_>", body)
+    body = body.replace("crate::layout::FocusTarget", "crate::navigation::FocusTarget")
+    body = body.replace("use crate::layout::FocusTarget;", "")
+    return body
+
+
+def main() -> None:
+    reducer_src = (ROOT / "crates/kiwi/src/state/reducer.rs").read_text()
+    commands_src = (ROOT / "crates/kiwi/src/commands/mod.rs").read_text()
+
+    # Drop original use block through first pub fn
+    reducer_body = re.sub(r"^use .*?\n\npub fn reduce", "pub fn reduce", reducer_src, count=1, flags=re.DOTALL)
+    reducer_body = transform_reducer_body(reducer_body)
+    reducer_body = reducer_body.replace(
+        "AppEvent::TerminalResize { width, height } => reduce_terminal_resize(state, width, height),\n        ",
+        "",
+    )
+    reducer_body = reducer_body.replace(
+        "use crate::theme::load_core_theme_with_capabilities;",
+        "use crate::theme::load_theme_with_capabilities;",
+    )
+    reducer_body = reducer_body.replace(
+        "load_core_theme_with_capabilities",
+        "load_theme_with_capabilities",
+    )
+    reducer_body = reducer_body.replace(
+        "*state.theme = palette;",
+        "*state.theme = palette.clone();",
+    )
+    reducer_out = replace_import_block(reducer_body, REDUCER_IMPORTS)
+    (ROOT / "crates/kiwi_core/src/reducer/mod.rs").write_text(reducer_out)
+
+    commands_body = re.sub(r"^use .*?\n\npub const MAX_VISIBLE", "pub const MAX_VISIBLE", commands_src, count=1, flags=re.DOTALL)
+    commands_body = transform_commands(commands_body)
+    commands_body = commands_body.replace(
+        "use crate::state::{\n    agent_cycle_effects, agent_new_effects, apply_navigation, diff_move_file_effects,\n    diff_set_source_effects, git_refresh_effects, github_refresh_effects, AppState,\n    GitHubPrCreatePrompt, PalettePrompt, SideEffect,\n};",
+        "",
+    )
+    commands_out = COMMANDS_IMPORTS + "\n" + commands_body
+    commands_out = commands_out.replace("use crate::layout::compute_layout;\n    ", "")
+    commands_out = commands_out.replace("use crate::layout::FocusTarget;\n    ", "")
+    commands_out = commands_out.replace("use crate::state::{AppState, SideEffect};", "use crate::state::AppState;\n    use crate::events::SideEffect;")
+    commands_out = commands_out.replace("fn test_state() -> AppState {", "fn test_state() -> AppState {")
+    # Fix test helper to use core AppState
+    commands_out = re.sub(
+        r"AppState::from_startup\(\n            PathBuf::from\(\"\.\"\),\n            true,\n            ResolvedConfig::default\(\),\n            load_theme_with_capabilities\([^)]+\)\.expect\(\"theme\"\),\n            compute_layout\([^)]+\)\.expect\(\"layout\"\),\n        \)",
+        """AppState::from_startup(
+            PathBuf::from("."),
+            true,
+            ResolvedConfig::default(),
+            load_theme_with_capabilities(
+                &ResolvedConfig::default().theme,
+                TerminalCapabilities::TrueColor,
+            )
+            .expect("theme"),
+            ViewportMetrics::default(),
+        )""",
+        commands_out,
+    )
+    commands_out = commands_out.replace(
+        "use crate::theme::loader::load_theme_with_capabilities;",
+        "use crate::theme::{load_theme_with_capabilities, TerminalCapabilities};\n    use crate::state::ViewportMetrics;",
+    )
+    # Tests use &mut AppState - convert to reduce_view where needed for execute_command
+    commands_out = re.sub(
+        r"execute_command\(&mut state,",
+        "execute_command(&mut state.reduce_view(),",
+        commands_out,
+    )
+    commands_out = re.sub(
+        r"refresh_matches\(&mut state\)",
+        "refresh_matches(&mut state.reduce_view())",
+        commands_out,
+    )
+    (ROOT / "crates/kiwi_core/src/commands/mod.rs").write_text(commands_out)
+
+    # Fix registry FocusTarget import
+    registry = (ROOT / "crates/kiwi_core/src/commands/registry.rs").read_text()
+    registry = registry.replace("use crate::layout::FocusTarget;", "use crate::navigation::FocusTarget;")
+    (ROOT / "crates/kiwi_core/src/commands/registry.rs").write_text(registry)
+
+    print("Wrote kiwi_core reducer and commands")
+
+
+if __name__ == "__main__":
+    main()

@@ -3,6 +3,16 @@ const DEFAULT_COLS: usize = 80;
 const DEFAULT_SCREEN_ROWS: usize = 256;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct PrimaryScreenSnapshot {
+    history: Vec<String>,
+    screen: Vec<String>,
+    cursor_row: usize,
+    cursor_col: usize,
+    cursor_visible: bool,
+    overwrite_line: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScrollbackBuffer {
     cols: usize,
     screen: Vec<String>,
@@ -14,6 +24,7 @@ pub struct ScrollbackBuffer {
     pending: Vec<u8>,
     text_pending: Vec<u8>,
     capacity: usize,
+    saved_primary: Option<PrimaryScreenSnapshot>,
 }
 
 impl Default for ScrollbackBuffer {
@@ -36,6 +47,7 @@ impl ScrollbackBuffer {
             pending: Vec::new(),
             text_pending: Vec::new(),
             capacity: DEFAULT_CAPACITY,
+            saved_primary: None,
         }
     }
 
@@ -78,6 +90,7 @@ impl ScrollbackBuffer {
         self.overwrite_line = false;
         self.pending.clear();
         self.text_pending.clear();
+        self.saved_primary = None;
     }
 
     pub fn append_bytes(&mut self, data: &[u8]) {
@@ -329,7 +342,32 @@ impl ScrollbackBuffer {
             }
             EscapeAction::ShowCursor => self.cursor_visible = true,
             EscapeAction::HideCursor => self.cursor_visible = false,
+            EscapeAction::SavePrimaryScreen => self.save_primary_screen(),
+            EscapeAction::RestorePrimaryScreen => self.restore_primary_screen(),
             EscapeAction::Raw(sequence) => self.write_str(&sequence),
+        }
+    }
+
+    fn save_primary_screen(&mut self) {
+        self.saved_primary = Some(PrimaryScreenSnapshot {
+            history: self.history.clone(),
+            screen: self.screen.clone(),
+            cursor_row: self.cursor_row,
+            cursor_col: self.cursor_col,
+            cursor_visible: self.cursor_visible,
+            overwrite_line: self.overwrite_line,
+        });
+        self.clear_screen();
+    }
+
+    fn restore_primary_screen(&mut self) {
+        if let Some(snap) = self.saved_primary.take() {
+            self.history = snap.history;
+            self.screen = snap.screen;
+            self.cursor_row = snap.cursor_row;
+            self.cursor_col = snap.cursor_col;
+            self.cursor_visible = snap.cursor_visible;
+            self.overwrite_line = snap.overwrite_line;
         }
     }
 
@@ -483,6 +521,10 @@ enum EscapeAction {
     CursorBack(usize),
     ShowCursor,
     HideCursor,
+    /// Enter alternate screen: snapshot primary buffer, clear for TUI use.
+    SavePrimaryScreen,
+    /// Leave alternate screen: discard TUI content, restore primary buffer.
+    RestorePrimaryScreen,
     Raw(String),
 }
 
@@ -495,6 +537,8 @@ fn escape_needs_more(data: &[u8]) -> bool {
         None => true,
         Some(b'[') => !data[2..].iter().any(|byte| (0x40..=0x7E).contains(byte)),
         Some(b']') => !data[2..].iter().any(|&byte| byte == 0x07 || byte == b'\\'),
+        // ESC ( B / ESC ) B etc. are 3-byte charset designation sequences
+        Some(b'(' | b')' | b'*' | b'+') => data.len() < 3,
         Some(_) => data.len() < 2,
     }
 }
@@ -507,6 +551,11 @@ fn consume_non_csi_escape(data: &[u8]) -> Option<usize> {
     let next = *data.get(1)?;
     if next == b'[' || next == b']' {
         return None;
+    }
+
+    // ESC ( X / ESC ) X etc. are 3-byte charset designation sequences
+    if matches!(next, b'(' | b')' | b'*' | b'+') {
+        return Some(3.min(data.len()));
     }
 
     Some(2)
@@ -598,9 +647,9 @@ fn decode_csi(final_byte: u8, params: &str) -> EscapeAction {
         },
         b'h' | b'l' if first == "?1049" => {
             if final_byte == b'h' {
-                EscapeAction::ClearScreen
+                EscapeAction::SavePrimaryScreen
             } else {
-                EscapeAction::Ignore
+                EscapeAction::RestorePrimaryScreen
             }
         }
         b'h' if first == "?25" => EscapeAction::ShowCursor,
@@ -912,6 +961,51 @@ mod tests {
         buffer.append_bytes(b"prompt");
         buffer.append_bytes(b"\x08 \x08");
         assert_eq!(buffer.lines_for_display(true), vec!["promp".to_string()]);
+    }
+
+    #[test]
+    fn alternate_screen_enter_clears_and_restores_primary() {
+        let mut buffer = ScrollbackBuffer::new();
+        buffer.append_bytes(b"primary line\n");
+        // Enter alternate screen — primary content must be saved, screen cleared.
+        buffer.append_bytes(b"\x1b[?1049h");
+        assert_eq!(buffer.line_count(), 0, "alt screen should be empty after ?1049h");
+        // Write some TUI garbage into the alternate screen.
+        buffer.append_bytes(b"tui chrome\n");
+        assert_eq!(buffer.line_count(), 1);
+        // Leave alternate screen — TUI content discarded, primary restored.
+        buffer.append_bytes(b"\x1b[?1049l");
+        let lines = buffer.lines_for_display(false);
+        assert_eq!(lines, vec!["primary line".to_string()],
+            "primary scrollback must be restored on ?1049l");
+    }
+
+    #[test]
+    fn alternate_screen_without_prior_content_restores_empty() {
+        let mut buffer = ScrollbackBuffer::new();
+        buffer.append_bytes(b"\x1b[?1049h");
+        buffer.append_bytes(b"tui output\n");
+        buffer.append_bytes(b"\x1b[?1049l");
+        assert_eq!(buffer.line_count(), 0, "no primary content to restore");
+    }
+
+    #[test]
+    fn charset_designation_esc_paren_b_not_printed() {
+        // ESC ( B = "Designate G0 Character Set: US-ASCII" — 3-byte sequence
+        // commonly emitted after Enter. The 'B' must never appear as text.
+        let mut buffer = ScrollbackBuffer::new();
+        buffer.append_bytes(b"prompt\x1b(Bnext\n");
+        let lines = buffer.lines_for_display(false);
+        assert_eq!(lines, vec!["promptnext".to_string()]);
+    }
+
+    #[test]
+    fn charset_designation_split_across_reads_not_printed() {
+        let mut buffer = ScrollbackBuffer::new();
+        buffer.append_bytes(b"a\x1b(");
+        buffer.append_bytes(b"Bb\n");
+        let lines = buffer.lines_for_display(false);
+        assert_eq!(lines, vec!["ab".to_string()]);
     }
 
     #[test]

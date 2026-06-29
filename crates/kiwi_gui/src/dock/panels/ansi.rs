@@ -11,6 +11,8 @@ struct PtyStyle {
     bold: bool,
     italic: bool,
     underline: bool,
+    strikethrough: bool,
+    reverse: bool,
 }
 
 /// Build a monospace layout job from PTY text with ANSI colors preserved.
@@ -84,17 +86,28 @@ fn flush_span(job: &mut LayoutJob, buf: &mut String, style: PtyStyle, font_id: &
     if buf.is_empty() {
         return;
     }
-    let color = style.fg.unwrap_or(default_pty_fg());
+    let (fg, bg) = if style.reverse {
+        let fg = style.bg.unwrap_or(Color32::from_gray(30));
+        let bg = style.fg.unwrap_or(default_pty_fg());
+        (fg, bg)
+    } else {
+        (style.fg.unwrap_or(default_pty_fg()), style.bg.unwrap_or(Color32::TRANSPARENT))
+    };
     job.append(
         &std::mem::take(buf),
         0.0,
         TextFormat {
             font_id: font_id.clone(),
-            color,
-            background: style.bg.unwrap_or(Color32::TRANSPARENT),
+            color: fg,
+            background: bg,
             italics: style.italic,
             underline: if style.underline {
-                Stroke::new(1.0, color)
+                Stroke::new(1.0, fg)
+            } else {
+                Stroke::NONE
+            },
+            strikethrough: if style.strikethrough {
+                Stroke::new(1.0, fg)
             } else {
                 Stroke::NONE
             },
@@ -146,16 +159,36 @@ fn apply_sgr(params: &str, mut style: PtyStyle) -> PtyStyle {
             1 => style.bold = true,
             3 => style.italic = true,
             4 => style.underline = true,
+            7 => style.reverse = true,
+            9 => style.strikethrough = true,
             22 => style.bold = false,
             23 => style.italic = false,
             24 => style.underline = false,
+            27 => style.reverse = false,
+            29 => style.strikethrough = false,
             30..=37 => style.fg = Some(ansi_color(codes[index] - 30)),
+            38 if index + 4 < codes.len() && codes[index + 1] == 2 => {
+                style.fg = Some(Color32::from_rgb(
+                    codes[index + 2].min(255) as u8,
+                    codes[index + 3].min(255) as u8,
+                    codes[index + 4].min(255) as u8,
+                ));
+                index += 4;
+            }
             38 if index + 2 < codes.len() && codes[index + 1] == 5 => {
                 style.fg = Some(xterm_color(codes[index + 2]));
                 index += 2;
             }
             39 => style.fg = None,
             40..=47 => style.bg = Some(ansi_color(codes[index] - 40)),
+            48 if index + 4 < codes.len() && codes[index + 1] == 2 => {
+                style.bg = Some(Color32::from_rgb(
+                    codes[index + 2].min(255) as u8,
+                    codes[index + 3].min(255) as u8,
+                    codes[index + 4].min(255) as u8,
+                ));
+                index += 4;
+            }
             48 if index + 2 < codes.len() && codes[index + 1] == 5 => {
                 style.bg = Some(xterm_color(codes[index + 2]));
                 index += 2;
@@ -246,5 +279,35 @@ mod tests {
         let job = ansi_layout_job("hello world", 5, FontId::monospace(14.0));
         assert!(job.text.starts_with("hell"));
         assert!(job.text.contains('…'));
+    }
+
+    #[test]
+    fn true_color_fg_38_2_renders_rgb() {
+        // ESC[38;2;255;128;0m = orange foreground
+        let job = ansi_layout_job("\x1b[38;2;255;128;0mtext\x1b[0m", 20, FontId::monospace(14.0));
+        assert_eq!(&job.text[job.sections[0].byte_range.clone()], "text");
+        assert_eq!(job.sections[0].format.color, Color32::from_rgb(255, 128, 0));
+    }
+
+    #[test]
+    fn true_color_bg_48_2_renders_rgb() {
+        let job = ansi_layout_job("\x1b[48;2;0;64;128mtext\x1b[0m", 20, FontId::monospace(14.0));
+        assert_eq!(job.sections[0].format.background, Color32::from_rgb(0, 64, 128));
+    }
+
+    #[test]
+    fn sgr_9_strikethrough_applied() {
+        let job = ansi_layout_job("\x1b[9mtext\x1b[0m", 20, FontId::monospace(14.0));
+        assert_ne!(job.sections[0].format.strikethrough, egui::epaint::Stroke::NONE);
+    }
+
+    #[test]
+    fn sgr_7_reverse_swaps_colors() {
+        // Default fg is Color32::from_gray(220). After reverse, the span fg should
+        // be the default bg (transparent → black substitute) rather than the default fg.
+        let job = ansi_layout_job("\x1b[7mtext\x1b[0m", 20, FontId::monospace(14.0));
+        // Reverse video: fg becomes bg colour (dark), bg becomes fg colour (light).
+        assert_ne!(job.sections[0].format.color, default_pty_fg(),
+            "reverse video should invert fg away from default");
     }
 }
