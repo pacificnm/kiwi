@@ -106,6 +106,11 @@ use self::shell::reduce_shell_scroll;
 use self::shell::reduce_shell_scroll_lines;
 use self::agent::reduce_agent_scroll;
 use self::agent::reduce_agent_scroll_lines;
+use self::agent::{
+    reduce_agent_user_send, reduce_agent_token_chunk, reduce_agent_tool_call_start,
+    reduce_agent_tool_result, reduce_agent_turn_complete, reduce_agent_api_error,
+    reduce_agent_toggle_tool_expand, reduce_agent_clear_history,
+};
 use self::navigation::reduce_palette_open;
 use self::navigation::reduce_palette_close;
 use self::navigation::reduce_palette_append_char;
@@ -184,6 +189,25 @@ pub fn reduce(state: &mut ReduceView<'_>, event: AppEvent) -> Vec<SideEffect> {
         AppEvent::ShellExited(_code) => reduce_shell_exited(state),
         AppEvent::AgentOutput { agent_id, data } => reduce_agent_output(state, agent_id, data),
         AppEvent::AgentExited { agent_id, code } => reduce_agent_exited(state, agent_id, code),
+        AppEvent::AgentTokenChunk { agent_id, text } => {
+            reduce_agent_token_chunk(state, agent_id, text)
+        }
+        AppEvent::AgentToolCallStart {
+            agent_id,
+            tool_use_id,
+            tool_name,
+            input_json,
+        } => reduce_agent_tool_call_start(state, agent_id, tool_use_id, tool_name, input_json),
+        AppEvent::AgentToolResult {
+            agent_id,
+            tool_use_id,
+            content,
+            is_error,
+        } => reduce_agent_tool_result(state, agent_id, tool_use_id, content, is_error),
+        AppEvent::AgentTurnComplete { agent_id } => reduce_agent_turn_complete(state, agent_id),
+        AppEvent::AgentApiError { agent_id, message } => {
+            reduce_agent_api_error(state, agent_id, message)
+        }
         AppEvent::FileTreeChildrenLoaded {
             parent,
             children,
@@ -408,6 +432,13 @@ pub fn reduce_command(state: &mut ReduceView<'_>, command: AppCommand) -> Vec<Si
         AppCommand::PluginRemove { name } => reduce_plugin_remove(state, name),
         AppCommand::PluginReinstall { src_path } => reduce_plugin_reinstall(state, src_path),
         AppCommand::SetAgent { command, args } => reduce_set_agent(state, command, args),
+        AppCommand::AgentUserSend { agent_id, text } => {
+            reduce_agent_user_send(state, agent_id, text)
+        }
+        AppCommand::AgentToggleToolExpand { agent_id, tool_use_id } => {
+            reduce_agent_toggle_tool_expand(state, agent_id, tool_use_id)
+        }
+        AppCommand::AgentClearHistory { agent_id } => reduce_agent_clear_history(state, agent_id),
     }
 }
 

@@ -1,8 +1,8 @@
 use crate::shell::ScrollbackBuffer;
 use crate::theme::SemanticRole;
 
-/// Agent activity inferred from PTY output (SPEC-010).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Agent activity state, inferred from PTY output (legacy) or API events (native chat).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum AgentStatus {
     #[default]
     Idle,

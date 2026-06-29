@@ -1,5 +1,5 @@
 
-use crate::agent::infer_status_from_scrollback;
+use crate::agent::{infer_status_from_scrollback, AgentId, ChatSession, ToolUse, ToolResult};
 use crate::navigation::MainTab;
 use crate::state::ReduceView;
 
@@ -191,4 +191,154 @@ fn apply_status_heuristic(pty: &mut crate::state::AgentState) -> bool {
         }
     }
     false
+}
+
+// ---------------------------------------------------------------------------
+// Native chat reducers — stubs wired in Phase 1, implemented in Phase 2+.
+// ---------------------------------------------------------------------------
+
+pub(super) fn reduce_agent_user_send(
+    state: &mut ReduceView<'_>,
+    agent_id: AgentId,
+    text: String,
+) -> Vec<SideEffect> {
+    let Some(pty) = state.agent_manager.pty_mut(agent_id) else {
+        return Vec::new();
+    };
+    let chat = pty.chat.get_or_insert_with(ChatSession::default);
+    chat.append_user_message(text);
+    chat.is_streaming = true;
+    state.set_dirty();
+    // Phase 2 will emit SideEffect::Agent(AgentEffect::StreamRequest(agent_id)) here.
+    Vec::new()
+}
+
+pub(super) fn reduce_agent_token_chunk(
+    state: &mut ReduceView<'_>,
+    agent_id: AgentId,
+    text: String,
+) -> Vec<SideEffect> {
+    let Some(pty) = state.agent_manager.pty_mut(agent_id) else {
+        return Vec::new();
+    };
+    if let Some(chat) = &mut pty.chat {
+        chat.streaming_text.push_str(&text);
+        state.set_dirty();
+    }
+    Vec::new()
+}
+
+pub(super) fn reduce_agent_tool_call_start(
+    state: &mut ReduceView<'_>,
+    agent_id: AgentId,
+    tool_use_id: String,
+    tool_name: String,
+    input_json: String,
+) -> Vec<SideEffect> {
+    let Some(pty) = state.agent_manager.pty_mut(agent_id) else {
+        return Vec::new();
+    };
+    if let Some(chat) = &mut pty.chat {
+        let tool = ToolUse::new(tool_use_id.clone(), tool_name.clone(), input_json.clone());
+        chat.active_tool_call = Some(tool.clone());
+        chat.append_tool_use(tool);
+        state.set_dirty();
+        return vec![SideEffect::Agent(AgentEffect::ExecuteTool {
+            agent_id,
+            tool_use_id,
+            tool_name,
+            input_json,
+        })];
+    }
+    Vec::new()
+}
+
+pub(super) fn reduce_agent_tool_result(
+    state: &mut ReduceView<'_>,
+    agent_id: AgentId,
+    tool_use_id: String,
+    content: String,
+    is_error: bool,
+) -> Vec<SideEffect> {
+    let Some(pty) = state.agent_manager.pty_mut(agent_id) else {
+        return Vec::new();
+    };
+    if let Some(chat) = &mut pty.chat {
+        chat.active_tool_call = None;
+        let result = if is_error {
+            ToolResult::error(tool_use_id, content)
+        } else {
+            ToolResult::ok(tool_use_id, content)
+        };
+        chat.append_tool_result(result);
+        state.set_dirty();
+        // Phase 2 will emit StreamRequest here to continue the conversation.
+    }
+    Vec::new()
+}
+
+pub(super) fn reduce_agent_turn_complete(
+    state: &mut ReduceView<'_>,
+    agent_id: AgentId,
+) -> Vec<SideEffect> {
+    let Some(pty) = state.agent_manager.pty_mut(agent_id) else {
+        return Vec::new();
+    };
+    if let Some(chat) = &mut pty.chat {
+        chat.flush_streaming_turn();
+        chat.status = crate::agent::AgentStatus::Idle;
+        chat.refresh_status_bar_label();
+        state.agent_manager.refresh_status_label();
+        state.set_dirty();
+    }
+    Vec::new()
+}
+
+pub(super) fn reduce_agent_api_error(
+    state: &mut ReduceView<'_>,
+    agent_id: AgentId,
+    message: String,
+) -> Vec<SideEffect> {
+    let Some(pty) = state.agent_manager.pty_mut(agent_id) else {
+        return Vec::new();
+    };
+    if let Some(chat) = &mut pty.chat {
+        chat.is_streaming = false;
+        chat.error = Some(message);
+        chat.status = crate::agent::AgentStatus::Error;
+        chat.refresh_status_bar_label();
+        state.agent_manager.refresh_status_label();
+        state.set_dirty();
+    }
+    Vec::new()
+}
+
+pub(super) fn reduce_agent_toggle_tool_expand(
+    state: &mut ReduceView<'_>,
+    agent_id: AgentId,
+    tool_use_id: String,
+) -> Vec<SideEffect> {
+    let Some(pty) = state.agent_manager.pty_mut(agent_id) else {
+        return Vec::new();
+    };
+    if let Some(chat) = &mut pty.chat {
+        chat.toggle_tool_expand(&tool_use_id);
+        state.set_dirty();
+    }
+    Vec::new()
+}
+
+pub(super) fn reduce_agent_clear_history(
+    state: &mut ReduceView<'_>,
+    agent_id: AgentId,
+) -> Vec<SideEffect> {
+    let Some(pty) = state.agent_manager.pty_mut(agent_id) else {
+        return Vec::new();
+    };
+    if let Some(chat) = &mut pty.chat {
+        chat.clear();
+        state.agent_manager.refresh_status_label();
+        state.set_dirty();
+    }
+    Vec::new()
 }
