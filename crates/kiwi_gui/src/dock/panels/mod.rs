@@ -3,6 +3,7 @@
 mod branches_detail;
 mod agent;
 mod ansi;
+mod chat;
 mod config;
 pub(crate) mod context_menu;
 mod explorer;
