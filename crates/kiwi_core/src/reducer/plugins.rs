@@ -133,9 +133,15 @@ pub(super) fn reduce_set_agent(
             .unwrap_or_else(|| state.config.agent.model.clone());
         let provider_str = provider.clone().unwrap_or_else(|| "claude".to_string());
 
+        let agent_provider = match provider_str.as_str() {
+            "ollama" => crate::agent::AgentProvider::Ollama,
+            _ => crate::agent::AgentProvider::Claude,
+        };
+
         if let Some(pty) = state.agent_manager.pty_mut(id) {
             pty.chat = Some(ChatSession {
                 model: model_str.clone(),
+                provider: agent_provider,
                 status: AgentStatus::Idle,
                 ..ChatSession::default()
             });

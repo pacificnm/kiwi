@@ -6,8 +6,9 @@ description = "Local AI models via Ollama — runs as the AI agent in the Agent 
 author = "PacificNM"
 
 [agent]
-command = "kiwi-ollama"
-args = []
+mode = "api"
+provider = "ollama"
+model = "qwen2.5-coder:7b"
 
 [install]
 kind = "cargo"
