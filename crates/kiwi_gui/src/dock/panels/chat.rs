@@ -21,30 +21,30 @@ pub fn render(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
 
     render_chrome(ui, ctx, agent_id, &mut commands);
 
-    // Reserve space for the input box at the bottom before sizing the scroll area,
-    // so the input is always visible without scrolling.
-    let input_reserve = 100.0_f32;
-    let list_height = (ui.available_height() - input_reserve).max(60.0);
-
-    // Message list — immutable borrow ends before input_box borrow begins.
-    {
-        let agent = ctx.state.active_agent();
-        if let Some(chat) = &agent.chat {
-            render_message_list(ui, ctx.theme, chat, agent_id, &mut commands, list_height);
-        } else {
-            ui.centered_and_justified(|ui| {
-                ui.colored_label(ctx.theme.role(SemanticRole::Muted), "No chat session active.");
-            });
+    // Use bottom_up layout so the input box is always pinned to the panel bottom.
+    // In bottom_up, the first widget rendered lands at the bottom; subsequent widgets
+    // stack above it. The scroll area fills whatever space remains above the input.
+    ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
+        // Input box — rendered first so it anchors to the bottom.
+        {
+            let agent = ctx.state.active_agent_mut();
+            if let Some(chat) = &mut agent.chat {
+                render_input_box(ui, ctx.theme, chat, agent_id, &mut commands);
+            }
         }
-    }
 
-    // Input box — needs mutable access to `input_draft`.
-    {
-        let agent = ctx.state.active_agent_mut();
-        if let Some(chat) = &mut agent.chat {
-            render_input_box(ui, ctx.theme, chat, agent_id, &mut commands);
+        // Message list fills all remaining height above the input.
+        {
+            let agent = ctx.state.active_agent();
+            if let Some(chat) = &agent.chat {
+                render_message_list(ui, ctx.theme, chat, agent_id, &mut commands);
+            } else {
+                ui.centered_and_justified(|ui| {
+                    ui.colored_label(ctx.theme.role(SemanticRole::Muted), "No chat session active.");
+                });
+            }
         }
-    }
+    });
 
     for cmd in commands {
         let _ = (ctx.dispatch)(cmd);
@@ -143,15 +143,13 @@ fn render_message_list(
     chat: &ChatSession,
     agent_id: AgentId,
     commands: &mut Vec<AppCommand>,
-    max_height: f32,
 ) {
     let is_streaming = chat.is_streaming;
 
     ScrollArea::vertical()
         .id_salt("chat_msg_scroll")
         .stick_to_bottom(is_streaming && chat.follow_tail)
-        .max_height(max_height)
-        .auto_shrink([false, true])
+        .auto_shrink([false; 2])
         .show(ui, |ui| {
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
 
