@@ -148,13 +148,6 @@ impl GuiRuntime {
         self.dispatch(AppEvent::Command(command))
     }
 
-    fn poll_agent_exits(&mut self) {
-        let exits = self.pty.poll_agent_exits();
-        for (agent_id, code) in exits {
-            self.dispatch(AppEvent::AgentExited { agent_id, code });
-        }
-    }
-
     /// Returns `(should_quit, event_count)`.
     ///
     /// `dock_snapshot` is forwarded to the service layer so that `SideEffect::SaveWorkspace`
@@ -163,7 +156,6 @@ impl GuiRuntime {
         &mut self,
         dock_snapshot: Option<GuiWorkspaceSnapshot>,
     ) -> (bool, usize) {
-        self.poll_agent_exits();
         let (quit, count) = process_pending_events(
             &mut self.state,
             &mut self.events,
@@ -189,27 +181,6 @@ impl GuiRuntime {
             self.state.shell.scrollback.set_cols(shell_cols);
         }
 
-        let agent_id = self.state.agent_manager.active_id();
-        let agent_cols = self.state.viewport.agent_cols;
-        let agent_rows = self.state.viewport.agent_rows;
-        let needs_agent_resize = self
-            .state
-            .agent_manager
-            .pty(agent_id)
-            .is_some_and(|pty| {
-                pty.spawned
-                    && pty.running
-                    && agent_cols > 0
-                    && agent_rows > 0
-                    && (pty.cols != agent_cols || pty.rows != agent_rows)
-            });
-
-        if needs_agent_resize && self.pty.resize_agent(agent_id, agent_cols, agent_rows) {
-            if let Some(pty) = self.state.agent_manager.pty_mut(agent_id) {
-                pty.apply_resize(agent_cols, agent_rows);
-                pty.scrollback.set_cols(agent_cols);
-            }
-        }
     }
 
     pub fn shutdown(&mut self) {

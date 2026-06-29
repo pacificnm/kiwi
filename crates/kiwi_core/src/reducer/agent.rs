@@ -1,5 +1,5 @@
 
-use crate::agent::{infer_status_from_scrollback, AgentId, ChatSession, ToolUse, ToolResult};
+use crate::agent::{AgentId, ChatSession, ToolUse, ToolResult};
 use crate::navigation::MainTab;
 use crate::state::ReduceView;
 
@@ -182,14 +182,7 @@ fn refresh_active_agent_status_heuristic(state: &mut ReduceView<'_>) {
     }
 }
 
-fn apply_status_heuristic(pty: &mut crate::state::AgentState) -> bool {
-    if let Some(status) = infer_status_from_scrollback(&pty.scrollback) {
-        if pty.status != status {
-            pty.status = status;
-            pty.refresh_status_bar_label();
-            return true;
-        }
-    }
+fn apply_status_heuristic(_pty: &mut crate::state::AgentState) -> bool {
     false
 }
 

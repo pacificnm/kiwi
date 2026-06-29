@@ -2433,7 +2433,8 @@ mod tests {
     }
 
     #[test]
-    fn agent_output_updates_status_from_heuristics() {
+    fn agent_output_does_not_update_status_via_scrollback_heuristic() {
+        // PTY scrollback heuristics were removed in Phase 6 (#334); status stays Idle.
         let mut state = test_state();
         state.active_agent_mut().running = true;
         let payload = format!(
@@ -2448,7 +2449,7 @@ mod tests {
                 data: payload.into_bytes(),
             },
         );
-        assert_eq!(state.active_agent().status, AgentStatus::Thinking);
+        assert_eq!(state.active_agent().status, AgentStatus::Idle);
     }
 
     #[test]
