@@ -7,6 +7,7 @@ use std::process::Command;
 use super::tools::KiwiTool;
 
 /// Result of executing a `KiwiTool`.
+#[derive(Debug)]
 pub enum ExecutionResult {
     /// Tool completed; wrap in `AgentToolResult`.
     Done { content: String, is_error: bool },
@@ -20,9 +21,14 @@ pub fn execute_tool(tool: &KiwiTool, repo_root: &Path) -> ExecutionResult {
         KiwiTool::FileRead { path } => read_file(path, repo_root),
         KiwiTool::FileWrite { path, content } => write_file(path, content, repo_root),
         KiwiTool::FileList { path, depth } => list_directory(path, *depth, repo_root),
-        KiwiTool::ShellRun { command } => ExecutionResult::ShellRun { command: command.clone() },
+        KiwiTool::ShellRun { command } => ExecutionResult::ShellRun {
+            command: command.clone(),
+        },
         KiwiTool::GitStatus => git_status(repo_root),
         KiwiTool::GitDiff { path } => git_diff(path.as_deref(), repo_root),
+        KiwiTool::GitCommit { message, stage_all } => {
+            git_commit(message, *stage_all, repo_root)
+        }
         KiwiTool::FileSearch { query } => search_files(query, repo_root),
         KiwiTool::FileGrep { query, path } => search_content(query, path.as_deref(), repo_root),
     }
@@ -56,7 +62,12 @@ const MAX_SEARCH_RESULTS: usize = 100;
 fn read_file(path: &str, repo_root: &Path) -> ExecutionResult {
     let full = match safe_join(repo_root, path) {
         Ok(p) => p,
-        Err(e) => return ExecutionResult::Done { content: e, is_error: true },
+        Err(e) => {
+            return ExecutionResult::Done {
+                content: e,
+                is_error: true,
+            }
+        }
     };
     match fs::read_to_string(&full) {
         Ok(content) => {
@@ -69,7 +80,10 @@ fn read_file(path: &str, repo_root: &Path) -> ExecutionResult {
             } else {
                 content
             };
-            ExecutionResult::Done { content, is_error: false }
+            ExecutionResult::Done {
+                content,
+                is_error: false,
+            }
         }
         Err(e) => ExecutionResult::Done {
             content: format!("Cannot read '{path}': {e}"),
@@ -81,7 +95,12 @@ fn read_file(path: &str, repo_root: &Path) -> ExecutionResult {
 fn write_file(path: &str, content: &str, repo_root: &Path) -> ExecutionResult {
     let full = match safe_join(repo_root, path) {
         Ok(p) => p,
-        Err(e) => return ExecutionResult::Done { content: e, is_error: true },
+        Err(e) => {
+            return ExecutionResult::Done {
+                content: e,
+                is_error: true,
+            }
+        }
     };
     if let Some(parent) = full.parent() {
         if let Err(e) = fs::create_dir_all(parent) {
@@ -106,7 +125,12 @@ fn write_file(path: &str, content: &str, repo_root: &Path) -> ExecutionResult {
 fn list_directory(path: &str, depth: u8, repo_root: &Path) -> ExecutionResult {
     let full = match safe_join(repo_root, path) {
         Ok(p) => p,
-        Err(e) => return ExecutionResult::Done { content: e, is_error: true },
+        Err(e) => {
+            return ExecutionResult::Done {
+                content: e,
+                is_error: true,
+            }
+        }
     };
 
     let mut lines = Vec::new();
@@ -171,6 +195,103 @@ fn git_status(repo_root: &Path) -> ExecutionResult {
     }
 }
 
+fn git_commit(message: &str, stage_all: bool, repo_root: &Path) -> ExecutionResult {
+    if stage_all {
+        match Command::new("git")
+            .args(["add", "-A"])
+            .current_dir(repo_root)
+            .output()
+        {
+            Ok(out) if out.status.success() => {}
+            Ok(out) => {
+                return ExecutionResult::Done {
+                    content: format_git_output(&out.stdout, &out.stderr),
+                    is_error: true,
+                };
+            }
+            Err(e) => {
+                return ExecutionResult::Done {
+                    content: format!("git not available: {e}"),
+                    is_error: true,
+                };
+            }
+        }
+    }
+
+    match Command::new("git")
+        .args(["diff", "--cached", "--quiet"])
+        .current_dir(repo_root)
+        .status()
+    {
+        Ok(status) if status.code() == Some(0) => {
+            return ExecutionResult::Done {
+                content: "Nothing to commit — working tree is clean.".to_string(),
+                is_error: true,
+            };
+        }
+        Ok(status) if status.code() == Some(1) => {}
+        Ok(status) => {
+            return ExecutionResult::Done {
+                content: format!("git diff --cached failed (exit {:?})", status.code()),
+                is_error: true,
+            };
+        }
+        Err(e) => {
+            return ExecutionResult::Done {
+                content: format!("git not available: {e}"),
+                is_error: true,
+            };
+        }
+    }
+
+    match Command::new("git")
+        .args(["commit", "-m", message])
+        .current_dir(repo_root)
+        .output()
+    {
+        Ok(out) if out.status.success() => {
+            let hash = Command::new("git")
+                .args(["rev-parse", "HEAD"])
+                .current_dir(repo_root)
+                .output()
+                .ok()
+                .filter(|out| out.status.success())
+                .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string());
+
+            let mut content = format_git_output(&out.stdout, &out.stderr);
+            if let Some(hash) = hash {
+                if !content.is_empty() {
+                    content.push('\n');
+                }
+                content.push_str(&format!("commit: {hash}"));
+            }
+            ExecutionResult::Done {
+                content,
+                is_error: false,
+            }
+        }
+        Ok(out) => ExecutionResult::Done {
+            content: format_git_output(&out.stdout, &out.stderr),
+            is_error: true,
+        },
+        Err(e) => ExecutionResult::Done {
+            content: format!("git commit failed: {e}"),
+            is_error: true,
+        },
+    }
+}
+
+fn format_git_output(stdout: &[u8], stderr: &[u8]) -> String {
+    let stdout = String::from_utf8_lossy(stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(stderr).trim().to_string();
+    match (stdout.is_empty(), stderr.is_empty()) {
+        (false, false) => format!("{stdout}\n{stderr}"),
+        (false, true) => stdout,
+        (true, false) => stderr,
+        (true, true) => String::new(),
+    }
+}
+
 fn git_diff(path: Option<&str>, repo_root: &Path) -> ExecutionResult {
     let mut cmd = Command::new("git");
     cmd.arg("diff").arg("HEAD").current_dir(repo_root);
@@ -191,7 +312,10 @@ fn git_diff(path: Option<&str>, repo_root: &Path) -> ExecutionResult {
             } else {
                 text
             };
-            ExecutionResult::Done { content, is_error: !out.status.success() }
+            ExecutionResult::Done {
+                content,
+                is_error: !out.status.success(),
+            }
         }
         Err(e) => ExecutionResult::Done {
             content: format!("git diff failed: {e}"),
@@ -243,7 +367,12 @@ fn search_content(query: &str, path: Option<&str>, repo_root: &Path) -> Executio
     let search_in = match path {
         Some(p) => match safe_join(repo_root, p) {
             Ok(full) => full,
-            Err(e) => return ExecutionResult::Done { content: e, is_error: true },
+            Err(e) => {
+                return ExecutionResult::Done {
+                    content: e,
+                    is_error: true,
+                }
+            }
         },
         None => repo_root.to_path_buf(),
     };
@@ -278,7 +407,10 @@ fn search_content(query: &str, path: Option<&str>, repo_root: &Path) -> Executio
             } else {
                 text
             };
-            ExecutionResult::Done { content, is_error: false }
+            ExecutionResult::Done {
+                content,
+                is_error: false,
+            }
         }
         Err(e) => ExecutionResult::Done {
             content: format!("Search failed: {e}"),
@@ -300,9 +432,16 @@ mod tests {
 
     fn temp_repo() -> tempfile::TempDir {
         let dir = tempfile::tempdir().expect("temp dir");
-        // Minimal git init so git_status/git_diff don't error.
         let _ = Command::new("git")
             .args(["init", "-q"])
+            .current_dir(dir.path())
+            .status();
+        let _ = Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(dir.path())
+            .status();
+        let _ = Command::new("git")
+            .args(["config", "user.name", "Test User"])
             .current_dir(dir.path())
             .status();
         dir
@@ -314,20 +453,29 @@ mod tests {
         fs::write(dir.path().join("hello.txt"), "world").unwrap();
 
         let result = execute_tool(
-            &KiwiTool::FileRead { path: "hello.txt".to_string() },
+            &KiwiTool::FileRead {
+                path: "hello.txt".to_string(),
+            },
             dir.path(),
         );
-        assert!(matches!(result, ExecutionResult::Done { content, is_error: false } if content == "world"));
+        assert!(
+            matches!(result, ExecutionResult::Done { content, is_error: false } if content == "world")
+        );
     }
 
     #[test]
     fn read_file_missing_returns_error() {
         let dir = temp_repo();
         let result = execute_tool(
-            &KiwiTool::FileRead { path: "nope.txt".to_string() },
+            &KiwiTool::FileRead {
+                path: "nope.txt".to_string(),
+            },
             dir.path(),
         );
-        assert!(matches!(result, ExecutionResult::Done { is_error: true, .. }));
+        assert!(matches!(
+            result,
+            ExecutionResult::Done { is_error: true, .. }
+        ));
     }
 
     #[test]
@@ -340,8 +488,17 @@ mod tests {
             },
             dir.path(),
         );
-        assert!(matches!(result, ExecutionResult::Done { is_error: false, .. }));
-        assert_eq!(fs::read_to_string(dir.path().join("new.txt")).unwrap(), "hello");
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                is_error: false,
+                ..
+            }
+        ));
+        assert_eq!(
+            fs::read_to_string(dir.path().join("new.txt")).unwrap(),
+            "hello"
+        );
     }
 
     #[test]
@@ -354,7 +511,13 @@ mod tests {
             },
             dir.path(),
         );
-        assert!(matches!(result, ExecutionResult::Done { is_error: false, .. }));
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                is_error: false,
+                ..
+            }
+        ));
         assert!(dir.path().join("a/b/c.txt").exists());
     }
 
@@ -362,27 +525,39 @@ mod tests {
     fn path_traversal_blocked() {
         let dir = temp_repo();
         let result = execute_tool(
-            &KiwiTool::FileRead { path: "../etc/passwd".to_string() },
+            &KiwiTool::FileRead {
+                path: "../etc/passwd".to_string(),
+            },
             dir.path(),
         );
-        assert!(matches!(result, ExecutionResult::Done { is_error: true, .. }));
+        assert!(matches!(
+            result,
+            ExecutionResult::Done { is_error: true, .. }
+        ));
     }
 
     #[test]
     fn absolute_path_blocked() {
         let dir = temp_repo();
         let result = execute_tool(
-            &KiwiTool::FileRead { path: "/etc/passwd".to_string() },
+            &KiwiTool::FileRead {
+                path: "/etc/passwd".to_string(),
+            },
             dir.path(),
         );
-        assert!(matches!(result, ExecutionResult::Done { is_error: true, .. }));
+        assert!(matches!(
+            result,
+            ExecutionResult::Done { is_error: true, .. }
+        ));
     }
 
     #[test]
     fn run_bash_returns_run_bash_result() {
         let dir = temp_repo();
         let result = execute_tool(
-            &KiwiTool::ShellRun { command: "echo hi".to_string() },
+            &KiwiTool::ShellRun {
+                command: "echo hi".to_string(),
+            },
             dir.path(),
         );
         assert!(matches!(result, ExecutionResult::ShellRun { .. }));
@@ -395,10 +570,15 @@ mod tests {
         fs::write(dir.path().join("b.rs"), "").unwrap();
 
         let result = execute_tool(
-            &KiwiTool::FileList { path: ".".to_string(), depth: 1 },
+            &KiwiTool::FileList {
+                path: ".".to_string(),
+                depth: 1,
+            },
             dir.path(),
         );
-        assert!(matches!(result, ExecutionResult::Done { ref content, is_error: false } if content.contains("a.rs")));
+        assert!(
+            matches!(result, ExecutionResult::Done { ref content, is_error: false } if content.contains("a.rs"))
+        );
     }
 
     #[test]
@@ -408,7 +588,9 @@ mod tests {
         fs::write(dir.path().join("lib.rs"), "").unwrap();
 
         let result = execute_tool(
-            &KiwiTool::FileSearch { query: "main".to_string() },
+            &KiwiTool::FileSearch {
+                query: "main".to_string(),
+            },
             dir.path(),
         );
         assert!(
@@ -420,7 +602,9 @@ mod tests {
     fn search_files_no_match() {
         let dir = temp_repo();
         let result = execute_tool(
-            &KiwiTool::FileSearch { query: "zzz_nonexistent".to_string() },
+            &KiwiTool::FileSearch {
+                query: "zzz_nonexistent".to_string(),
+            },
             dir.path(),
         );
         assert!(
@@ -433,5 +617,45 @@ mod tests {
         let dir = temp_repo();
         // Just verify it doesn't panic — output depends on git availability.
         let _ = execute_tool(&KiwiTool::GitStatus, dir.path());
+    }
+
+    #[test]
+    fn git_commit_stages_all_and_returns_hash() {
+        let dir = temp_repo();
+        fs::write(dir.path().join("tracked.txt"), "hello").unwrap();
+
+        let result = execute_tool(
+            &KiwiTool::GitCommit {
+                message: "add tracked file".to_string(),
+                stage_all: true,
+            },
+            dir.path(),
+        );
+
+        match result {
+            ExecutionResult::Done { content, is_error: false } => {
+                assert!(content.contains("commit:"));
+            }
+            other => panic!("expected successful commit, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn git_commit_clean_tree_returns_error() {
+        let dir = temp_repo();
+        let result = execute_tool(
+            &KiwiTool::GitCommit {
+                message: "empty".to_string(),
+                stage_all: true,
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                is_error: true,
+                ..
+            }
+        ));
     }
 }
