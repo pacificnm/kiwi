@@ -16,7 +16,7 @@ pub use chat::{
     AgentProvider, ChatMessage, ChatSession, ContentBlock, MessageRole, ToolResult, ToolUse,
 };
 pub use tool_executor::{execute_tool, ExecutionResult};
-pub use tools::{KiwiTool, ToolParseError, ToolSchema};
+pub use tools::{KiwiTool, KiwiToolDef, ToolParseError, ToolRegistry, ToolSchema};
 pub use command::{agent_display_name, agent_launch_spec, AgentLaunchSpec};
 pub use error::AgentError;
 pub use id::AgentId;

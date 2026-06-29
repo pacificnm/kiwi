@@ -603,7 +603,7 @@ fn build_request_body<'a>(model: &'a str, messages: &[ChatMessage]) -> Result<Re
         max_tokens: DEFAULT_MAX_TOKENS,
         stream: true,
         messages: api_messages,
-        tools: crate::agent::tools::KiwiTool::all_schemas(),
+        tools: crate::agent::tools::ToolRegistry::claude_schemas(),
     })
 }
 

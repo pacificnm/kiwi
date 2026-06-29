@@ -11,22 +11,20 @@ pub enum ExecutionResult {
     /// Tool completed; wrap in `AgentToolResult`.
     Done { content: String, is_error: bool },
     /// Signal the service layer to route this command to the Terminal PTY.
-    RunBash { command: String },
+    ShellRun { command: String },
 }
 
-/// Execute a tool synchronously. Called from a background thread (except `RunBash`).
+/// Execute a tool synchronously. Called from a background thread (except `ShellRun`).
 pub fn execute_tool(tool: &KiwiTool, repo_root: &Path) -> ExecutionResult {
     match tool {
-        KiwiTool::ReadFile { path } => read_file(path, repo_root),
-        KiwiTool::WriteFile { path, content } => write_file(path, content, repo_root),
-        KiwiTool::ListDirectory { path, depth } => list_directory(path, *depth, repo_root),
-        KiwiTool::RunBash { command } => ExecutionResult::RunBash { command: command.clone() },
+        KiwiTool::FileRead { path } => read_file(path, repo_root),
+        KiwiTool::FileWrite { path, content } => write_file(path, content, repo_root),
+        KiwiTool::FileList { path, depth } => list_directory(path, *depth, repo_root),
+        KiwiTool::ShellRun { command } => ExecutionResult::ShellRun { command: command.clone() },
         KiwiTool::GitStatus => git_status(repo_root),
         KiwiTool::GitDiff { path } => git_diff(path.as_deref(), repo_root),
-        KiwiTool::SearchFiles { query } => search_files(query, repo_root),
-        KiwiTool::SearchContent { query, path } => {
-            search_content(query, path.as_deref(), repo_root)
-        }
+        KiwiTool::FileSearch { query } => search_files(query, repo_root),
+        KiwiTool::FileGrep { query, path } => search_content(query, path.as_deref(), repo_root),
     }
 }
 
@@ -316,7 +314,7 @@ mod tests {
         fs::write(dir.path().join("hello.txt"), "world").unwrap();
 
         let result = execute_tool(
-            &KiwiTool::ReadFile { path: "hello.txt".to_string() },
+            &KiwiTool::FileRead { path: "hello.txt".to_string() },
             dir.path(),
         );
         assert!(matches!(result, ExecutionResult::Done { content, is_error: false } if content == "world"));
@@ -326,7 +324,7 @@ mod tests {
     fn read_file_missing_returns_error() {
         let dir = temp_repo();
         let result = execute_tool(
-            &KiwiTool::ReadFile { path: "nope.txt".to_string() },
+            &KiwiTool::FileRead { path: "nope.txt".to_string() },
             dir.path(),
         );
         assert!(matches!(result, ExecutionResult::Done { is_error: true, .. }));
@@ -336,7 +334,7 @@ mod tests {
     fn write_file_creates_file() {
         let dir = temp_repo();
         let result = execute_tool(
-            &KiwiTool::WriteFile {
+            &KiwiTool::FileWrite {
                 path: "new.txt".to_string(),
                 content: "hello".to_string(),
             },
@@ -350,7 +348,7 @@ mod tests {
     fn write_file_creates_parent_dirs() {
         let dir = temp_repo();
         let result = execute_tool(
-            &KiwiTool::WriteFile {
+            &KiwiTool::FileWrite {
                 path: "a/b/c.txt".to_string(),
                 content: "deep".to_string(),
             },
@@ -364,7 +362,7 @@ mod tests {
     fn path_traversal_blocked() {
         let dir = temp_repo();
         let result = execute_tool(
-            &KiwiTool::ReadFile { path: "../etc/passwd".to_string() },
+            &KiwiTool::FileRead { path: "../etc/passwd".to_string() },
             dir.path(),
         );
         assert!(matches!(result, ExecutionResult::Done { is_error: true, .. }));
@@ -374,7 +372,7 @@ mod tests {
     fn absolute_path_blocked() {
         let dir = temp_repo();
         let result = execute_tool(
-            &KiwiTool::ReadFile { path: "/etc/passwd".to_string() },
+            &KiwiTool::FileRead { path: "/etc/passwd".to_string() },
             dir.path(),
         );
         assert!(matches!(result, ExecutionResult::Done { is_error: true, .. }));
@@ -384,10 +382,10 @@ mod tests {
     fn run_bash_returns_run_bash_result() {
         let dir = temp_repo();
         let result = execute_tool(
-            &KiwiTool::RunBash { command: "echo hi".to_string() },
+            &KiwiTool::ShellRun { command: "echo hi".to_string() },
             dir.path(),
         );
-        assert!(matches!(result, ExecutionResult::RunBash { .. }));
+        assert!(matches!(result, ExecutionResult::ShellRun { .. }));
     }
 
     #[test]
@@ -397,7 +395,7 @@ mod tests {
         fs::write(dir.path().join("b.rs"), "").unwrap();
 
         let result = execute_tool(
-            &KiwiTool::ListDirectory { path: ".".to_string(), depth: 1 },
+            &KiwiTool::FileList { path: ".".to_string(), depth: 1 },
             dir.path(),
         );
         assert!(matches!(result, ExecutionResult::Done { ref content, is_error: false } if content.contains("a.rs")));
@@ -410,7 +408,7 @@ mod tests {
         fs::write(dir.path().join("lib.rs"), "").unwrap();
 
         let result = execute_tool(
-            &KiwiTool::SearchFiles { query: "main".to_string() },
+            &KiwiTool::FileSearch { query: "main".to_string() },
             dir.path(),
         );
         assert!(
@@ -422,7 +420,7 @@ mod tests {
     fn search_files_no_match() {
         let dir = temp_repo();
         let result = execute_tool(
-            &KiwiTool::SearchFiles { query: "zzz_nonexistent".to_string() },
+            &KiwiTool::FileSearch { query: "zzz_nonexistent".to_string() },
             dir.path(),
         );
         assert!(
