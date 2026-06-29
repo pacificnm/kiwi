@@ -11,6 +11,7 @@ use kiwi_core::agent::{
     execute_tool, spawn_claude_stream, spawn_cursor_stream, ExecutionResult, KiwiTool,
     StreamCancelHandle, ToolParseError,
 };
+use kiwi_core::config::persist_user_theme;
 use kiwi_core::diff::spawn_file_diff_load;
 use kiwi_core::editor::{
     launch_gui_editor, prepare_editor_launch, run_terminal_editor, EditorLaunchMode,
@@ -23,14 +24,13 @@ use kiwi_core::file_tree::spawn_directory_load;
 use kiwi_core::git::spawn_git_refresh;
 use kiwi_core::github::{
     spawn_github_auth_check, spawn_github_issue_comment, spawn_github_issue_create,
-    spawn_github_issue_create_branch,
-    spawn_github_issue_detail_load, spawn_github_issue_label_apply, spawn_github_issue_list_load,
+    spawn_github_issue_create_branch, spawn_github_issue_detail_load,
+    spawn_github_issue_label_apply, spawn_github_issue_list_load,
     spawn_github_issue_milestone_assign, spawn_github_open_browser, spawn_github_pr_create,
     spawn_github_pr_detail_load, spawn_github_pr_list_load, spawn_github_pr_merge,
     spawn_github_repo_labels_load, spawn_github_repo_milestones_load,
 };
 use kiwi_core::preview::spawn_preview_load;
-use kiwi_core::config::persist_user_theme;
 use kiwi_core::search::{spawn_search, DebounceTimer, SearchCancelHandle, SearchJob};
 use kiwi_core::state::{AppState, ReduceView};
 use kiwi_core::workspace::{try_merge_save_gui, try_save_from_reduce_view, GuiWorkspaceSnapshot};
@@ -315,7 +315,12 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
             AgentEffect::CancelStream(id) => {
                 ctx.pty.cancel_stream(id);
             }
-            AgentEffect::ExecuteTool { agent_id, tool_use_id, tool_name, input_json } => {
+            AgentEffect::ExecuteTool {
+                agent_id,
+                tool_use_id,
+                tool_name,
+                input_json,
+            } => {
                 handle_execute_tool(ctx, agent_id, tool_use_id, &tool_name, &input_json);
             }
             _ => {} // #[non_exhaustive] forward-compat
@@ -359,7 +364,11 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
                     .live_generation
                     .store(ctx.state.search.generation, Ordering::Relaxed);
             }
-            SearchEffect::Run { mode, query, generation } => {
+            SearchEffect::Run {
+                mode,
+                query,
+                generation,
+            } => {
                 ctx.search.cancel.clear();
                 spawn_search(
                     SearchJob {
@@ -380,7 +389,9 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
             match Clipboard::new().and_then(|mut cb| cb.set_text(text)) {
                 Ok(()) => {}
                 Err(err) => {
-                    ctx.state.notifications.show_toast(format!("Copy failed: {err}"));
+                    ctx.state
+                        .notifications
+                        .show_toast(format!("Copy failed: {err}"));
                     ctx.state.dirty = true;
                 }
             }
@@ -401,7 +412,9 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
                     }
                 }
                 Err(err) => {
-                    ctx.state.notifications.show_toast(format!("Paste failed: {err}"));
+                    ctx.state
+                        .notifications
+                        .show_toast(format!("Paste failed: {err}"));
                     ctx.state.dirty = true;
                 }
             }
@@ -445,14 +458,26 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
         SideEffect::PluginInstallFailed => {
             refresh_available_plugins(ctx);
         }
-        SideEffect::PersistAgentMode { provider, model, api_key_env, api_url, api_key } => {
+        SideEffect::PersistAgentMode {
+            provider,
+            model,
+            api_key_env,
+            api_url,
+            api_key,
+        } => {
             let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
             if let Some(home) = home {
                 if let Err(e) = kiwi_core::config::persist_user_agent_mode(
-                    &home, &provider, &model,
-                    api_key_env.as_deref(), api_url.as_deref(), api_key.as_deref(),
+                    &home,
+                    &provider,
+                    &model,
+                    api_key_env.as_deref(),
+                    api_url.as_deref(),
+                    api_key.as_deref(),
                 ) {
-                    ctx.state.notifications.show_toast(format!("Failed to save agent mode: {e}"));
+                    ctx.state
+                        .notifications
+                        .show_toast(format!("Failed to save agent mode: {e}"));
                     ctx.state.dirty = true;
                 }
             }
@@ -559,7 +584,7 @@ fn handle_execute_tool(
 }
 
 fn spawn_claude_stream_effect(ctx: &mut ServiceContext<'_>, agent_id: kiwi_core::agent::AgentId) {
-    use kiwi_core::agent::AgentProvider;
+    use kiwi_core::agent::{resolve_tool_profile, AgentProvider};
 
     // Snapshot provider, model, messages, and api_url before any mutable borrows.
     let snapshot = ctx
@@ -567,9 +592,17 @@ fn spawn_claude_stream_effect(ctx: &mut ServiceContext<'_>, agent_id: kiwi_core:
         .agent_manager
         .pty(agent_id)
         .and_then(|s| s.chat.as_ref())
-        .map(|chat| (chat.provider.clone(), chat.messages.clone(), chat.model.clone()));
+        .map(|chat| {
+            (
+                chat.provider.clone(),
+                chat.messages.clone(),
+                chat.model.clone(),
+            )
+        });
 
-    let Some((provider, messages, model)) = snapshot else { return };
+    let Some((provider, messages, model)) = snapshot else {
+        return;
+    };
     if messages.is_empty() {
         return;
     }
@@ -585,20 +618,47 @@ fn spawn_claude_stream_effect(ctx: &mut ServiceContext<'_>, agent_id: kiwi_core:
     ctx.pty.register_stream(agent_id, cancel.clone());
     let sender = ctx.events.sender();
 
-    // Look up per-provider settings; fall back to legacy flat fields.
-    let active_name = ctx.state.config.agent.active_provider.as_deref().unwrap_or("claude");
-    let provider_settings = ctx.state.config.agent.providers.get(active_name).cloned();
+    let provider_key = match provider {
+        AgentProvider::Ollama => "ollama",
+        AgentProvider::OpenAI => "openai",
+        AgentProvider::Cursor => "cursor",
+        AgentProvider::Claude => "claude",
+        AgentProvider::Pty => ctx
+            .state
+            .config
+            .agent
+            .active_provider
+            .as_deref()
+            .unwrap_or("claude"),
+    };
+    let provider_settings = ctx.state.config.agent.providers.get(provider_key).cloned();
+    let tool_profile = resolve_tool_profile(
+        &ctx.state.config.agent.tool_profile,
+        provider_settings
+            .as_ref()
+            .and_then(|p| p.tool_profile.as_deref()),
+    )
+    .to_string();
 
+    // Look up per-provider settings; fall back to legacy flat fields.
     let resolve_api_key = |default_env: &str| -> String {
-        let env_var = provider_settings.as_ref().map(|p| p.api_key_env.as_str())
+        let env_var = provider_settings
+            .as_ref()
+            .map(|p| p.api_key_env.as_str())
             .unwrap_or(default_env);
-        let config_key = provider_settings.as_ref().and_then(|p| p.api_key.clone())
+        let config_key = provider_settings
+            .as_ref()
+            .and_then(|p| p.api_key.clone())
             .or_else(|| ctx.state.config.agent.api_key.clone());
         std::env::var(env_var)
             .ok()
             .map(|k| k.trim().to_string())
             .filter(|k| !k.is_empty())
-            .or_else(|| config_key.map(|k| k.trim().to_string()).filter(|k| !k.is_empty()))
+            .or_else(|| {
+                config_key
+                    .map(|k| k.trim().to_string())
+                    .filter(|k| !k.is_empty())
+            })
             .unwrap_or_default()
     };
 
@@ -609,7 +669,15 @@ fn spawn_claude_stream_effect(ctx: &mut ServiceContext<'_>, agent_id: kiwi_core:
                 .and_then(|p| p.api_url.clone())
                 .or_else(|| ctx.state.config.agent.api_url.clone())
                 .unwrap_or_else(|| "http://localhost:11434".to_string());
-            kiwi_core::agent::spawn_ollama_stream(agent_id, api_url, model, messages, cancel, sender);
+            kiwi_core::agent::spawn_ollama_stream(
+                agent_id,
+                api_url,
+                model,
+                messages,
+                tool_profile,
+                cancel,
+                sender,
+            );
         }
         AgentProvider::OpenAI => {
             let api_key = resolve_api_key("OPENAI_API_KEY");
@@ -622,7 +690,15 @@ fn spawn_claude_stream_effect(ctx: &mut ServiceContext<'_>, agent_id: kiwi_core:
                 });
                 return;
             }
-            kiwi_core::agent::spawn_openai_stream(agent_id, api_key, model, messages, cancel, sender);
+            kiwi_core::agent::spawn_openai_stream(
+                agent_id,
+                api_key,
+                model,
+                messages,
+                tool_profile,
+                cancel,
+                sender,
+            );
         }
         AgentProvider::Cursor => {
             let api_key = resolve_api_key("CURSOR_API_KEY");
@@ -635,7 +711,15 @@ fn spawn_claude_stream_effect(ctx: &mut ServiceContext<'_>, agent_id: kiwi_core:
                 });
                 return;
             }
-            spawn_cursor_stream(agent_id, api_key, model, messages, cancel, sender);
+            spawn_cursor_stream(
+                agent_id,
+                api_key,
+                model,
+                messages,
+                tool_profile,
+                cancel,
+                sender,
+            );
         }
         _ => {
             let api_key = resolve_api_key("ANTHROPIC_API_KEY");
@@ -648,7 +732,15 @@ fn spawn_claude_stream_effect(ctx: &mut ServiceContext<'_>, agent_id: kiwi_core:
                 });
                 return;
             }
-            spawn_claude_stream(agent_id, api_key, model, messages, cancel, sender);
+            spawn_claude_stream(
+                agent_id,
+                api_key,
+                model,
+                messages,
+                tool_profile,
+                cancel,
+                sender,
+            );
         }
     }
 }
@@ -665,10 +757,7 @@ fn refresh_available_plugins(ctx: &mut ServiceContext<'_>) {
     }
 }
 
-fn plugin_user_message(
-    result: &kiwi_core::plugins::PluginInstallResult,
-    fallback: &str,
-) -> String {
+fn plugin_user_message(result: &kiwi_core::plugins::PluginInstallResult, fallback: &str) -> String {
     result
         .messages
         .last()
@@ -700,7 +789,8 @@ fn register_installed_plugin(
             }
         }
     } else {
-        let message = format!("Plugin `{name}` installed on disk (HOME not set — registry not updated)");
+        let message =
+            format!("Plugin `{name}` installed on disk (HOME not set — registry not updated)");
         ctx.state.logs.push_info(message.clone());
         ctx.state.notifications.show_toast(message);
     }
@@ -768,7 +858,8 @@ fn handle_plugin_remove(ctx: &mut ServiceContext<'_>, name: &str) {
         let (mut registry, _) = kiwi_core::plugins::PluginRegistry::load(&path);
         registry.remove(name);
         if let Err(e) = registry.save(&path) {
-            let message = format!("Plugin `{name}` removed from disk but registry save failed: {e}");
+            let message =
+                format!("Plugin `{name}` removed from disk but registry save failed: {e}");
             ctx.state.logs.push_info(message.clone());
             ctx.state.notifications.show_toast(message);
         }
@@ -931,7 +1022,8 @@ mod tests {
             })
             .expect("send");
 
-        let (quit, count) = process_pending_events(&mut state, &mut events, &mut pty, &mut search, None);
+        let (quit, count) =
+            process_pending_events(&mut state, &mut events, &mut pty, &mut search, None);
         assert!(!quit);
         assert_eq!(count, 1);
 
@@ -974,7 +1066,10 @@ mod tests {
             dock_snapshot: None,
         };
 
-        let quit = execute_gui_effects(&mut ctx, vec![SideEffect::GitHub(GitHubEffect::SpawnAuthCheck)]);
+        let quit = execute_gui_effects(
+            &mut ctx,
+            vec![SideEffect::GitHub(GitHubEffect::SpawnAuthCheck)],
+        );
         assert!(!quit);
     }
 
@@ -1053,15 +1148,13 @@ mod tests {
             &mut ReduceView::from_app_state(&mut state),
             AppEvent::Command(AppCommand::GitHubRefresh),
         );
-        assert!(effects.iter().any(|effect| matches!(
-            effect,
-            SideEffect::GitHub(GitHubEffect::SpawnAuthCheck)
-        )));
+        assert!(effects
+            .iter()
+            .any(|effect| matches!(effect, SideEffect::GitHub(GitHubEffect::SpawnAuthCheck))));
         // Reducer contract: GitHubRefresh must NOT emit SpawnRefresh (see #274).
-        assert!(!effects.iter().any(|effect| matches!(
-            effect,
-            SideEffect::GitHub(GitHubEffect::SpawnRefresh)
-        )));
+        assert!(!effects
+            .iter()
+            .any(|effect| matches!(effect, SideEffect::GitHub(GitHubEffect::SpawnRefresh))));
 
         let quit = execute_gui_effects(
             &mut ServiceContext {
@@ -1109,8 +1202,10 @@ mod tests {
             search: &mut search,
             dock_snapshot: None,
         };
-        let quit =
-            execute_gui_effects(&mut ctx, vec![SideEffect::CopyToClipboard("hello".to_string())]);
+        let quit = execute_gui_effects(
+            &mut ctx,
+            vec![SideEffect::CopyToClipboard("hello".to_string())],
+        );
         assert!(!quit);
     }
 
@@ -1148,7 +1243,9 @@ mod tests {
         // May show a toast if HOME is unset; must not panic or quit.
         let quit = execute_gui_effects(
             &mut ctx,
-            vec![SideEffect::PersistUserTheme { name: "kiwi-dark".to_string() }],
+            vec![SideEffect::PersistUserTheme {
+                name: "kiwi-dark".to_string(),
+            }],
         );
         assert!(!quit);
     }
