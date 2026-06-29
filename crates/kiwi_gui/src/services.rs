@@ -570,10 +570,9 @@ fn spawn_claude_stream_effect(ctx: &mut ServiceContext<'_>, agent_id: kiwi_core:
     if api_key.is_empty() {
         let _ = ctx.events.sender().send(AppEvent::AgentApiError {
             agent_id,
-            message: format!(
-                "API key not found. Set ${env_var_name} in your shell, \
-                 or add api_key = \"sk-...\" under [agent] in ~/.config/kiwi/config.toml"
-            ),
+            message: "API key not found. Export ANTHROPIC_API_KEY in your shell, \
+                      or add  api_key = \"sk-...\"  under [agent] in \
+                      ~/.config/kiwi/config.toml".to_string(),
         });
         return;
     }
