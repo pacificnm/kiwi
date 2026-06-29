@@ -7,7 +7,10 @@ use std::time::Duration;
 
 use arboard::Clipboard;
 
-use kiwi_core::agent::{spawn_claude_stream, StreamCancelHandle};
+use kiwi_core::agent::{
+    execute_tool, spawn_claude_stream, ExecutionResult, KiwiTool, StreamCancelHandle,
+    ToolParseError,
+};
 use kiwi_core::diff::spawn_file_diff_load;
 use kiwi_core::editor::{
     launch_gui_editor, prepare_editor_launch, run_terminal_editor, EditorLaunchMode,
@@ -340,6 +343,9 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
             AgentEffect::CancelStream(id) => {
                 ctx.pty.cancel_stream(id);
             }
+            AgentEffect::ExecuteTool { agent_id, tool_use_id, tool_name, input_json } => {
+                handle_execute_tool(ctx, agent_id, tool_use_id, &tool_name, &input_json);
+            }
             _ => {} // #[non_exhaustive] forward-compat
         },
         SideEffect::Fs(effect) => match effect {
@@ -511,6 +517,61 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
         _ => {}
     }
     false
+}
+
+fn handle_execute_tool(
+    ctx: &mut ServiceContext<'_>,
+    agent_id: kiwi_core::agent::AgentId,
+    tool_use_id: String,
+    tool_name: &str,
+    input_json: &str,
+) {
+    let input: serde_json::Value = serde_json::from_str(input_json).unwrap_or_default();
+
+    let tool = match KiwiTool::from_tool_use(tool_name, &input) {
+        Ok(t) => t,
+        Err(ToolParseError(msg)) => {
+            let _ = ctx.events.sender().send(AppEvent::AgentToolResult {
+                agent_id,
+                tool_use_id,
+                content: format!("Unknown tool '{tool_name}': {msg}"),
+                is_error: true,
+            });
+            return;
+        }
+    };
+
+    // RunBash is handled inline — it needs PTY write access before spawning a thread.
+    if let KiwiTool::RunBash { ref command } = tool {
+        let bytes: Vec<u8> = format!("{command}\n").into_bytes();
+        let _ = ctx.pty.write_shell(&bytes);
+        let content = format!(
+            "Command sent to Terminal panel: `{command}`\nSwitch to the Terminal tab to see output."
+        );
+        let _ = ctx.events.sender().send(AppEvent::AgentToolResult {
+            agent_id,
+            tool_use_id,
+            content,
+            is_error: false,
+        });
+        return;
+    }
+
+    // All other tools run on a background thread (may involve disk I/O or subprocesses).
+    let repo_root = ctx.state.repo_root.clone();
+    let sender = ctx.events.sender();
+    std::thread::spawn(move || {
+        let (content, is_error) = match execute_tool(&tool, &repo_root) {
+            ExecutionResult::Done { content, is_error } => (content, is_error),
+            ExecutionResult::RunBash { .. } => unreachable!("RunBash handled above"),
+        };
+        let _ = sender.send(AppEvent::AgentToolResult {
+            agent_id,
+            tool_use_id,
+            content,
+            is_error,
+        });
+    });
 }
 
 fn spawn_claude_stream_effect(ctx: &mut ServiceContext<'_>, agent_id: kiwi_core::agent::AgentId) {

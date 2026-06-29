@@ -201,6 +201,7 @@ struct RequestBody<'a> {
     max_tokens: u32,
     stream: bool,
     messages: Vec<ApiMessage>,
+    tools: Vec<crate::agent::tools::ToolSchema>,
 }
 
 #[derive(Serialize)]
@@ -267,6 +268,7 @@ fn build_request_body<'a>(model: &'a str, messages: &[ChatMessage]) -> Result<Re
         max_tokens: DEFAULT_MAX_TOKENS,
         stream: true,
         messages: api_messages,
+        tools: crate::agent::tools::KiwiTool::all_schemas(),
     })
 }
 
