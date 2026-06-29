@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::tools::KiwiTool;
+use super::tools::{GitBranchAction, KiwiTool};
 
 /// Result of executing a `KiwiTool`.
 #[derive(Debug)]
@@ -28,6 +28,9 @@ pub fn execute_tool(tool: &KiwiTool, repo_root: &Path) -> ExecutionResult {
         KiwiTool::GitDiff { path } => git_diff(path.as_deref(), repo_root),
         KiwiTool::GitCommit { message, stage_all } => {
             git_commit(message, *stage_all, repo_root)
+        }
+        KiwiTool::GitBranch { action, name } => {
+            git_branch(*action, name.as_deref(), repo_root)
         }
         KiwiTool::FileSearch { query } => search_files(query, repo_root),
         KiwiTool::FileGrep { query, path } => search_content(query, path.as_deref(), repo_root),
@@ -292,6 +295,65 @@ fn format_git_output(stdout: &[u8], stderr: &[u8]) -> String {
     }
 }
 
+fn git_branch(
+    action: GitBranchAction,
+    name: Option<&str>,
+    repo_root: &Path,
+) -> ExecutionResult {
+    match action {
+        GitBranchAction::List => match Command::new("git")
+            .args(["branch", "--list"])
+            .current_dir(repo_root)
+            .output()
+        {
+            Ok(out) if out.status.success() => {
+                let content = format_git_output(&out.stdout, &out.stderr);
+                ExecutionResult::Done {
+                    content: if content.is_empty() {
+                        "(no local branches)".to_string()
+                    } else {
+                        content
+                    },
+                    is_error: false,
+                }
+            }
+            Ok(out) => ExecutionResult::Done {
+                content: format_git_output(&out.stdout, &out.stderr),
+                is_error: true,
+            },
+            Err(e) => ExecutionResult::Done {
+                content: format!("git not available: {e}"),
+                is_error: true,
+            },
+        },
+        GitBranchAction::Create => {
+            let name = name.expect("create validated at parse time");
+            run_git_checkout(repo_root, &["checkout", "-b", name])
+        }
+        GitBranchAction::Checkout => {
+            let name = name.expect("checkout validated at parse time");
+            run_git_checkout(repo_root, &["checkout", name])
+        }
+    }
+}
+
+fn run_git_checkout(repo_root: &Path, args: &[&str]) -> ExecutionResult {
+    match Command::new("git").args(args).current_dir(repo_root).output() {
+        Ok(out) if out.status.success() => ExecutionResult::Done {
+            content: format_git_output(&out.stdout, &out.stderr),
+            is_error: false,
+        },
+        Ok(out) => ExecutionResult::Done {
+            content: format_git_output(&out.stdout, &out.stderr),
+            is_error: true,
+        },
+        Err(e) => ExecutionResult::Done {
+            content: format!("git checkout failed: {e}"),
+            is_error: true,
+        },
+    }
+}
+
 fn git_diff(path: Option<&str>, repo_root: &Path) -> ExecutionResult {
     let mut cmd = Command::new("git");
     cmd.arg("diff").arg("HEAD").current_dir(repo_root);
@@ -428,21 +490,31 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::agent::tools::KiwiTool;
+    use crate::agent::tools::{GitBranchAction, KiwiTool};
 
     fn temp_repo() -> tempfile::TempDir {
         let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path();
         let _ = Command::new("git")
             .args(["init", "-q"])
-            .current_dir(dir.path())
+            .current_dir(path)
             .status();
         let _ = Command::new("git")
             .args(["config", "user.email", "test@example.com"])
-            .current_dir(dir.path())
+            .current_dir(path)
             .status();
         let _ = Command::new("git")
             .args(["config", "user.name", "Test User"])
-            .current_dir(dir.path())
+            .current_dir(path)
+            .status();
+        fs::write(path.join("README"), "init").unwrap();
+        let _ = Command::new("git")
+            .args(["add", "README"])
+            .current_dir(path)
+            .status();
+        let _ = Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(path)
             .status();
         dir
     }
@@ -657,5 +729,83 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn git_branch_list_includes_current_marker() {
+        let dir = temp_repo();
+        let result = execute_tool(
+            &KiwiTool::GitBranch {
+                action: GitBranchAction::List,
+                name: None,
+            },
+            dir.path(),
+        );
+        assert!(
+            matches!(result, ExecutionResult::Done { ref content, is_error: false } if content.contains('*'))
+        );
+    }
+
+    #[test]
+    fn git_branch_create_and_checkout() {
+        let dir = temp_repo();
+        let initial = Command::new("git")
+            .args(["branch", "--show-current"])
+            .current_dir(dir.path())
+            .output()
+            .expect("git branch --show-current");
+        let initial_branch = String::from_utf8_lossy(&initial.stdout)
+            .trim()
+            .to_string();
+
+        let create = execute_tool(
+            &KiwiTool::GitBranch {
+                action: GitBranchAction::Create,
+                name: Some("feature-test".to_string()),
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            create,
+            ExecutionResult::Done {
+                is_error: false,
+                ..
+            }
+        ));
+
+        let current = Command::new("git")
+            .args(["branch", "--show-current"])
+            .current_dir(dir.path())
+            .output()
+            .expect("git branch --show-current");
+        assert_eq!(
+            String::from_utf8_lossy(&current.stdout).trim(),
+            "feature-test"
+        );
+
+        let checkout = execute_tool(
+            &KiwiTool::GitBranch {
+                action: GitBranchAction::Checkout,
+                name: Some(initial_branch.clone()),
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            checkout,
+            ExecutionResult::Done {
+                is_error: false,
+                ..
+            }
+        ));
+
+        let current = Command::new("git")
+            .args(["branch", "--show-current"])
+            .current_dir(dir.path())
+            .output()
+            .expect("git branch --show-current");
+        assert_eq!(
+            String::from_utf8_lossy(&current.stdout).trim(),
+            initial_branch
+        );
     }
 }
