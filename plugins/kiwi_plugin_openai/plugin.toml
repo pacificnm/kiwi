@@ -1,0 +1,12 @@
+name = "openai"
+version = "0.1.0"
+min_kiwi_version = "0.1.0"
+display_name = "OpenAI"
+description = "OpenAI GPT models via the OpenAI API — runs as the AI agent in the Agent panel."
+author = "PacificNM"
+
+[agent]
+mode = "api"
+provider = "openai"
+model = "gpt-4o"
+api_key_env = "OPENAI_API_KEY"

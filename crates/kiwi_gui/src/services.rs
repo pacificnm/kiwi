@@ -595,6 +595,29 @@ fn spawn_claude_stream_effect(ctx: &mut ServiceContext<'_>, agent_id: kiwi_core:
                 agent_id, api_url, model, messages, cancel, sender,
             );
         }
+        AgentProvider::OpenAI => {
+            let env_var_name = ctx.state.config.agent.api_key_env.clone();
+            let config_key = ctx.state.config.agent.api_key.clone();
+            let api_key = std::env::var(&env_var_name)
+                .ok()
+                .map(|k| k.trim().to_string())
+                .filter(|k| !k.is_empty())
+                .or_else(|| config_key.map(|k| k.trim().to_string()).filter(|k| !k.is_empty()))
+                .unwrap_or_default();
+
+            if api_key.is_empty() {
+                let _ = sender.send(AppEvent::AgentApiError {
+                    agent_id,
+                    message: "API key not found. Export OPENAI_API_KEY in your shell, \
+                              or add  api_key = \"sk-...\"  under [agent] in \
+                              ~/.config/kiwi/config.toml"
+                        .to_string(),
+                });
+                return;
+            }
+
+            kiwi_core::agent::spawn_openai_stream(agent_id, api_key, model, messages, cancel, sender);
+        }
         _ => {
             // Claude (default) — resolve API key from env var then config literal.
             let env_var_name = ctx.state.config.agent.api_key_env.clone();

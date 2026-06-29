@@ -70,6 +70,11 @@ impl AppState {
         let agent_spec = agent_launch_spec(&config.agent);
         let agent_mode = config.agent.mode.clone();
         let agent_model = config.agent.model.clone();
+        let agent_provider = match config.agent.provider.as_deref() {
+            Some("ollama") => crate::agent::AgentProvider::Ollama,
+            Some("openai") => crate::agent::AgentProvider::OpenAI,
+            _ => crate::agent::AgentProvider::Claude,
+        };
         let mut file_tree = FileTreeState::at_root(repo_root.clone());
         file_tree.ensure_selection();
 
@@ -94,6 +99,7 @@ impl AppState {
                 chat: if agent_mode == AgentMode::Api {
                     Some(ChatSession {
                         model: agent_model,
+                        provider: agent_provider,
                         ..ChatSession::default()
                     })
                 } else {

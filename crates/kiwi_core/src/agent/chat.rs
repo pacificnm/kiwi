@@ -227,6 +227,8 @@ pub enum AgentProvider {
     Claude,
     /// Local Ollama instance (`http://localhost:11434` by default).
     Ollama,
+    /// OpenAI API (`gpt-*` models).
+    OpenAI,
     /// Legacy PTY subprocess (used when `provider = "pty"` in config).
     Pty,
 }
