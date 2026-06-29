@@ -88,7 +88,7 @@ Pre-defined profiles:
 
 | Profile | Tools |
 |---------|-------|
-| `coding` | file.read, file.write, file.list, file.search, file.grep, shell.run, git.status, git.diff, git.commit, cargo.check, cargo.test |
+| `coding` | file.read, file.write, file.patch, file.list, file.search, file.grep, file.delete, file.move, shell.run, shell.capture, git.status, git.diff, git.commit, cargo.check, cargo.build, cargo.test |
 | `code_review` | file.read, file.search, file.grep, git.diff, cargo.check |
 | `github` | github.issues, github.prs, git.branch, git.commit, git.status |
 | `planner` | project.context, memory.search, file.search, file.grep |
@@ -135,9 +135,15 @@ The stream spawner resolves the active profile, filters the registry, and passes
 
 | id | Description | Implementation |
 |---|---|---|
+| `file.patch` | Surgical str_replace edit — find unique `old_str`, replace with `new_str` | `fs::read` → find exact match → `fs::write` |
+| `file.read_range` | Read a specific line range from a file | `fs::read_to_string` → slice lines N–M |
+| `file.delete` | Delete a file from the repository | `fs::remove_file` with path-safety checks |
+| `file.move` | Rename or move a file | `fs::rename` with path-safety checks |
+| `shell.capture` | Run a command and return captured stdout/stderr | `Command::output()`, truncated at 20 KB |
 | `git.commit` | Stage all changes and commit with a message | `git add -A && git commit -m "{message}"` |
 | `git.branch` | List branches, or create/checkout a branch | `git branch` / `git checkout -b` |
 | `cargo.check` | Run `cargo check` in the repo root | subprocess, captures stdout+stderr |
+| `cargo.build` | Run `cargo build` (produces binaries, unlike check) | subprocess, captures stdout+stderr |
 | `cargo.test` | Run `cargo test` with optional filter | subprocess, captures output |
 | `github.issues` | List open GitHub issues | `gh issue list --json` |
 | `github.prs` | List open pull requests | `gh pr list --json` |
