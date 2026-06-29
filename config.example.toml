@@ -30,6 +30,12 @@ command = "agent"
 # [agent.env]
 # EXAMPLE = "value"
 
+# ── Claude Code agent ─────────────────────────────────────────────────────
+# Requires Claude Code installed and authenticated (`claude` on PATH).
+#
+# [agent]
+# command = "claude"
+
 # ── Ollama / qwen2.5-coder agent ──────────────────────────────────────────
 # Build and install: cargo install --path plugins/kiwi_plugin_ollama
 # Requires Ollama running locally with qwen2.5-coder and nomic-embed-text.
