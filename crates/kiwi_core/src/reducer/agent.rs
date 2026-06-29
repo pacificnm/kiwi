@@ -194,7 +194,7 @@ fn apply_status_heuristic(pty: &mut crate::state::AgentState) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Native chat reducers — stubs wired in Phase 1, implemented in Phase 2+.
+// Native chat reducers — wired in Phase 1, streaming logic active in Phase 2.
 // ---------------------------------------------------------------------------
 
 pub(super) fn reduce_agent_user_send(
@@ -209,8 +209,7 @@ pub(super) fn reduce_agent_user_send(
     chat.append_user_message(text);
     chat.is_streaming = true;
     state.set_dirty();
-    // Phase 2 will emit SideEffect::Agent(AgentEffect::StreamRequest(agent_id)) here.
-    Vec::new()
+    vec![SideEffect::Agent(AgentEffect::StreamRequest(agent_id))]
 }
 
 pub(super) fn reduce_agent_token_chunk(
@@ -272,7 +271,7 @@ pub(super) fn reduce_agent_tool_result(
         };
         chat.append_tool_result(result);
         state.set_dirty();
-        // Phase 2 will emit StreamRequest here to continue the conversation.
+        return vec![SideEffect::Agent(AgentEffect::StreamRequest(agent_id))];
     }
     Vec::new()
 }

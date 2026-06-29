@@ -47,6 +47,7 @@ kiwi_core = { path = "crates/kiwi_core" }
 egui = "0.31"
 eframe = { version = "0.31", default-features = false, features = ["default_fonts", "glow", "persistence", "wayland", "x11"] }
 egui_dock = { path = "crates/egui_dock", features = ["serde"] }
+reqwest = { version = "0.12", features = ["blocking", "json"] }
 ureq = { version = "2", features = ["json"] }
 walkdir = "2"
 postgres = "0.19"
