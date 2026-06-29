@@ -8,8 +8,8 @@ use std::time::Duration;
 use arboard::Clipboard;
 
 use kiwi_core::agent::{
-    execute_tool, spawn_claude_stream, spawn_cursor_stream, ExecutionResult, KiwiTool,
-    StreamCancelHandle, ToolParseError,
+    execute_tool, kiwi_tool_id_from_openai, normalize_tool_arguments, spawn_claude_stream,
+    spawn_cursor_stream, ExecutionResult, KiwiTool, StreamCancelHandle, ToolParseError,
 };
 use kiwi_core::config::persist_user_theme;
 use kiwi_core::diff::spawn_file_diff_load;
@@ -535,9 +535,11 @@ fn handle_execute_tool(
     tool_name: &str,
     input_json: &str,
 ) {
-    let input: serde_json::Value = serde_json::from_str(input_json).unwrap_or_default();
+    let input: serde_json::Value =
+        normalize_tool_arguments(serde_json::from_str(input_json).unwrap_or_default());
 
-    let tool = match KiwiTool::from_tool_use(tool_name, &input) {
+    let resolved_name = kiwi_tool_id_from_openai(tool_name).unwrap_or(tool_name);
+    let tool = match KiwiTool::from_tool_use(resolved_name, &input) {
         Ok(t) => t,
         Err(ToolParseError(msg)) => {
             let _ = ctx.events.sender().send(AppEvent::AgentToolResult {
@@ -552,6 +554,21 @@ fn handle_execute_tool(
 
     // ShellRun is handled inline — it needs PTY write access before spawning a thread.
     if let KiwiTool::ShellRun { ref command } = tool {
+        if command.contains("<tool_response>")
+            || command.contains("</tool_response>")
+            || command.trim().is_empty()
+        {
+            let _ = ctx.events.sender().send(AppEvent::AgentToolResult {
+                agent_id,
+                tool_use_id,
+                content: format!(
+                    "Refusing to run invalid shell command `{command}`. \
+                     Use cargo.check for compile checks, not shell.run."
+                ),
+                is_error: true,
+            });
+            return;
+        }
         let bytes: Vec<u8> = format!("{command}\n").into_bytes();
         let _ = ctx.pty.write_shell(&bytes);
         let content = format!(
@@ -669,10 +686,32 @@ fn spawn_claude_stream_effect(ctx: &mut ServiceContext<'_>, agent_id: kiwi_core:
                 .and_then(|p| p.api_url.clone())
                 .or_else(|| ctx.state.config.agent.api_url.clone())
                 .unwrap_or_else(|| "http://localhost:11434".to_string());
+            let ollama_settings = provider_settings.clone().unwrap_or_else(|| {
+                kiwi_core::config::ProviderSettings {
+                    api_key_env: String::new(),
+                    api_key: None,
+                    model: model.clone(),
+                    api_url: Some(api_url.clone()),
+                    tool_profile: None,
+                    tool_model: None,
+                    code_model: None,
+                    embedding_model: None,
+                }
+            });
+            let plan = kiwi_core::agent::resolve_ollama_stream(
+                &ollama_settings,
+                &messages,
+                &tool_profile,
+            );
+            if let Some(pty) = ctx.state.agent_manager.pty_mut(agent_id) {
+                if let Some(chat) = &mut pty.chat {
+                    chat.model = plan.model.clone();
+                }
+            }
             kiwi_core::agent::spawn_ollama_stream(
                 agent_id,
                 api_url,
-                model,
+                plan,
                 messages,
                 tool_profile,
                 cancel,

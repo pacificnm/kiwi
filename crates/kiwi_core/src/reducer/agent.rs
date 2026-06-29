@@ -1,5 +1,4 @@
-
-use crate::agent::{AgentId, ChatSession, ToolUse, ToolResult};
+use crate::agent::{AgentId, ChatSession, ToolResult, ToolUse};
 use crate::navigation::MainTab;
 use crate::state::ReduceView;
 
@@ -145,7 +144,9 @@ pub(super) fn reduce_agent_restart(state: &mut ReduceView<'_>) -> Vec<SideEffect
     }
 
     state.set_dirty();
-    vec![SideEffect::Agent(AgentEffect::Restart(state.agent_manager.active_id()))]
+    vec![SideEffect::Agent(AgentEffect::Restart(
+        state.agent_manager.active_id(),
+    ))]
 }
 
 pub(super) fn reduce_agent_scroll(state: &mut ReduceView<'_>, delta: i32) -> Vec<SideEffect> {
@@ -231,6 +232,10 @@ pub(super) fn reduce_agent_tool_call_start(
         return Vec::new();
     };
     if let Some(chat) = &mut pty.chat {
+        if crate::agent::streaming_text_is_ollama_tool_json(&chat.streaming_text) {
+            chat.streaming_text.clear();
+        }
+        chat.tool_rounds_this_turn = chat.tool_rounds_this_turn.saturating_add(1);
         let tool = ToolUse::new(tool_use_id.clone(), tool_name.clone(), input_json.clone());
         chat.active_tool_call = Some(tool.clone());
         chat.append_tool_use(tool);
@@ -263,6 +268,17 @@ pub(super) fn reduce_agent_tool_result(
             ToolResult::ok(tool_use_id, content)
         };
         chat.append_tool_result(result);
+        if chat.tool_rounds_this_turn >= crate::agent::MAX_TOOL_ROUNDS_PER_TURN {
+            chat.is_streaming = false;
+            chat.error = Some(format!(
+                "Stopped after {} tool calls in one turn. Try a simpler request or switch models.",
+                crate::agent::MAX_TOOL_ROUNDS_PER_TURN
+            ));
+            chat.tool_rounds_this_turn = 0;
+            state.set_dirty();
+            return Vec::new();
+        }
+        chat.is_streaming = true;
         state.set_dirty();
         return vec![SideEffect::Agent(AgentEffect::StreamRequest(agent_id))];
     }

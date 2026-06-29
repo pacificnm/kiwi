@@ -12,11 +12,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use serde::Serialize;
+use serde_json::{Map, Value};
 
 use crate::agent::tools::{
-    ollama_supports_tools, tools_for_claude, tools_for_openai, OpenAiToolSchema, ToolRegistry,
+    kiwi_tool_id_from_openai, normalize_tool_arguments, normalize_tool_arguments_json,
+    ollama_split_models, ollama_supports_tools, ollama_uses_native_tool_calls,
+    openai_tool_name, parse_ollama_content_tool_calls, tools_for_claude, tools_for_ollama,
+    tools_for_openai, OpenAiToolSchema, ToolRegistry,
 };
 use crate::agent::{AgentId, ChatMessage, ContentBlock, MessageRole};
+use crate::config::ProviderSettings;
 use crate::events::{AppEvent, EventSender};
 
 use super::stream_event::{ApiStreamEvent, ContentBlockStart, ContentDelta};
@@ -89,6 +94,72 @@ pub fn spawn_claude_stream(
 // Ollama public API
 // ---------------------------------------------------------------------------
 
+/// How prior tool calls are replayed in Ollama chat history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OllamaHistoryFormat {
+    /// `llama3` — OpenAI-style `tool_calls` with object `arguments`.
+    NativeToolCalls,
+    /// `qwen2.5-coder` — JSON blob in assistant `content`.
+    ContentJson,
+}
+
+/// Resolved model + tool settings for one Ollama stream request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OllamaStreamPlan {
+    pub model: String,
+    pub include_tools: bool,
+    pub history_format: OllamaHistoryFormat,
+}
+
+/// Pick orchestration vs synthesis model for split Ollama setups.
+pub fn resolve_ollama_stream(
+    settings: &ProviderSettings,
+    messages: &[ChatMessage],
+    tool_profile: &str,
+) -> OllamaStreamPlan {
+    let tool_model = settings
+        .tool_model
+        .as_deref()
+        .unwrap_or(settings.model.as_str());
+    let code_model = settings
+        .code_model
+        .as_deref()
+        .unwrap_or(settings.model.as_str());
+
+    if ollama_split_models(settings) && messages_end_with_tool_result(messages) {
+        return OllamaStreamPlan {
+            model: code_model.to_string(),
+            include_tools: false,
+            history_format: OllamaHistoryFormat::ContentJson,
+        };
+    }
+
+    let tools = tools_for_ollama(tool_profile);
+    let include_tools = ollama_supports_tools(tool_model) && !tools.is_empty();
+    let history_format = if ollama_uses_native_tool_calls(tool_model) {
+        OllamaHistoryFormat::NativeToolCalls
+    } else {
+        OllamaHistoryFormat::ContentJson
+    };
+
+    OllamaStreamPlan {
+        model: tool_model.to_string(),
+        include_tools,
+        history_format,
+    }
+}
+
+fn messages_end_with_tool_result(messages: &[ChatMessage]) -> bool {
+    let Some(last) = messages.last() else {
+        return false;
+    };
+    last.role == MessageRole::User
+        && last
+            .blocks
+            .iter()
+            .any(|block| matches!(block, ContentBlock::ToolResult(_)))
+}
+
 /// Spawn a background thread that streams an Ollama chat turn and fires events.
 ///
 /// Uses Ollama's native `/api/chat` endpoint which returns NDJSON (one JSON object
@@ -96,7 +167,7 @@ pub fn spawn_claude_stream(
 pub fn spawn_ollama_stream(
     agent_id: AgentId,
     api_url: String,
-    model: String,
+    plan: OllamaStreamPlan,
     messages: Vec<ChatMessage>,
     tool_profile: String,
     cancel: StreamCancelHandle,
@@ -106,7 +177,7 @@ pub fn spawn_ollama_stream(
         if let Err(msg) = run_ollama_stream(
             agent_id,
             &api_url,
-            &model,
+            &plan,
             &messages,
             &tool_profile,
             &cancel,
@@ -125,16 +196,22 @@ pub fn spawn_ollama_stream(
 fn run_ollama_stream(
     agent_id: AgentId,
     api_url: &str,
-    model: &str,
+    plan: &OllamaStreamPlan,
     messages: &[ChatMessage],
     tool_profile: &str,
     cancel: &StreamCancelHandle,
     sender: &EventSender,
 ) -> Result<(), String> {
     let url = format!("{}/api/chat", api_url.trim_end_matches('/'));
-    let tools = ToolRegistry::for_profile(tool_profile);
-    let include_tools = ollama_supports_tools(model) && !tools.is_empty();
-    let body = build_ollama_request_body(model, messages, include_tools, &tools);
+    let tools = tools_for_ollama(tool_profile);
+    let include_tools = plan.include_tools && !tools.is_empty();
+    let body = build_ollama_request_body(
+        &plan.model,
+        messages,
+        include_tools,
+        &tools,
+        plan.history_format,
+    );
 
     let client = reqwest::blocking::Client::new();
     let response = client
@@ -161,6 +238,9 @@ fn process_ollama_lines(
     sender: &EventSender,
     include_tools: bool,
 ) -> Result<(), String> {
+    let mut pending_tool_calls: Vec<serde_json::Value> = Vec::new();
+    let mut buffered_content = String::new();
+
     for raw_line in reader.lines() {
         if cancel.is_cancelled() {
             return Ok(());
@@ -188,6 +268,7 @@ fn process_ollama_lines(
             .and_then(|c| c.as_str())
         {
             if !content.is_empty() {
+                buffered_content.push_str(content);
                 let _ = sender.send(AppEvent::AgentTokenChunk {
                     agent_id,
                     text: content.to_string(),
@@ -196,52 +277,47 @@ fn process_ollama_lines(
         }
 
         if include_tools {
-            if obj.get("done").and_then(|d| d.as_bool()).unwrap_or(false) {
-                if let Some(tool_calls) = obj
-                    .get("message")
-                    .and_then(|m| m.get("tool_calls"))
-                    .and_then(|calls| calls.as_array())
-                {
-                    for (index, call) in tool_calls.iter().enumerate() {
-                        let Some(name) = call
-                            .get("function")
-                            .and_then(|f| f.get("name"))
-                            .and_then(|n| n.as_str())
-                        else {
-                            continue;
-                        };
-                        let arguments = call
-                            .get("function")
-                            .and_then(|f| f.get("arguments"))
-                            .map(|args| {
-                                if args.is_string() {
-                                    args.as_str().unwrap_or("{}").to_string()
-                                } else {
-                                    args.to_string()
-                                }
-                            })
-                            .unwrap_or_else(|| "{}".to_string());
-                        let tool_use_id = call
-                            .get("id")
-                            .and_then(|id| id.as_str())
-                            .map(str::to_owned)
-                            .unwrap_or_else(|| format!("ollama_call_{index}"));
-                        let _ = sender.send(AppEvent::AgentToolCallStart {
-                            agent_id,
-                            tool_use_id,
-                            tool_name: name.to_string(),
-                            input_json: arguments,
-                        });
-                    }
+            if let Some(tool_calls) = obj
+                .get("message")
+                .and_then(|m| m.get("tool_calls"))
+                .and_then(|calls| calls.as_array())
+            {
+                if !tool_calls.is_empty() {
+                    pending_tool_calls.clone_from(tool_calls);
                 }
-                let _ = sender.send(AppEvent::AgentTurnComplete { agent_id });
-                return Ok(());
             }
-            continue;
         }
 
         if obj.get("done").and_then(|d| d.as_bool()).unwrap_or(false) {
+            if include_tools {
+                if let Some(content) = obj
+                    .get("message")
+                    .and_then(|m| m.get("content"))
+                    .and_then(|c| c.as_str())
+                {
+                    if !content.is_empty() {
+                        buffered_content = content.to_string();
+                    }
+                }
+                if !pending_tool_calls.is_empty() {
+                    emit_ollama_tool_calls(agent_id, &pending_tool_calls, sender);
+                    return Ok(());
+                }
+                if emit_ollama_content_tool_calls(agent_id, &buffered_content, sender) {
+                    return Ok(());
+                }
+            }
             let _ = sender.send(AppEvent::AgentTurnComplete { agent_id });
+            return Ok(());
+        }
+    }
+
+    if include_tools {
+        if !pending_tool_calls.is_empty() {
+            emit_ollama_tool_calls(agent_id, &pending_tool_calls, sender);
+            return Ok(());
+        }
+        if emit_ollama_content_tool_calls(agent_id, &buffered_content, sender) {
             return Ok(());
         }
     }
@@ -250,13 +326,127 @@ fn process_ollama_lines(
     Ok(())
 }
 
+fn emit_ollama_tool_calls(
+    agent_id: AgentId,
+    tool_calls: &[serde_json::Value],
+    sender: &EventSender,
+) {
+    for (index, call) in tool_calls.iter().enumerate() {
+        let Some(wire_name) = call
+            .get("function")
+            .and_then(|f| f.get("name"))
+            .and_then(|n| n.as_str())
+        else {
+            continue;
+        };
+        let arguments = call
+            .get("function")
+            .and_then(|f| f.get("arguments"))
+            .map(|args| {
+                if args.is_string() {
+                    normalize_tool_arguments_json(args.as_str().unwrap_or("{}"))
+                } else {
+                    serde_json::to_string(&normalize_tool_arguments(args.clone()))
+                        .unwrap_or_else(|_| "{}".to_string())
+                }
+            })
+            .unwrap_or_else(|| "{}".to_string());
+        let tool_use_id = call
+            .get("id")
+            .and_then(|id| id.as_str())
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("ollama_call_{index}"));
+        emit_ollama_tool_call_start(
+            agent_id,
+            &tool_use_id,
+            wire_name,
+            &arguments,
+            sender,
+        );
+    }
+}
+
+fn emit_ollama_content_tool_calls(
+    agent_id: AgentId,
+    content: &str,
+    sender: &EventSender,
+) -> bool {
+    let calls: Vec<_> = parse_ollama_content_tool_calls(content)
+        .into_iter()
+        .filter(|call| kiwi_tool_id_from_openai(&call.wire_name).is_some())
+        .collect();
+    if calls.is_empty() {
+        return false;
+    }
+    for (index, call) in calls.iter().enumerate() {
+        let input_json = serde_json::to_string(&normalize_tool_arguments(call.arguments.clone()))
+            .unwrap_or_else(|_| "{}".to_string());
+        let tool_use_id = format!("ollama_content_call_{index}");
+        emit_ollama_tool_call_start(
+            agent_id,
+            &tool_use_id,
+            &call.wire_name,
+            &input_json,
+            sender,
+        );
+    }
+    true
+}
+
+fn emit_ollama_tool_call_start(
+    agent_id: AgentId,
+    tool_use_id: &str,
+    wire_name: &str,
+    input_json: &str,
+    sender: &EventSender,
+) {
+    let tool_name = kiwi_tool_id_from_openai(wire_name)
+        .unwrap_or(wire_name)
+        .to_string();
+    let _ = sender.send(AppEvent::AgentToolCallStart {
+        agent_id,
+        tool_use_id: tool_use_id.to_string(),
+        tool_name,
+        input_json: input_json.to_string(),
+    });
+}
+
 #[derive(Serialize)]
 struct OllamaRequestBody<'a> {
     model: &'a str,
-    messages: Vec<OpenAiChatMessage>,
+    messages: Vec<OllamaChatMessage>,
     stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<Vec<OpenAiToolSchema>>,
+}
+
+#[derive(Serialize)]
+struct OllamaChatMessage {
+    role: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_calls: Option<Vec<OllamaWireToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_call_id: Option<String>,
+    /// Required by Ollama when returning tool execution results.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_name: Option<String>,
+}
+
+#[derive(Serialize)]
+struct OllamaWireToolCall {
+    id: String,
+    #[serde(rename = "type")]
+    kind: &'static str,
+    function: OllamaWireFunctionCall,
+}
+
+/// Ollama expects `function.arguments` as a JSON object, not a stringified blob.
+#[derive(Serialize)]
+struct OllamaWireFunctionCall {
+    name: String,
+    arguments: Value,
 }
 
 #[derive(Serialize)]
@@ -268,6 +458,9 @@ struct OpenAiChatMessage {
     tool_calls: Option<Vec<OpenAiWireToolCall>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_call_id: Option<String>,
+    /// Required by Ollama when returning tool execution results.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_name: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -289,13 +482,14 @@ fn build_ollama_request_body<'a>(
     messages: &[ChatMessage],
     include_tools: bool,
     tools: &[crate::agent::tools::KiwiToolDef],
+    history_format: OllamaHistoryFormat,
 ) -> OllamaRequestBody<'a> {
     OllamaRequestBody {
         model,
         messages: if include_tools {
-            openai_compatible_messages(messages)
+            ollama_compatible_messages(messages, history_format)
         } else {
-            build_flat_openai_messages(messages)
+            build_flat_ollama_messages(messages, history_format)
         },
         stream: true,
         tools: if include_tools {
@@ -306,7 +500,20 @@ fn build_ollama_request_body<'a>(
     }
 }
 
-fn build_flat_openai_messages(messages: &[ChatMessage]) -> Vec<OpenAiChatMessage> {
+fn wire_tool_arguments(input_json: &str) -> Value {
+    serde_json::from_str(input_json)
+        .map(normalize_tool_arguments)
+        .unwrap_or_else(|_| Value::Object(Map::new()))
+}
+
+fn build_flat_ollama_messages(
+    messages: &[ChatMessage],
+    history_format: OllamaHistoryFormat,
+) -> Vec<OllamaChatMessage> {
+    if history_format == OllamaHistoryFormat::NativeToolCalls {
+        return ollama_compatible_messages(messages, history_format);
+    }
+
     let mut out = Vec::with_capacity(messages.len());
 
     for msg in messages {
@@ -327,12 +534,157 @@ fn build_flat_openai_messages(messages: &[ChatMessage]) -> Vec<OpenAiChatMessage
             .join("\n");
 
         if !content.is_empty() {
-            out.push(OpenAiChatMessage {
+            out.push(OllamaChatMessage {
                 role,
                 content: Some(content),
                 tool_calls: None,
                 tool_call_id: None,
+                tool_name: None,
             });
+        }
+    }
+
+    out
+}
+
+fn ollama_tool_use_content(tool: &crate::agent::ToolUse) -> String {
+    let wire_name = openai_tool_name(&tool.name);
+    let arguments = wire_tool_arguments(&tool.input_json);
+    serde_json::json!({
+        "name": wire_name,
+        "arguments": arguments,
+    })
+    .to_string()
+}
+
+fn ollama_compatible_messages(
+    messages: &[ChatMessage],
+    history_format: OllamaHistoryFormat,
+) -> Vec<OllamaChatMessage> {
+    match history_format {
+        OllamaHistoryFormat::NativeToolCalls => ollama_native_compatible_messages(messages),
+        OllamaHistoryFormat::ContentJson => ollama_content_json_compatible_messages(messages),
+    }
+}
+
+fn ollama_native_compatible_messages(messages: &[ChatMessage]) -> Vec<OllamaChatMessage> {
+    let mut out = Vec::new();
+
+    for msg in messages {
+        match msg.role {
+            MessageRole::User => {
+                for block in &msg.blocks {
+                    match block {
+                        ContentBlock::Text(text) => out.push(OllamaChatMessage {
+                            role: "user",
+                            content: Some(text.clone()),
+                            tool_calls: None,
+                            tool_call_id: None,
+                            tool_name: None,
+                        }),
+                        ContentBlock::ToolResult(result) => out.push(OllamaChatMessage {
+                            role: "tool",
+                            content: Some(result.content.clone()),
+                            tool_calls: None,
+                            tool_call_id: Some(result.tool_use_id.clone()),
+                            tool_name: wire_tool_name_for_id(messages, &result.tool_use_id),
+                        }),
+                        ContentBlock::ToolUse(_) => {}
+                    }
+                }
+            }
+            MessageRole::Assistant => {
+                let mut content_parts = Vec::new();
+                let mut tool_calls = Vec::new();
+                for block in &msg.blocks {
+                    match block {
+                        ContentBlock::Text(text) => content_parts.push(text.clone()),
+                        ContentBlock::ToolUse(tool) => tool_calls.push(OllamaWireToolCall {
+                            id: tool.id.clone(),
+                            kind: "function",
+                            function: OllamaWireFunctionCall {
+                                name: openai_tool_name(&tool.name),
+                                arguments: wire_tool_arguments(&tool.input_json),
+                            },
+                        }),
+                        ContentBlock::ToolResult(_) => {}
+                    }
+                }
+                let content = if content_parts.is_empty() {
+                    None
+                } else {
+                    Some(content_parts.join("\n"))
+                };
+                let tool_calls = if tool_calls.is_empty() {
+                    None
+                } else {
+                    Some(tool_calls)
+                };
+                if content.is_some() || tool_calls.is_some() {
+                    out.push(OllamaChatMessage {
+                        role: "assistant",
+                        content,
+                        tool_calls,
+                        tool_call_id: None,
+                        tool_name: None,
+                    });
+                }
+            }
+        }
+    }
+
+    out
+}
+
+fn ollama_content_json_compatible_messages(messages: &[ChatMessage]) -> Vec<OllamaChatMessage> {
+    let mut out = Vec::new();
+
+    for msg in messages {
+        match msg.role {
+            MessageRole::User => {
+                for block in &msg.blocks {
+                    match block {
+                        ContentBlock::Text(text) => out.push(OllamaChatMessage {
+                            role: "user",
+                            content: Some(text.clone()),
+                            tool_calls: None,
+                            tool_call_id: None,
+                            tool_name: None,
+                        }),
+                        ContentBlock::ToolResult(result) => out.push(OllamaChatMessage {
+                            role: "tool",
+                            content: Some(result.content.clone()),
+                            tool_calls: None,
+                            tool_call_id: Some(result.tool_use_id.clone()),
+                            tool_name: wire_tool_name_for_id(messages, &result.tool_use_id),
+                        }),
+                        ContentBlock::ToolUse(_) => {}
+                    }
+                }
+            }
+            MessageRole::Assistant => {
+                let mut content_parts = Vec::new();
+                for block in &msg.blocks {
+                    match block {
+                        ContentBlock::Text(text) => content_parts.push(text.clone()),
+                        // Qwen/Ollama models emit and expect tool calls as JSON text in content,
+                        // not OpenAI-style `tool_calls` arrays in chat history.
+                        ContentBlock::ToolUse(tool) => {
+                            content_parts.push(ollama_tool_use_content(tool));
+                        }
+                        ContentBlock::ToolResult(_) => {}
+                    }
+                }
+                if !content_parts.is_empty() {
+                    out.push(OllamaChatMessage {
+                        role: "assistant",
+                        content: Some(content_parts.join("\n")),
+                        tool_calls: None,
+                        tool_call_id: None,
+                        tool_name: None,
+                    });
+                }
+            }
         }
     }
 
@@ -352,12 +704,14 @@ fn openai_compatible_messages(messages: &[ChatMessage]) -> Vec<OpenAiChatMessage
                             content: Some(text.clone()),
                             tool_calls: None,
                             tool_call_id: None,
+                            tool_name: None,
                         }),
                         ContentBlock::ToolResult(result) => out.push(OpenAiChatMessage {
                             role: "tool",
                             content: Some(result.content.clone()),
                             tool_calls: None,
                             tool_call_id: Some(result.tool_use_id.clone()),
+                            tool_name: wire_tool_name_for_id(messages, &result.tool_use_id),
                         }),
                         ContentBlock::ToolUse(_) => {}
                     }
@@ -373,7 +727,7 @@ fn openai_compatible_messages(messages: &[ChatMessage]) -> Vec<OpenAiChatMessage
                             id: tool.id.clone(),
                             kind: "function",
                             function: OpenAiWireFunctionCall {
-                                name: tool.name.clone(),
+                                name: openai_tool_name(&tool.name),
                                 arguments: tool.input_json.clone(),
                             },
                         }),
@@ -396,6 +750,7 @@ fn openai_compatible_messages(messages: &[ChatMessage]) -> Vec<OpenAiChatMessage
                         content,
                         tool_calls,
                         tool_call_id: None,
+                        tool_name: None,
                     });
                 }
             }
@@ -403,6 +758,21 @@ fn openai_compatible_messages(messages: &[ChatMessage]) -> Vec<OpenAiChatMessage
     }
 
     out
+}
+
+fn wire_tool_name_for_id(messages: &[ChatMessage], tool_use_id: &str) -> Option<String> {
+    for msg in messages {
+        for block in &msg.blocks {
+            if let ContentBlock::ToolUse(tool) = block {
+                if tool.id == tool_use_id {
+                    let kiwi_name =
+                        kiwi_tool_id_from_openai(&tool.name).unwrap_or(tool.name.as_str());
+                    return Some(openai_tool_name(kiwi_name));
+                }
+            }
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -497,8 +867,10 @@ fn process_openai_sse_lines(
         let data = data.trim();
 
         if data == "[DONE]" {
-            flush_openai_tool_calls(agent_id, &tool_calls, sender);
-            let _ = sender.send(AppEvent::AgentTurnComplete { agent_id });
+            let dispatched = flush_openai_tool_calls(agent_id, &tool_calls, sender);
+            if !dispatched {
+                let _ = sender.send(AppEvent::AgentTurnComplete { agent_id });
+            }
             return Ok(());
         }
 
@@ -571,11 +943,14 @@ fn process_openai_sse_lines(
         {
             flush_openai_tool_calls(agent_id, &tool_calls, sender);
             tool_calls.clear();
+            return Ok(());
         }
     }
 
-    flush_openai_tool_calls(agent_id, &tool_calls, sender);
-    let _ = sender.send(AppEvent::AgentTurnComplete { agent_id });
+    let dispatched = flush_openai_tool_calls(agent_id, &tool_calls, sender);
+    if !dispatched {
+        let _ = sender.send(AppEvent::AgentTurnComplete { agent_id });
+    }
     Ok(())
 }
 
@@ -590,23 +965,29 @@ fn flush_openai_tool_calls(
     agent_id: AgentId,
     tool_calls: &BTreeMap<u64, OpenAiToolCallBuilder>,
     sender: &EventSender,
-) {
+) -> bool {
+    let mut dispatched = false;
     for (index, call) in tool_calls {
         if call.name.is_empty() {
             continue;
         }
+        dispatched = true;
         let tool_use_id = if call.id.is_empty() {
             format!("openai_call_{index}")
         } else {
             call.id.clone()
         };
+        let tool_name = kiwi_tool_id_from_openai(&call.name)
+            .unwrap_or(call.name.as_str())
+            .to_string();
         let _ = sender.send(AppEvent::AgentToolCallStart {
             agent_id,
             tool_use_id,
-            tool_name: call.name.clone(),
-            input_json: call.arguments.clone(),
+            tool_name,
+            input_json: normalize_tool_arguments_json(&call.arguments),
         });
     }
+    dispatched
 }
 
 #[derive(Serialize)]
@@ -801,11 +1182,14 @@ fn process_sse_lines(
             }
             ApiStreamEvent::ContentBlockStop { .. } => {
                 if in_tool_block {
+                    let resolved_name = kiwi_tool_id_from_openai(&tool_name)
+                        .unwrap_or(tool_name.as_str())
+                        .to_string();
                     let _ = sender.send(AppEvent::AgentToolCallStart {
                         agent_id,
                         tool_use_id: tool_id.clone(),
-                        tool_name: tool_name.clone(),
-                        input_json: std::mem::take(&mut tool_input_buf),
+                        tool_name: resolved_name,
+                        input_json: normalize_tool_arguments_json(&tool_input_buf),
                     });
                     in_tool_block = false;
                 }
@@ -883,11 +1267,15 @@ fn build_request_body<'a>(
                     content.push(ApiContent::Text { text: text.clone() });
                 }
                 ContentBlock::ToolUse(tool) => {
-                    let input: serde_json::Value = serde_json::from_str(&tool.input_json)
-                        .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+                    let input: serde_json::Value = normalize_tool_arguments(
+                        serde_json::from_str(&tool.input_json)
+                            .unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
+                    );
+                    let kiwi_name = kiwi_tool_id_from_openai(&tool.name)
+                        .unwrap_or(tool.name.as_str());
                     content.push(ApiContent::ToolUse {
                         id: tool.id.clone(),
-                        name: tool.name.clone(),
+                        name: openai_tool_name(kiwi_name),
                         input,
                     });
                 }
@@ -952,11 +1340,12 @@ mod tests {
 
         assert_eq!(json["messages"][0]["role"], "assistant");
         assert_eq!(json["messages"][0]["content"][0]["type"], "tool_use");
-        assert_eq!(json["messages"][0]["content"][0]["name"], "file.read");
+        assert_eq!(json["messages"][0]["content"][0]["name"], "file_read");
         assert_eq!(
             json["messages"][0]["content"][0]["input"]["path"],
             "src/main.rs"
         );
+        assert_eq!(json["tools"][0]["name"], "file_read");
     }
 
     #[test]
@@ -1027,7 +1416,7 @@ mod tests {
         let cancel = StreamCancelHandle::default();
 
         let sse = concat!(
-            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"tu_abc\",\"name\":\"file.read\"}}\n",
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"tu_abc\",\"name\":\"file_read\"}}\n",
             "\n",
             "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"path\\\":\"}}\n",
             "\n",
@@ -1082,6 +1471,147 @@ mod tests {
     }
 
     #[test]
+    fn build_ollama_request_body_uses_content_json_for_tool_history() {
+        use crate::agent::{ToolResult, ToolUse};
+
+        let messages = vec![
+            ChatMessage {
+                role: MessageRole::User,
+                blocks: vec![ContentBlock::Text("run cargo check".to_string())],
+            },
+            ChatMessage {
+                role: MessageRole::Assistant,
+                blocks: vec![ContentBlock::ToolUse(ToolUse::new(
+                    "ollama_content_call_0".to_string(),
+                    "cargo.check".to_string(),
+                    "{}".to_string(),
+                ))],
+            },
+            ChatMessage {
+                role: MessageRole::User,
+                blocks: vec![ContentBlock::ToolResult(ToolResult::ok(
+                    "ollama_content_call_0".to_string(),
+                    "Finished dev".to_string(),
+                ))],
+            },
+        ];
+
+        let body = build_ollama_request_body(
+            "qwen2.5-coder:7b",
+            &messages,
+            true,
+            &tools_for_ollama("all"),
+            OllamaHistoryFormat::ContentJson,
+        );
+        let json = serde_json::to_value(&body).unwrap();
+        let assistant = &json["messages"][1];
+        assert!(assistant["tool_calls"].is_null() || assistant["tool_calls"].as_array().is_none());
+        let content = assistant["content"].as_str().expect("assistant content");
+        assert!(content.contains("\"name\":\"cargo_check\"") || content.contains("\"name\": \"cargo_check\""));
+        assert_eq!(json["messages"][2]["tool_name"], "cargo_check");
+        let tool_names: Vec<_> = json["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["function"]["name"].as_str().unwrap())
+            .collect();
+        assert!(!tool_names.contains(&"shell_run"));
+    }
+
+    #[test]
+    fn build_ollama_request_body_uses_native_tool_calls_for_llama_history() {
+        use crate::agent::{ToolResult, ToolUse};
+
+        let messages = vec![
+            ChatMessage {
+                role: MessageRole::User,
+                blocks: vec![ContentBlock::Text("run cargo check".to_string())],
+            },
+            ChatMessage {
+                role: MessageRole::Assistant,
+                blocks: vec![ContentBlock::ToolUse(ToolUse::new(
+                    "call_1".to_string(),
+                    "cargo.check".to_string(),
+                    "{}".to_string(),
+                ))],
+            },
+            ChatMessage {
+                role: MessageRole::User,
+                blocks: vec![ContentBlock::ToolResult(ToolResult::ok(
+                    "call_1".to_string(),
+                    "Finished dev".to_string(),
+                ))],
+            },
+        ];
+
+        let body = build_ollama_request_body(
+            "llama3.1:8b",
+            &messages,
+            true,
+            &tools_for_ollama("all"),
+            OllamaHistoryFormat::NativeToolCalls,
+        );
+        let json = serde_json::to_value(&body).unwrap();
+        let args = &json["messages"][1]["tool_calls"][0]["function"]["arguments"];
+        assert!(args.is_object());
+    }
+
+    #[test]
+    fn resolve_ollama_stream_split_mode_picks_models_by_phase() {
+        use crate::config::ProviderSettings;
+
+        let settings = ProviderSettings {
+            api_key_env: String::new(),
+            api_key: None,
+            model: "qwen2.5-coder:7b".to_string(),
+            api_url: Some("http://localhost:11434".to_string()),
+            tool_profile: None,
+            tool_model: Some("llama3.1:8b".to_string()),
+            code_model: Some("qwen2.5-coder:7b".to_string()),
+            embedding_model: None,
+        };
+
+        let user_only = vec![ChatMessage {
+            role: MessageRole::User,
+            blocks: vec![ContentBlock::Text("run cargo check".to_string())],
+        }];
+        let orchestrate = resolve_ollama_stream(&settings, &user_only, "coding");
+        assert_eq!(orchestrate.model, "llama3.1:8b");
+        assert!(orchestrate.include_tools);
+        assert_eq!(orchestrate.history_format, OllamaHistoryFormat::NativeToolCalls);
+
+        let after_tool = vec![
+            user_only[0].clone(),
+            ChatMessage {
+                role: MessageRole::Assistant,
+                blocks: vec![ContentBlock::ToolUse(crate::agent::ToolUse::new(
+                    "c1".into(),
+                    "cargo.check".into(),
+                    "{}".into(),
+                ))],
+            },
+            ChatMessage {
+                role: MessageRole::User,
+                blocks: vec![ContentBlock::ToolResult(crate::agent::ToolResult::ok(
+                    "c1".into(),
+                    "ok".into(),
+                ))],
+            },
+        ];
+        let synthesize = resolve_ollama_stream(&settings, &after_tool, "coding");
+        assert_eq!(synthesize.model, "qwen2.5-coder:7b");
+        assert!(!synthesize.include_tools);
+        assert_eq!(synthesize.history_format, OllamaHistoryFormat::ContentJson);
+    }
+
+    #[test]
+    fn tools_for_ollama_excludes_shell_run() {
+        let tools = tools_for_ollama("all");
+        assert!(!tools.iter().any(|t| t.id == "shell.run"));
+        assert!(tools.iter().any(|t| t.id == "cargo.check"));
+    }
+
+    #[test]
     fn build_openai_request_body_includes_tools() {
         let messages = vec![ChatMessage {
             role: MessageRole::User,
@@ -1090,7 +1620,7 @@ mod tests {
         let body = build_openai_request_body("gpt-4o", &messages, "all");
         let json = serde_json::to_value(&body).unwrap();
         assert_eq!(json["tools"][0]["type"], "function");
-        assert_eq!(json["tools"][0]["function"]["name"], "file.read");
+        assert_eq!(json["tools"][0]["function"]["name"], "file_read");
     }
 
     #[test]
@@ -1104,7 +1634,7 @@ mod tests {
         let cancel = StreamCancelHandle::default();
 
         let sse = concat!(
-            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"file.read\",\"arguments\":\"{\\\"path\\\":\"}}]}}]}\n",
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"file_read\",\"arguments\":\"{\\\"path\\\":\"}}]}}]}\n",
             "\n",
             "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"src/main.rs\\\"}\"}}]}}]}\n",
             "\n",
@@ -1131,6 +1661,40 @@ mod tests {
     }
 
     #[test]
+    fn ollama_done_chunk_with_null_optional_argument() {
+        use crate::agent::AgentId;
+        use crate::events::EventChannel;
+
+        let mut channel = EventChannel::new();
+        let sender = channel.sender();
+        let id = AgentId::from_u32(1);
+        let cancel = StreamCancelHandle::default();
+
+        let line = concat!(
+            r#"{"message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"cargo_check","arguments":{"package":null}}}]},"done":true}"#,
+            "\n",
+        );
+
+        let reader = std::io::BufReader::new(line.as_bytes());
+        process_ollama_lines(id, reader, &cancel, &sender, true).unwrap();
+
+        let events: Vec<_> = channel.drain_coalesced();
+        let tool_event = events
+            .iter()
+            .find(|e| matches!(e, AppEvent::AgentToolCallStart { .. }));
+        assert!(tool_event.is_some(), "expected AgentToolCallStart");
+        if let Some(AppEvent::AgentToolCallStart {
+            tool_name,
+            input_json,
+            ..
+        }) = tool_event
+        {
+            assert_eq!(tool_name, "cargo.check");
+            assert_eq!(input_json, "{}");
+        }
+    }
+
+    #[test]
     fn ollama_done_chunk_with_tool_calls_fires_tool_start() {
         use crate::agent::AgentId;
         use crate::events::EventChannel;
@@ -1141,7 +1705,7 @@ mod tests {
         let cancel = StreamCancelHandle::default();
 
         let line = concat!(
-            r#"{"message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"file.read","arguments":{"path":"src/main.rs"}}}]},"done":true}"#,
+            r#"{"message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"file_read","arguments":{"path":"src/main.rs"}}}]},"done":true}"#,
             "\n",
         );
 
@@ -1152,9 +1716,93 @@ mod tests {
         assert!(events
             .iter()
             .any(|e| matches!(e, AppEvent::AgentToolCallStart { .. })));
-        assert!(events
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, AppEvent::AgentTurnComplete { .. })),
+            "turn should stay open until tool result follow-up completes"
+        );
+    }
+
+    #[test]
+    fn ollama_content_json_in_stream_fires_tool_start() {
+        use crate::agent::AgentId;
+        use crate::events::EventChannel;
+
+        let mut channel = EventChannel::new();
+        let sender = channel.sender();
+        let id = AgentId::from_u32(1);
+        let cancel = StreamCancelHandle::default();
+
+        // Simulates qwen2.5-coder: tool JSON streamed in content, tool_calls absent.
+        let lines = concat!(
+            r#"{"message":{"role":"assistant","content":"{\n"},"done":false}"#,
+            "\n",
+            r#"{"message":{"role":"assistant","content":"  \"name\": \"cargo_check\",\n"},"done":false}"#,
+            "\n",
+            r#"{"message":{"role":"assistant","content":"  \"arguments\": {}\n}"},"done":false}"#,
+            "\n",
+            r#"{"message":{"role":"assistant","content":""},"done":true,"done_reason":"stop"}"#,
+            "\n",
+        );
+
+        let reader = std::io::BufReader::new(lines.as_bytes());
+        process_ollama_lines(id, reader, &cancel, &sender, true).unwrap();
+
+        let events: Vec<_> = channel.drain_coalesced();
+        let tool_event = events
             .iter()
-            .any(|e| matches!(e, AppEvent::AgentTurnComplete { .. })));
+            .find(|e| matches!(e, AppEvent::AgentToolCallStart { .. }));
+        assert!(tool_event.is_some(), "expected content-json tool call");
+        if let Some(AppEvent::AgentToolCallStart {
+            tool_name,
+            input_json,
+            ..
+        }) = tool_event
+        {
+            assert_eq!(tool_name, "cargo.check");
+            assert_eq!(input_json, "{}");
+        }
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, AppEvent::AgentTurnComplete { .. }))
+        );
+    }
+
+    #[test]
+    fn openai_compatible_messages_include_tool_name_on_tool_results() {
+        use crate::agent::{ChatMessage, ContentBlock, MessageRole, ToolResult, ToolUse};
+
+        let messages = vec![
+            ChatMessage {
+                role: MessageRole::User,
+                blocks: vec![ContentBlock::Text("run cargo check".to_string())],
+            },
+            ChatMessage {
+                role: MessageRole::Assistant,
+                blocks: vec![ContentBlock::ToolUse(ToolUse::new(
+                    "call_1".to_string(),
+                    "cargo.check".to_string(),
+                    "{}".to_string(),
+                ))],
+            },
+            ChatMessage {
+                role: MessageRole::User,
+                blocks: vec![ContentBlock::ToolResult(ToolResult::ok(
+                    "call_1".to_string(),
+                    "Finished dev [unoptimized]".to_string(),
+                ))],
+            },
+        ];
+
+        let wire = openai_compatible_messages(&messages);
+        let tool_msg = wire
+            .iter()
+            .find(|m| m.role == "tool")
+            .expect("tool result message");
+        assert_eq!(tool_msg.tool_call_id.as_deref(), Some("call_1"));
+        assert_eq!(tool_msg.tool_name.as_deref(), Some("cargo_check"));
     }
 
     /// Integration test — requires ANTHROPIC_API_KEY in the environment.

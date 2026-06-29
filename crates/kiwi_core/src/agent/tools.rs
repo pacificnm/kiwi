@@ -1,7 +1,7 @@
 //! Tool definitions for the native-chat agent: registry schemas sent to Claude and parser for tool_use blocks.
 
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 /// Provider-agnostic tool definition in the dotted namespace (`file.read`, `git.diff`, …).
 #[derive(Debug, Clone)]
@@ -49,7 +49,7 @@ pub enum KiwiTool {
 /// JSON schema descriptor for a single tool — Claude Messages API wire format.
 #[derive(Debug, Clone, Serialize)]
 pub struct ToolSchema {
-    pub name: &'static str,
+    pub name: String,
     pub description: &'static str,
     pub input_schema: Value,
 }
@@ -67,7 +67,7 @@ impl std::fmt::Display for ToolParseError {
 impl From<&KiwiToolDef> for ToolSchema {
     fn from(def: &KiwiToolDef) -> Self {
         Self {
-            name: def.id,
+            name: openai_tool_name(def.id),
             description: def.description,
             input_schema: def.input_schema.clone(),
         }
@@ -289,9 +289,156 @@ pub struct OpenAiToolSchema {
 /// Function payload inside an OpenAI tool definition.
 #[derive(Debug, Clone, Serialize)]
 pub struct OpenAiFunctionSchema {
-    pub name: &'static str,
+    pub name: String,
     pub description: &'static str,
     pub parameters: Value,
+}
+
+/// Convert a registry dotted id (`file.read`) to a provider wire name (`file_read`).
+///
+/// Claude and OpenAI require `^[a-zA-Z0-9_-]+$` for tool/function names — dots are rejected.
+pub fn openai_tool_name(kiwi_id: &str) -> String {
+    kiwi_id.replace('.', "_")
+}
+
+/// Map an OpenAI/Ollama wire tool name back to the registry dotted id.
+pub fn kiwi_tool_id_from_openai(wire_name: &str) -> Option<&'static str> {
+    ToolRegistry::all()
+        .iter()
+        .find(|tool| openai_tool_name(tool.id) == wire_name || tool.id == wire_name)
+        .map(|tool| tool.id)
+}
+
+/// Tool call parsed from Ollama `message.content` when models emit JSON instead of `tool_calls`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OllamaContentToolCall {
+    pub wire_name: String,
+    pub arguments: Value,
+}
+
+/// Parse tool calls embedded in assistant text (common with `qwen2.5-coder` on Ollama).
+pub fn parse_ollama_content_tool_calls(content: &str) -> Vec<OllamaContentToolCall> {
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+
+    if let Ok(value) = serde_json::from_str::<Value>(trimmed) {
+        if let Some(call) = value_to_ollama_content_tool_call(&value) {
+            return vec![call];
+        }
+        if let Some(items) = value.as_array() {
+            return items
+                .iter()
+                .filter_map(value_to_ollama_content_tool_call)
+                .collect();
+        }
+    }
+
+    extract_json_objects(trimmed)
+        .into_iter()
+        .filter_map(|value| value_to_ollama_content_tool_call(&value))
+        .collect()
+}
+
+fn value_to_ollama_content_tool_call(value: &Value) -> Option<OllamaContentToolCall> {
+    let wire_name = value.get("name")?.as_str()?.trim();
+    if wire_name.is_empty() {
+        return None;
+    }
+    let arguments = value
+        .get("arguments")
+        .or_else(|| value.get("parameters"))
+        .cloned()
+        .unwrap_or_else(|| Value::Object(Map::new()));
+    Some(OllamaContentToolCall {
+        wire_name: wire_name.to_string(),
+        arguments,
+    })
+}
+
+fn extract_json_objects(text: &str) -> Vec<Value> {
+    let mut out = Vec::new();
+    let bytes = text.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'{' {
+            index += 1;
+            continue;
+        }
+        let mut depth = 0usize;
+        let start = index;
+        for (offset, byte) in bytes[index..].iter().enumerate() {
+            match byte {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        let end = index + offset + 1;
+                        if let Ok(value) = serde_json::from_slice(&bytes[start..end]) {
+                            out.push(value);
+                        }
+                        index = end;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if depth != 0 {
+            break;
+        }
+    }
+    out
+}
+
+/// True when assistant text is only a tool-call JSON blob (not user-facing prose).
+pub fn streaming_text_is_ollama_tool_json(text: &str) -> bool {
+    !parse_ollama_content_tool_calls(text).is_empty()
+}
+
+/// Strip null entries from tool argument objects.
+///
+/// Ollama and some OpenAI models emit `"package": null` for optional fields; treat those
+/// as absent so parsers see the same shape as `{}`.
+pub fn normalize_tool_arguments(input: Value) -> Value {
+    match input {
+        Value::Object(map) => {
+            let cleaned: Map<String, Value> = map
+                .into_iter()
+                .filter(|(_, value)| {
+                    !value.is_null()
+                        && !(value.is_string() && value.as_str().unwrap_or("").trim().is_empty())
+                })
+                .map(|(key, value)| (key, normalize_tool_arguments(value)))
+                .collect();
+            Value::Object(cleaned)
+        }
+        Value::Array(items) => Value::Array(
+            items
+                .into_iter()
+                .map(normalize_tool_arguments)
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
+/// Parse tool argument JSON, drop null optional fields, and re-serialize.
+pub fn normalize_tool_arguments_json(raw: &str) -> String {
+    let Ok(value) = serde_json::from_str(raw) else {
+        return raw.to_string();
+    };
+    serde_json::to_string(&normalize_tool_arguments(value)).unwrap_or_else(|_| raw.to_string())
+}
+
+fn optional_str_field(input: &Value, field: &str) -> Option<String> {
+    match input.get(field) {
+        None | Some(Value::Null) => None,
+        Some(Value::String(text)) if text.trim().is_empty() => None,
+        Some(Value::String(text)) => Some(text.clone()),
+        _ => None,
+    }
 }
 
 /// Convert registry entries to Claude Messages API tool schemas.
@@ -306,7 +453,7 @@ pub fn tools_for_openai(tools: &[KiwiToolDef]) -> Vec<OpenAiToolSchema> {
         .map(|tool| OpenAiToolSchema {
             kind: "function",
             function: OpenAiFunctionSchema {
-                name: tool.id,
+                name: openai_tool_name(tool.id),
                 description: tool.description,
                 parameters: tool.input_schema.clone(),
             },
@@ -314,17 +461,44 @@ pub fn tools_for_openai(tools: &[KiwiToolDef]) -> Vec<OpenAiToolSchema> {
         .collect()
 }
 
-/// Return true when the Ollama model is known to support OpenAI-style tool calling.
-pub fn ollama_supports_tools(model: &str) -> bool {
+/// Maximum tool-call round trips per user message (prevents runaway Ollama loops).
+pub const MAX_TOOL_ROUNDS_PER_TURN: u8 = 8;
+
+/// Tools exposed to Ollama. Excludes `shell.run` — output goes to the Terminal panel,
+/// which Ollama chat models cannot read, causing retry loops.
+pub fn tools_for_ollama(profile_name: &str) -> Vec<KiwiToolDef> {
+    ToolRegistry::for_profile(profile_name)
+        .into_iter()
+        .filter(|tool| tool.id != "shell.run")
+        .collect()
+}
+
+/// Ollama models that return structured `tool_calls` (not JSON blobs in content).
+pub fn ollama_uses_native_tool_calls(model: &str) -> bool {
     let base = model
         .split(':')
         .next()
         .unwrap_or(model)
         .to_ascii_lowercase();
-    base.starts_with("qwen2.5-coder")
-        || base.starts_with("llama3")
+    base.starts_with("llama3")
         || base.starts_with("mistral")
         || base.starts_with("mixtral")
+}
+
+/// True when split `tool_model` / `code_model` fields are configured.
+pub fn ollama_split_models(settings: &crate::config::ProviderSettings) -> bool {
+    settings.tool_model.is_some() || settings.code_model.is_some()
+}
+
+/// Return true when the Ollama model is known to support OpenAI-style tool calling.
+pub fn ollama_supports_tools(model: &str) -> bool {
+    ollama_uses_native_tool_calls(model)
+        || model
+            .split(':')
+            .next()
+            .unwrap_or(model)
+            .to_ascii_lowercase()
+            .starts_with("qwen2.5-coder")
 }
 
 impl ToolRegistry {
@@ -385,7 +559,7 @@ impl KiwiTool {
             }),
             "git.status" => Ok(Self::GitStatus),
             "git.diff" => Ok(Self::GitDiff {
-                path: input["path"].as_str().map(str::to_owned),
+                path: optional_str_field(input, "path"),
             }),
             "git.commit" => Ok(Self::GitCommit {
                 message: str_field("message")?,
@@ -413,14 +587,14 @@ impl KiwiTool {
                 }
             }
             "cargo.check" => Ok(Self::CargoCheck {
-                package: input["package"].as_str().map(str::to_owned),
+                package: optional_str_field(input, "package"),
             }),
             "file.search" => Ok(Self::FileSearch {
                 query: str_field("query")?,
             }),
             "file.grep" => Ok(Self::FileGrep {
                 query: str_field("query")?,
-                path: input["path"].as_str().map(str::to_owned),
+                path: optional_str_field(input, "path"),
             }),
             other => Err(ToolParseError(format!("unknown tool '{other}'"))),
         }
@@ -562,6 +736,25 @@ mod tests {
     }
 
     #[test]
+    fn parse_cargo_check_treats_null_package_as_absent() {
+        let tool =
+            KiwiTool::from_tool_use("cargo.check", &json!({"package": null})).unwrap();
+        assert!(matches!(tool, KiwiTool::CargoCheck { package: None }));
+
+        let normalized = normalize_tool_arguments(json!({"package": null}));
+        let tool = KiwiTool::from_tool_use("cargo.check", &normalized).unwrap();
+        assert!(matches!(tool, KiwiTool::CargoCheck { package: None }));
+    }
+
+    #[test]
+    fn normalize_tool_arguments_json_strips_nulls() {
+        assert_eq!(
+            normalize_tool_arguments_json(r#"{"package":null,"other":"x"}"#),
+            r#"{"other":"x"}"#
+        );
+    }
+
+    #[test]
     fn parse_git_diff_optional_path() {
         let with_path =
             KiwiTool::from_tool_use("git.diff", &json!({"path": "src/main.rs"})).unwrap();
@@ -653,8 +846,34 @@ mod tests {
         assert_eq!(schemas.len(), 11);
         let first = serde_json::to_value(&schemas[0]).unwrap();
         assert_eq!(first["type"], "function");
-        assert_eq!(first["function"]["name"], "file.read");
+        assert_eq!(first["function"]["name"], "file_read");
         assert!(first["function"]["parameters"].is_object());
+    }
+
+    #[test]
+    fn claude_adapter_uses_wire_tool_names() {
+        let schemas = tools_for_claude(ToolRegistry::all());
+        assert_eq!(schemas[0].name, "file_read");
+    }
+
+    #[test]
+    fn openai_tool_names_use_underscores_not_dots() {
+        for tool in ToolRegistry::all() {
+            let wire = openai_tool_name(tool.id);
+            assert!(
+                wire.chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-'),
+                "invalid OpenAI tool name '{wire}' for id '{}'",
+                tool.id
+            );
+            assert_eq!(kiwi_tool_id_from_openai(&wire), Some(tool.id));
+        }
+    }
+
+    #[test]
+    fn kiwi_tool_id_from_openai_accepts_legacy_dotted_names() {
+        assert_eq!(kiwi_tool_id_from_openai("file.read"), Some("file.read"));
+        assert_eq!(kiwi_tool_id_from_openai("cargo_check"), Some("cargo.check"));
     }
 
     #[test]
@@ -663,6 +882,45 @@ mod tests {
         assert!(ollama_supports_tools("llama3.1:8b"));
         assert!(ollama_supports_tools("mistral:latest"));
         assert!(!ollama_supports_tools("nomic-embed-text"));
+    }
+
+    #[test]
+    fn parse_ollama_content_tool_calls_reads_qwen_json_blob() {
+        let calls = parse_ollama_content_tool_calls(
+            "{\n  \"name\": \"cargo_check\",\n  \"arguments\": {}\n}",
+        );
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].wire_name, "cargo_check");
+        assert_eq!(calls[0].arguments, json!({}));
+    }
+
+    #[test]
+    fn parse_ollama_content_tool_calls_strips_null_optional_fields() {
+        let calls = parse_ollama_content_tool_calls(
+            r#"{"name":"cargo_check","arguments":{"package":null}}"#,
+        );
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].arguments, json!({"package": null}));
+    }
+
+    #[test]
+    fn normalize_tool_arguments_drops_empty_strings() {
+        let normalized = normalize_tool_arguments(json!({"package": ""}));
+        assert_eq!(normalized, json!({}));
+    }
+
+    #[test]
+    fn ollama_uses_native_tool_calls_for_llama3() {
+        assert!(ollama_uses_native_tool_calls("llama3.1:8b"));
+        assert!(!ollama_uses_native_tool_calls("qwen2.5-coder:7b"));
+    }
+
+    #[test]
+    fn streaming_text_is_ollama_tool_json_detects_tool_blob() {
+        assert!(streaming_text_is_ollama_tool_json(
+            r#"{"name":"cargo_check","arguments":{}}"#
+        ));
+        assert!(!streaming_text_is_ollama_tool_json("I'll run cargo check now."));
     }
 
     #[test]
