@@ -23,6 +23,10 @@ pub enum KiwiTool {
     ShellRun { command: String },
     GitStatus,
     GitDiff { path: Option<String> },
+    GitCommit {
+        message: String,
+        stage_all: bool,
+    },
     FileSearch { query: String },
     FileGrep { query: String, path: Option<String> },
 }
@@ -118,6 +122,18 @@ fn init_tools() -> Vec<KiwiToolDef> {
                 "properties": {
                     "path": {"type": "string", "description": "Limit diff to this file (optional)."}
                 }
+            }),
+        },
+        KiwiToolDef {
+            id: "git.commit",
+            description: "Stage changes (optional) and create a git commit with the given message.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "message": {"type": "string", "description": "Commit message."},
+                    "stage_all": {"type": "boolean", "description": "If true, run git add -A before committing (default true)."}
+                },
+                "required": ["message"]
             }),
         },
         KiwiToolDef {
@@ -327,6 +343,10 @@ impl KiwiTool {
             "git.diff" => Ok(Self::GitDiff {
                 path: input["path"].as_str().map(str::to_owned),
             }),
+            "git.commit" => Ok(Self::GitCommit {
+                message: str_field("message")?,
+                stage_all: input["stage_all"].as_bool().unwrap_or(true),
+            }),
             "file.search" => Ok(Self::FileSearch {
                 query: str_field("query")?,
             }),
@@ -387,6 +407,24 @@ mod tests {
     }
 
     #[test]
+    fn parse_git_commit_defaults_stage_all() {
+        let tool = KiwiTool::from_tool_use("git.commit", &json!({"message": "fix bug"})).unwrap();
+        assert!(
+            matches!(tool, KiwiTool::GitCommit { message, stage_all: true } if message == "fix bug")
+        );
+    }
+
+    #[test]
+    fn parse_git_commit_stage_all_false() {
+        let tool = KiwiTool::from_tool_use(
+            "git.commit",
+            &json!({"message": "wip", "stage_all": false}),
+        )
+        .unwrap();
+        assert!(matches!(tool, KiwiTool::GitCommit { stage_all: false, .. }));
+    }
+
+    #[test]
     fn parse_git_diff_optional_path() {
         let with_path =
             KiwiTool::from_tool_use("git.diff", &json!({"path": "src/main.rs"})).unwrap();
@@ -418,8 +456,8 @@ mod tests {
     }
 
     #[test]
-    fn registry_returns_eight_tools() {
-        assert_eq!(ToolRegistry::all().len(), 8);
+    fn registry_returns_nine_tools() {
+        assert_eq!(ToolRegistry::all().len(), 9);
     }
 
     #[test]
@@ -438,14 +476,14 @@ mod tests {
         assert!(ids.contains(&"file.read"));
         assert!(ids.contains(&"shell.run"));
         assert!(ids.contains(&"git.status"));
-        assert!(!ids.contains(&"git.commit"));
+        assert!(ids.contains(&"git.commit"));
     }
 
     #[test]
-    fn github_profile_includes_only_registered_git_tools() {
+    fn github_profile_includes_registered_git_tools() {
         let tools = ToolRegistry::for_profile("github");
         let ids: Vec<_> = tools.iter().map(|tool| tool.id).collect();
-        assert_eq!(ids, vec!["git.status"]);
+        assert_eq!(ids, vec!["git.status", "git.commit"]);
     }
 
     #[test]
@@ -465,7 +503,7 @@ mod tests {
     #[test]
     fn openai_adapter_uses_function_type() {
         let schemas = tools_for_openai(ToolRegistry::all());
-        assert_eq!(schemas.len(), 8);
+        assert_eq!(schemas.len(), 9);
         let first = serde_json::to_value(&schemas[0]).unwrap();
         assert_eq!(first["type"], "function");
         assert_eq!(first["function"]["name"], "file.read");
