@@ -81,14 +81,31 @@ fn default_install_profile() -> String {
     "release".to_string()
 }
 
+/// Whether a plugin agent uses the native LLM API or a PTY subprocess.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentMode {
+    /// Spawn a subprocess and render its PTY output (legacy, default).
+    #[default]
+    Pty,
+    /// Call the LLM API directly; render a native chat panel.
+    Api,
+}
+
 /// Agent command declared by a plugin in its `plugin.toml`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
 #[serde(default)]
 pub struct AgentPluginConfig {
-    /// The executable to run (e.g. `"cursor"`, `"aider"`).
+    /// `"api"` — native LLM API; `"pty"` — PTY subprocess (default).
+    pub mode: AgentMode,
+    /// The executable to run when `mode = "pty"` (e.g. `"cursor"`, `"aider"`).
     pub command: String,
     /// Arguments passed to the executable on spawn.
     pub args: Vec<String>,
+    /// API provider identifier when `mode = "api"` (e.g. `"claude"`).
+    pub provider: Option<String>,
+    /// Default model to request from the API (e.g. `"claude-opus-4-8"`).
+    pub model: Option<String>,
 }
 
 impl PluginManifest {

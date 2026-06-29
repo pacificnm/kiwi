@@ -2,12 +2,13 @@ name = "kiwi-agent-claude"
 version = "0.1.0"
 min_kiwi_version = "0.1.0"
 display_name = "Claude"
-description = "Anthropic Claude Code — runs as the AI agent in the Agent panel."
+description = "Anthropic Claude — native API agent using the Claude Messages API."
 author = "PacificNM"
 
 [agent]
-command = "claude"
-args = []
+mode = "api"
+provider = "claude"
+model = "claude-opus-4-8"
 
 [install]
 kind = "copy"

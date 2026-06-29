@@ -45,12 +45,31 @@ pub struct EditorSection {
     pub terminal: Option<bool>,
 }
 
+/// How the agent panel connects to an AI backend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentMode {
+    /// Spawn a subprocess and render its PTY output (legacy default).
+    #[default]
+    Pty,
+    /// Call the LLM API directly; render a native chat panel.
+    Api,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
 #[serde(default)]
 pub struct AgentSection {
     pub command: Option<String>,
     pub args: Option<Vec<String>>,
     pub env: Option<HashMap<String, String>>,
+    /// `"api"` — native LLM API; `"pty"` — subprocess (default).
+    pub mode: Option<AgentMode>,
+    /// API provider name when `mode = "api"` (e.g. `"claude"`).
+    pub provider: Option<String>,
+    /// Environment variable that holds the API key (default `"ANTHROPIC_API_KEY"`).
+    pub api_key_env: Option<String>,
+    /// Default model to request (e.g. `"claude-opus-4-8"`).
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
@@ -193,6 +212,28 @@ pub struct AgentSettings {
     pub command: String,
     pub args: Vec<String>,
     pub env: HashMap<String, String>,
+    /// Whether to use the native API path or the PTY subprocess path.
+    pub mode: AgentMode,
+    /// API provider identifier (e.g. `"claude"`); only relevant when `mode = Api`.
+    pub provider: Option<String>,
+    /// Name of the environment variable holding the API key.
+    pub api_key_env: String,
+    /// Model to request from the API.
+    pub model: String,
+}
+
+impl Default for AgentSettings {
+    fn default() -> Self {
+        Self {
+            command: "agent".to_string(),
+            args: Vec::new(),
+            env: HashMap::new(),
+            mode: AgentMode::Pty,
+            provider: None,
+            api_key_env: "ANTHROPIC_API_KEY".to_string(),
+            model: "claude-opus-4-8".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -291,6 +332,10 @@ impl Default for ResolvedConfig {
                 command: "agent".to_string(),
                 args: Vec::new(),
                 env: HashMap::new(),
+                mode: AgentMode::Pty,
+                provider: None,
+                api_key_env: "ANTHROPIC_API_KEY".to_string(),
+                model: "claude-opus-4-8".to_string(),
             },
             shell: ShellSettings {
                 command: default_shell_command(),
@@ -385,6 +430,18 @@ impl RawConfig {
             }
             if let Some(env) = &agent.env {
                 resolved.agent.env = env.clone();
+            }
+            if let Some(mode) = agent.mode {
+                resolved.agent.mode = mode;
+            }
+            if let Some(provider) = &agent.provider {
+                resolved.agent.provider = Some(provider.clone());
+            }
+            if let Some(api_key_env) = &agent.api_key_env {
+                resolved.agent.api_key_env = api_key_env.clone();
+            }
+            if let Some(model) = &agent.model {
+                resolved.agent.model = model.clone();
             }
         }
 

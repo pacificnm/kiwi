@@ -60,6 +60,54 @@ pub fn persist_user_theme(home: &Path, name: &str) -> Result<(), ConfigError> {
     Ok(())
 }
 
+/// Persist `[agent]` API-mode settings (`mode`, `provider`, `model`) to the user config.
+///
+/// Leaves `command`, `args`, and unrelated sections untouched.
+pub fn persist_user_agent_mode(
+    home: &Path,
+    provider: &str,
+    model: &str,
+) -> Result<(), ConfigError> {
+    let path = user_config_path(home);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|err| ConfigError::io(path.clone(), err))?;
+    }
+
+    let mut doc = if path.is_file() {
+        let content =
+            fs::read_to_string(&path).map_err(|err| ConfigError::io(path.clone(), err))?;
+        toml::from_str(&content).map_err(|err| ConfigError::parse(path.clone(), &content, err))?
+    } else {
+        toml::Value::Table(toml::map::Map::new())
+    };
+
+    let Some(table) = doc.as_table_mut() else {
+        return Err(ConfigError::validation("config root must be a table"));
+    };
+
+    let agent = table
+        .entry("agent")
+        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+    let Some(agent_table) = agent.as_table_mut() else {
+        return Err(ConfigError::validation("[agent] must be a table"));
+    };
+
+    agent_table.insert("mode".to_string(), toml::Value::String("api".to_string()));
+    agent_table.insert(
+        "provider".to_string(),
+        toml::Value::String(provider.to_string()),
+    );
+    agent_table.insert(
+        "model".to_string(),
+        toml::Value::String(model.to_string()),
+    );
+
+    let serialized =
+        toml::to_string_pretty(&doc).map_err(|err| ConfigError::validation(err.to_string()))?;
+    fs::write(&path, serialized).map_err(|err| ConfigError::io(path, err))?;
+    Ok(())
+}
+
 /// Persist `[agent] command` and `args` to the user config without touching other settings.
 pub fn persist_user_agent(home: &Path, command: &str, args: &[String]) -> Result<(), ConfigError> {
     let path = user_config_path(home);
