@@ -9,6 +9,11 @@ use crate::dock::context::PanelContext;
 use crate::dock::tab::KiwiTab;
 
 pub fn render(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
+    if ctx.state.active_agent().chat.is_some() {
+        super::chat::render(ui, ctx);
+        return;
+    }
+
     let (focused, clicked) = capture_pty_keyboard_focus(ui, "agent_pty_surface");
     ctx.pty_surface.agent_keyboard_focus = focused;
     render_agent_chrome(ui, ctx);
