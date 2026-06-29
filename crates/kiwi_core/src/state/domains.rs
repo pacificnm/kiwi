@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::SystemTime;
 
-use crate::agent::AgentStatus;
+use crate::agent::{AgentStatus, ChatSession};
 use crate::diff::{DiffLine, DiffSource, FileDiffLoadResult};
 use crate::git::{BranchEntry, GitFileEntry};
 use crate::github::{
@@ -249,6 +249,9 @@ pub struct AgentState {
     pub status_check_accum: usize,
     /// Cached status-bar label; refresh via [`Self::refresh_status_bar_label`].
     pub status_bar_label: String,
+    /// Native chat session state. `Some` when the agent uses the API path
+    /// (`provider = "claude"`); `None` for legacy PTY agents.
+    pub chat: Option<ChatSession>,
 }
 
 impl Default for AgentState {
@@ -272,6 +275,7 @@ impl Default for AgentState {
             status_bar_label: AgentStatus::Idle
                 .status_bar_label(false)
                 .to_string(),
+            chat: None,
         }
     }
 }

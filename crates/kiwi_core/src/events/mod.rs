@@ -46,6 +46,35 @@ pub enum AppEvent {
         agent_id: AgentId,
         code: i32,
     },
+    // --- Native chat events (Phase 2+) ---
+    /// A streamed token chunk from the API.
+    AgentTokenChunk {
+        agent_id: AgentId,
+        text: String,
+    },
+    /// The API requested a tool call; kiwi should execute it.
+    AgentToolCallStart {
+        agent_id: AgentId,
+        tool_use_id: String,
+        tool_name: String,
+        input_json: String,
+    },
+    /// A tool finished executing; the result should be fed back to the API.
+    AgentToolResult {
+        agent_id: AgentId,
+        tool_use_id: String,
+        content: String,
+        is_error: bool,
+    },
+    /// The API response turn is complete (all tokens and tool calls received).
+    AgentTurnComplete {
+        agent_id: AgentId,
+    },
+    /// An API or network error occurred during streaming.
+    AgentApiError {
+        agent_id: AgentId,
+        message: String,
+    },
     FileTreeChildrenLoaded {
         parent: PathBuf,
         children: Vec<DirectoryEntry>,
@@ -297,6 +326,13 @@ pub enum AppCommand {
     PluginReinstall { src_path: std::path::PathBuf },
     /// Switch the active AI agent command. Updates config immediately; persisted via SideEffect.
     SetAgent { command: String, args: Vec<String> },
+    // --- Native chat commands (Phase 2+) ---
+    /// User submitted a message in the chat input box.
+    AgentUserSend { agent_id: AgentId, text: String },
+    /// Toggle the collapsed state of a tool-use widget in the chat panel.
+    AgentToggleToolExpand { agent_id: AgentId, tool_use_id: String },
+    /// Clear all messages in the active chat session.
+    AgentClearHistory { agent_id: AgentId },
 }
 
 #[non_exhaustive]
@@ -343,6 +379,18 @@ pub enum AgentEffect {
     Spawn(AgentId),
     Restart(AgentId),
     Write(Vec<u8>),
+    // --- Native chat effects (Phase 2+) ---
+    /// Start a streaming API turn; service reads messages from `ChatSession`.
+    StreamRequest(AgentId),
+    /// Execute a tool locally and return the result.
+    ExecuteTool {
+        agent_id: AgentId,
+        tool_use_id: String,
+        tool_name: String,
+        input_json: String,
+    },
+    /// Cancel an in-progress stream (e.g. on restart or session close).
+    CancelStream(AgentId),
 }
 
 #[non_exhaustive]

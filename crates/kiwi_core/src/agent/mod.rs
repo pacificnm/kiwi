@@ -1,3 +1,4 @@
+pub mod chat;
 pub mod command;
 mod error;
 mod id;
@@ -6,6 +7,9 @@ mod manager;
 mod session;
 mod status;
 
+pub use chat::{
+    AgentProvider, ChatMessage, ChatSession, ContentBlock, MessageRole, ToolResult, ToolUse,
+};
 pub use command::{agent_display_name, agent_launch_spec, AgentLaunchSpec};
 pub use error::AgentError;
 pub use id::AgentId;
