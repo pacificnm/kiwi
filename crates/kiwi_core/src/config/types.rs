@@ -64,6 +64,7 @@ pub struct ProviderSection {
     pub api_key: Option<String>,
     pub model: Option<String>,
     pub api_url: Option<String>,
+    pub tool_profile: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
@@ -84,6 +85,7 @@ pub struct AgentSection {
     pub api_key: Option<String>,
     pub model: Option<String>,
     pub api_url: Option<String>,
+    pub tool_profile: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
@@ -232,6 +234,8 @@ pub struct ProviderSettings {
     pub model: String,
     /// Base URL for the provider's API endpoint.
     pub api_url: Option<String>,
+    /// Optional per-provider tool profile override.
+    pub tool_profile: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -244,6 +248,8 @@ pub struct AgentSettings {
     pub active_provider: Option<String>,
     /// Per-provider settings — each entry survives switching to another provider.
     pub providers: HashMap<String, ProviderSettings>,
+    /// Default tool profile for API agents (`coding`, `all`, etc.).
+    pub tool_profile: String,
     // ---- Legacy flat fields kept for backward compat ----
     pub api_key_env: String,
     pub api_key: Option<String>,
@@ -260,6 +266,7 @@ impl Default for AgentSettings {
             mode: AgentMode::Pty,
             active_provider: None,
             providers: HashMap::new(),
+            tool_profile: "all".to_string(),
             api_key_env: "ANTHROPIC_API_KEY".to_string(),
             api_key: None,
             model: "claude-opus-4-8".to_string(),
@@ -465,16 +472,32 @@ impl RawConfig {
             // New-style: [agent.providers.<name>] sections
             if let Some(providers) = &agent.providers {
                 for (name, section) in providers {
-                    let entry = resolved.agent.providers.entry(name.clone()).or_insert_with(|| ProviderSettings {
-                        api_key_env: "ANTHROPIC_API_KEY".to_string(),
-                        api_key: None,
-                        model: "claude-opus-4-8".to_string(),
-                        api_url: None,
-                    });
-                    if let Some(v) = &section.api_key_env { entry.api_key_env = v.clone(); }
-                    if let Some(v) = &section.api_key    { entry.api_key = Some(v.clone()); }
-                    if let Some(v) = &section.model      { entry.model = v.clone(); }
-                    if let Some(v) = &section.api_url    { entry.api_url = Some(v.clone()); }
+                    let entry = resolved
+                        .agent
+                        .providers
+                        .entry(name.clone())
+                        .or_insert_with(|| ProviderSettings {
+                            api_key_env: "ANTHROPIC_API_KEY".to_string(),
+                            api_key: None,
+                            model: "claude-opus-4-8".to_string(),
+                            api_url: None,
+                            tool_profile: None,
+                        });
+                    if let Some(v) = &section.api_key_env {
+                        entry.api_key_env = v.clone();
+                    }
+                    if let Some(v) = &section.api_key {
+                        entry.api_key = Some(v.clone());
+                    }
+                    if let Some(v) = &section.model {
+                        entry.model = v.clone();
+                    }
+                    if let Some(v) = &section.api_url {
+                        entry.api_url = Some(v.clone());
+                    }
+                    if let Some(v) = &section.tool_profile {
+                        entry.tool_profile = Some(v.clone());
+                    }
                 }
             }
             // Legacy flat fields — only migrate non-key fields (api_key_env, model, api_url)
@@ -483,15 +506,26 @@ impl RawConfig {
             // providers[active] would corrupt other providers' entries when switching.
             let provider_name = agent.active.as_ref().or(agent.provider.as_ref());
             if let Some(name) = provider_name {
-                let entry = resolved.agent.providers.entry(name.clone()).or_insert_with(|| ProviderSettings {
-                    api_key_env: "ANTHROPIC_API_KEY".to_string(),
-                    api_key: None,
-                    model: "claude-opus-4-8".to_string(),
-                    api_url: None,
-                });
-                if let Some(v) = &agent.api_key_env { entry.api_key_env = v.clone(); }
-                if let Some(v) = &agent.model       { entry.model = v.clone(); }
-                if let Some(v) = &agent.api_url     { entry.api_url = Some(v.clone()); }
+                let entry = resolved
+                    .agent
+                    .providers
+                    .entry(name.clone())
+                    .or_insert_with(|| ProviderSettings {
+                        api_key_env: "ANTHROPIC_API_KEY".to_string(),
+                        api_key: None,
+                        model: "claude-opus-4-8".to_string(),
+                        api_url: None,
+                        tool_profile: None,
+                    });
+                if let Some(v) = &agent.api_key_env {
+                    entry.api_key_env = v.clone();
+                }
+                if let Some(v) = &agent.model {
+                    entry.model = v.clone();
+                }
+                if let Some(v) = &agent.api_url {
+                    entry.api_url = Some(v.clone());
+                }
                 // Keep active_provider in sync when only legacy field is present
                 if resolved.agent.active_provider.is_none() && agent.provider.is_some() {
                     resolved.agent.active_provider = Some(name.clone());
@@ -509,6 +543,9 @@ impl RawConfig {
             }
             if let Some(api_url) = &agent.api_url {
                 resolved.agent.api_url = Some(api_url.clone());
+            }
+            if let Some(tool_profile) = &agent.tool_profile {
+                resolved.agent.tool_profile = tool_profile.clone();
             }
         }
 

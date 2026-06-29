@@ -146,6 +146,78 @@ fn init_tools() -> Vec<KiwiToolDef> {
     ]
 }
 
+/// Named subset of tool IDs exposed to a model for a given agent type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ToolProfile {
+    pub name: &'static str,
+    pub allowed: &'static [&'static str],
+}
+
+const TOOL_PROFILES: &[ToolProfile] = &[
+    ToolProfile {
+        name: "all",
+        allowed: &[],
+    },
+    ToolProfile {
+        name: "coding",
+        allowed: &[
+            "file.read",
+            "file.write",
+            "file.list",
+            "file.search",
+            "file.grep",
+            "shell.run",
+            "git.status",
+            "git.diff",
+            "git.commit",
+            "cargo.check",
+            "cargo.test",
+        ],
+    },
+    ToolProfile {
+        name: "code_review",
+        allowed: &[
+            "file.read",
+            "file.search",
+            "file.grep",
+            "git.diff",
+            "cargo.check",
+        ],
+    },
+    ToolProfile {
+        name: "github",
+        allowed: &[
+            "github.issues",
+            "github.prs",
+            "git.branch",
+            "git.commit",
+            "git.status",
+        ],
+    },
+    ToolProfile {
+        name: "planner",
+        allowed: &[
+            "project.context",
+            "memory.search",
+            "file.search",
+            "file.grep",
+        ],
+    },
+];
+
+/// Look up a pre-defined profile by name.
+pub fn tool_profile_by_name(name: &str) -> Option<&'static ToolProfile> {
+    TOOL_PROFILES.iter().find(|profile| profile.name == name)
+}
+
+/// Provider-level profile wins over the agent default when set.
+pub fn resolve_tool_profile<'a>(
+    agent_profile: &'a str,
+    provider_profile: Option<&'a str>,
+) -> &'a str {
+    provider_profile.unwrap_or(agent_profile)
+}
+
 /// OpenAI Chat Completions tool definition (`type: "function"`).
 #[derive(Debug, Clone, Serialize)]
 pub struct OpenAiToolSchema {
@@ -184,7 +256,11 @@ pub fn tools_for_openai(tools: &[KiwiToolDef]) -> Vec<OpenAiToolSchema> {
 
 /// Return true when the Ollama model is known to support OpenAI-style tool calling.
 pub fn ollama_supports_tools(model: &str) -> bool {
-    let base = model.split(':').next().unwrap_or(model).to_ascii_lowercase();
+    let base = model
+        .split(':')
+        .next()
+        .unwrap_or(model)
+        .to_ascii_lowercase();
     base.starts_with("qwen2.5-coder")
         || base.starts_with("llama3")
         || base.starts_with("mistral")
@@ -195,6 +271,20 @@ impl ToolRegistry {
     /// Every registered tool definition.
     pub fn all() -> &'static [KiwiToolDef] {
         TOOLS.get_or_init(init_tools).as_slice()
+    }
+
+    /// Registry entries allowed by `profile_name` (unknown names fall back to `all`).
+    pub fn for_profile(profile_name: &str) -> Vec<KiwiToolDef> {
+        let profile = tool_profile_by_name(profile_name)
+            .unwrap_or_else(|| tool_profile_by_name("all").expect("all profile must exist"));
+        if profile.name == "all" {
+            return Self::all().to_vec();
+        }
+        Self::all()
+            .iter()
+            .filter(|tool| profile.allowed.contains(&tool.id))
+            .cloned()
+            .collect()
     }
 
     /// Convert registry entries to Claude Messages API tool schemas.
@@ -219,7 +309,9 @@ impl KiwiTool {
         };
 
         match name {
-            "file.read" => Ok(Self::FileRead { path: str_field("path")? }),
+            "file.read" => Ok(Self::FileRead {
+                path: str_field("path")?,
+            }),
             "file.write" => Ok(Self::FileWrite {
                 path: str_field("path")?,
                 content: str_field("content")?,
@@ -228,12 +320,16 @@ impl KiwiTool {
                 path: str_field("path")?,
                 depth: input["depth"].as_u64().unwrap_or(2).min(5) as u8,
             }),
-            "shell.run" => Ok(Self::ShellRun { command: str_field("command")? }),
+            "shell.run" => Ok(Self::ShellRun {
+                command: str_field("command")?,
+            }),
             "git.status" => Ok(Self::GitStatus),
             "git.diff" => Ok(Self::GitDiff {
                 path: input["path"].as_str().map(str::to_owned),
             }),
-            "file.search" => Ok(Self::FileSearch { query: str_field("query")? }),
+            "file.search" => Ok(Self::FileSearch {
+                query: str_field("query")?,
+            }),
             "file.grep" => Ok(Self::FileGrep {
                 query: str_field("query")?,
                 path: input["path"].as_str().map(str::to_owned),
@@ -260,7 +356,9 @@ mod tests {
             &json!({"path": "out.txt", "content": "hello"}),
         )
         .unwrap();
-        assert!(matches!(tool, KiwiTool::FileWrite { path, content } if path == "out.txt" && content == "hello"));
+        assert!(
+            matches!(tool, KiwiTool::FileWrite { path, content } if path == "out.txt" && content == "hello")
+        );
     }
 
     #[test]
@@ -271,14 +369,14 @@ mod tests {
 
     #[test]
     fn parse_file_list_depth_capped_at_5() {
-        let tool = KiwiTool::from_tool_use("file.list", &json!({"path": ".", "depth": 99})).unwrap();
+        let tool =
+            KiwiTool::from_tool_use("file.list", &json!({"path": ".", "depth": 99})).unwrap();
         assert!(matches!(tool, KiwiTool::FileList { depth: 5, .. }));
     }
 
     #[test]
     fn parse_shell_run() {
-        let tool =
-            KiwiTool::from_tool_use("shell.run", &json!({"command": "cargo test"})).unwrap();
+        let tool = KiwiTool::from_tool_use("shell.run", &json!({"command": "cargo test"})).unwrap();
         assert!(matches!(tool, KiwiTool::ShellRun { command } if command == "cargo test"));
     }
 
@@ -300,11 +398,9 @@ mod tests {
 
     #[test]
     fn parse_file_grep_optional_path() {
-        let tool = KiwiTool::from_tool_use(
-            "file.grep",
-            &json!({"query": "fn main", "path": "src"}),
-        )
-        .unwrap();
+        let tool =
+            KiwiTool::from_tool_use("file.grep", &json!({"query": "fn main", "path": "src"}))
+                .unwrap();
         assert!(matches!(tool, KiwiTool::FileGrep { path: Some(_), .. }));
     }
 
@@ -333,6 +429,37 @@ mod tests {
             assert!(v["name"].is_string());
             assert!(v["input_schema"].is_object());
         }
+    }
+
+    #[test]
+    fn coding_profile_includes_registered_file_and_git_tools() {
+        let tools = ToolRegistry::for_profile("coding");
+        let ids: Vec<_> = tools.iter().map(|tool| tool.id).collect();
+        assert!(ids.contains(&"file.read"));
+        assert!(ids.contains(&"shell.run"));
+        assert!(ids.contains(&"git.status"));
+        assert!(!ids.contains(&"git.commit"));
+    }
+
+    #[test]
+    fn github_profile_includes_only_registered_git_tools() {
+        let tools = ToolRegistry::for_profile("github");
+        let ids: Vec<_> = tools.iter().map(|tool| tool.id).collect();
+        assert_eq!(ids, vec!["git.status"]);
+    }
+
+    #[test]
+    fn unknown_profile_falls_back_to_all() {
+        assert_eq!(
+            ToolRegistry::for_profile("nonexistent").len(),
+            ToolRegistry::all().len()
+        );
+    }
+
+    #[test]
+    fn resolve_tool_profile_prefers_provider_override() {
+        assert_eq!(resolve_tool_profile("coding", Some("planner")), "planner");
+        assert_eq!(resolve_tool_profile("coding", None), "coding");
     }
 
     #[test]

@@ -61,11 +61,20 @@ pub fn spawn_claude_stream(
     api_key: String,
     model: String,
     messages: Vec<ChatMessage>,
+    tool_profile: String,
     cancel: StreamCancelHandle,
     sender: EventSender,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
-        if let Err(msg) = run_stream(agent_id, &api_key, &model, &messages, &cancel, &sender) {
+        if let Err(msg) = run_stream(
+            agent_id,
+            &api_key,
+            &model,
+            &messages,
+            &tool_profile,
+            &cancel,
+            &sender,
+        ) {
             if !cancel.is_cancelled() {
                 let _ = sender.send(AppEvent::AgentApiError {
                     agent_id,
@@ -89,13 +98,25 @@ pub fn spawn_ollama_stream(
     api_url: String,
     model: String,
     messages: Vec<ChatMessage>,
+    tool_profile: String,
     cancel: StreamCancelHandle,
     sender: EventSender,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
-        if let Err(msg) = run_ollama_stream(agent_id, &api_url, &model, &messages, &cancel, &sender) {
+        if let Err(msg) = run_ollama_stream(
+            agent_id,
+            &api_url,
+            &model,
+            &messages,
+            &tool_profile,
+            &cancel,
+            &sender,
+        ) {
             if !cancel.is_cancelled() {
-                let _ = sender.send(AppEvent::AgentApiError { agent_id, message: msg });
+                let _ = sender.send(AppEvent::AgentApiError {
+                    agent_id,
+                    message: msg,
+                });
             }
         }
     })
@@ -106,12 +127,14 @@ fn run_ollama_stream(
     api_url: &str,
     model: &str,
     messages: &[ChatMessage],
+    tool_profile: &str,
     cancel: &StreamCancelHandle,
     sender: &EventSender,
 ) -> Result<(), String> {
     let url = format!("{}/api/chat", api_url.trim_end_matches('/'));
-    let include_tools = ollama_supports_tools(model);
-    let body = build_ollama_request_body(model, messages, include_tools);
+    let tools = ToolRegistry::for_profile(tool_profile);
+    let include_tools = ollama_supports_tools(model) && !tools.is_empty();
+    let body = build_ollama_request_body(model, messages, include_tools, &tools);
 
     let client = reqwest::blocking::Client::new();
     let response = client
@@ -265,6 +288,7 @@ fn build_ollama_request_body<'a>(
     model: &'a str,
     messages: &[ChatMessage],
     include_tools: bool,
+    tools: &[crate::agent::tools::KiwiToolDef],
 ) -> OllamaRequestBody<'a> {
     OllamaRequestBody {
         model,
@@ -275,7 +299,7 @@ fn build_ollama_request_body<'a>(
         },
         stream: true,
         tools: if include_tools {
-            Some(tools_for_openai(ToolRegistry::all()))
+            Some(tools_for_openai(tools))
         } else {
             None
         },
@@ -394,13 +418,25 @@ pub fn spawn_openai_stream(
     api_key: String,
     model: String,
     messages: Vec<ChatMessage>,
+    tool_profile: String,
     cancel: StreamCancelHandle,
     sender: EventSender,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
-        if let Err(msg) = run_openai_stream(agent_id, &api_key, &model, &messages, &cancel, &sender) {
+        if let Err(msg) = run_openai_stream(
+            agent_id,
+            &api_key,
+            &model,
+            &messages,
+            &tool_profile,
+            &cancel,
+            &sender,
+        ) {
             if !cancel.is_cancelled() {
-                let _ = sender.send(AppEvent::AgentApiError { agent_id, message: msg });
+                let _ = sender.send(AppEvent::AgentApiError {
+                    agent_id,
+                    message: msg,
+                });
             }
         }
     })
@@ -411,10 +447,11 @@ fn run_openai_stream(
     api_key: &str,
     model: &str,
     messages: &[ChatMessage],
+    tool_profile: &str,
     cancel: &StreamCancelHandle,
     sender: &EventSender,
 ) -> Result<(), String> {
-    let body = build_openai_request_body(model, messages);
+    let body = build_openai_request_body(model, messages, tool_profile);
 
     let client = reqwest::blocking::Client::new();
     let response = client
@@ -454,7 +491,9 @@ fn process_openai_sse_lines(
         }
 
         let line = raw_line.map_err(|e| format!("Stream read error: {e}"))?;
-        let Some(data) = line.strip_prefix("data:") else { continue };
+        let Some(data) = line.strip_prefix("data:") else {
+            continue;
+        };
         let data = data.trim();
 
         if data == "[DONE]" {
@@ -468,7 +507,11 @@ fn process_openai_sse_lines(
             Err(_) => continue,
         };
 
-        if let Some(err) = obj.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()) {
+        if let Some(err) = obj
+            .get("error")
+            .and_then(|e| e.get("message"))
+            .and_then(|m| m.as_str())
+        {
             return Err(err.to_string());
         }
 
@@ -574,12 +617,17 @@ struct OpenAIRequestBody<'a> {
     tools: Vec<OpenAiToolSchema>,
 }
 
-fn build_openai_request_body<'a>(model: &'a str, messages: &[ChatMessage]) -> OpenAIRequestBody<'a> {
+fn build_openai_request_body<'a>(
+    model: &'a str,
+    messages: &[ChatMessage],
+    tool_profile: &str,
+) -> OpenAIRequestBody<'a> {
+    let tools = ToolRegistry::for_profile(tool_profile);
     OpenAIRequestBody {
         model,
         messages: openai_compatible_messages(messages),
         stream: true,
-        tools: tools_for_openai(ToolRegistry::all()),
+        tools: tools_for_openai(&tools),
     }
 }
 
@@ -595,13 +643,25 @@ pub fn spawn_cursor_stream(
     api_key: String,
     model: String,
     messages: Vec<ChatMessage>,
+    tool_profile: String,
     cancel: StreamCancelHandle,
     sender: EventSender,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
-        if let Err(msg) = run_cursor_stream(agent_id, &api_key, &model, &messages, &cancel, &sender) {
+        if let Err(msg) = run_cursor_stream(
+            agent_id,
+            &api_key,
+            &model,
+            &messages,
+            &tool_profile,
+            &cancel,
+            &sender,
+        ) {
             if !cancel.is_cancelled() {
-                let _ = sender.send(AppEvent::AgentApiError { agent_id, message: msg });
+                let _ = sender.send(AppEvent::AgentApiError {
+                    agent_id,
+                    message: msg,
+                });
             }
         }
     })
@@ -612,10 +672,11 @@ fn run_cursor_stream(
     api_key: &str,
     model: &str,
     messages: &[ChatMessage],
+    tool_profile: &str,
     cancel: &StreamCancelHandle,
     sender: &EventSender,
 ) -> Result<(), String> {
-    let body = build_openai_request_body(model, messages);
+    let body = build_openai_request_body(model, messages, tool_profile);
 
     let client = reqwest::blocking::Client::new();
     let response = client
@@ -650,11 +711,12 @@ fn run_stream(
     api_key: &str,
     model: &str,
     messages: &[ChatMessage],
+    tool_profile: &str,
     cancel: &StreamCancelHandle,
     sender: &EventSender,
 ) -> Result<(), String> {
     let client = reqwest::blocking::Client::new();
-    let body = build_request_body(model, messages)?;
+    let body = build_request_body(model, messages, tool_profile)?;
 
     let response = client
         .post(ANTHROPIC_API_URL)
@@ -801,7 +863,11 @@ enum ApiContent {
     },
 }
 
-fn build_request_body<'a>(model: &'a str, messages: &[ChatMessage]) -> Result<RequestBody<'a>, String> {
+fn build_request_body<'a>(
+    model: &'a str,
+    messages: &[ChatMessage],
+    tool_profile: &str,
+) -> Result<RequestBody<'a>, String> {
     let mut api_messages = Vec::with_capacity(messages.len());
 
     for msg in messages {
@@ -842,7 +908,7 @@ fn build_request_body<'a>(model: &'a str, messages: &[ChatMessage]) -> Result<Re
         max_tokens: DEFAULT_MAX_TOKENS,
         stream: true,
         messages: api_messages,
-        tools: tools_for_claude(ToolRegistry::all()),
+        tools: tools_for_claude(&ToolRegistry::for_profile(tool_profile)),
     })
 }
 
@@ -861,7 +927,7 @@ mod tests {
             role: MessageRole::User,
             blocks: vec![ContentBlock::Text("hello".to_string())],
         }];
-        let body = build_request_body("claude-opus-4-8", &messages).unwrap();
+        let body = build_request_body("claude-opus-4-8", &messages, "all").unwrap();
         let json = serde_json::to_value(&body).unwrap();
 
         assert_eq!(json["model"], "claude-opus-4-8");
@@ -881,13 +947,16 @@ mod tests {
                 r#"{"path":"src/main.rs"}"#.to_string(),
             ))],
         }];
-        let body = build_request_body("claude-opus-4-8", &messages).unwrap();
+        let body = build_request_body("claude-opus-4-8", &messages, "all").unwrap();
         let json = serde_json::to_value(&body).unwrap();
 
         assert_eq!(json["messages"][0]["role"], "assistant");
         assert_eq!(json["messages"][0]["content"][0]["type"], "tool_use");
         assert_eq!(json["messages"][0]["content"][0]["name"], "file.read");
-        assert_eq!(json["messages"][0]["content"][0]["input"]["path"], "src/main.rs");
+        assert_eq!(
+            json["messages"][0]["content"][0]["input"]["path"],
+            "src/main.rs"
+        );
     }
 
     #[test]
@@ -899,13 +968,16 @@ mod tests {
                 "file contents".to_string(),
             ))],
         }];
-        let body = build_request_body("claude-opus-4-8", &messages).unwrap();
+        let body = build_request_body("claude-opus-4-8", &messages, "all").unwrap();
         let json = serde_json::to_value(&body).unwrap();
 
         assert_eq!(json["messages"][0]["role"], "user");
         assert_eq!(json["messages"][0]["content"][0]["type"], "tool_result");
         assert_eq!(json["messages"][0]["content"][0]["tool_use_id"], "tu_1");
-        assert_eq!(json["messages"][0]["content"][0]["content"], "file contents");
+        assert_eq!(
+            json["messages"][0]["content"][0]["content"],
+            "file contents"
+        );
     }
 
     #[test]
@@ -934,12 +1006,12 @@ mod tests {
         process_sse_lines(id, reader, &cancel, &sender).unwrap();
 
         let events: Vec<_> = channel.drain_coalesced();
-        let has_chunk = events.iter().any(|e| {
-            matches!(e, AppEvent::AgentTokenChunk { text, .. } if text == "Hello")
-        });
-        let has_complete = events.iter().any(|e| {
-            matches!(e, AppEvent::AgentTurnComplete { .. })
-        });
+        let has_chunk = events
+            .iter()
+            .any(|e| matches!(e, AppEvent::AgentTokenChunk { text, .. } if text == "Hello"));
+        let has_complete = events
+            .iter()
+            .any(|e| matches!(e, AppEvent::AgentTurnComplete { .. }));
         assert!(has_chunk, "expected AgentTokenChunk");
         assert!(has_complete, "expected AgentTurnComplete");
     }
@@ -970,9 +1042,17 @@ mod tests {
         process_sse_lines(id, reader, &cancel, &sender).unwrap();
 
         let events: Vec<_> = channel.drain_coalesced();
-        let tool_event = events.iter().find(|e| matches!(e, AppEvent::AgentToolCallStart { .. }));
+        let tool_event = events
+            .iter()
+            .find(|e| matches!(e, AppEvent::AgentToolCallStart { .. }));
         assert!(tool_event.is_some(), "expected AgentToolCallStart");
-        if let Some(AppEvent::AgentToolCallStart { tool_use_id, tool_name, input_json, .. }) = tool_event {
+        if let Some(AppEvent::AgentToolCallStart {
+            tool_use_id,
+            tool_name,
+            input_json,
+            ..
+        }) = tool_event
+        {
             assert_eq!(tool_use_id, "tu_abc");
             assert_eq!(tool_name, "file.read");
             assert!(input_json.contains("foo.rs"));
@@ -995,7 +1075,10 @@ mod tests {
         process_sse_lines(id, reader, &cancel, &sender).unwrap();
 
         let events: Vec<_> = channel.drain_coalesced();
-        assert!(events.is_empty(), "cancelled stream should produce no events");
+        assert!(
+            events.is_empty(),
+            "cancelled stream should produce no events"
+        );
     }
 
     #[test]
@@ -1004,7 +1087,7 @@ mod tests {
             role: MessageRole::User,
             blocks: vec![ContentBlock::Text("hello".to_string())],
         }];
-        let body = build_openai_request_body("gpt-4o", &messages);
+        let body = build_openai_request_body("gpt-4o", &messages, "all");
         let json = serde_json::to_value(&body).unwrap();
         assert_eq!(json["tools"][0]["type"], "function");
         assert_eq!(json["tools"][0]["function"]["name"], "file.read");
@@ -1032,9 +1115,16 @@ mod tests {
         process_openai_sse_lines(id, reader, &cancel, &sender).unwrap();
 
         let events: Vec<_> = channel.drain_coalesced();
-        let tool_event = events.iter().find(|e| matches!(e, AppEvent::AgentToolCallStart { .. }));
+        let tool_event = events
+            .iter()
+            .find(|e| matches!(e, AppEvent::AgentToolCallStart { .. }));
         assert!(tool_event.is_some(), "expected AgentToolCallStart");
-        if let Some(AppEvent::AgentToolCallStart { tool_name, input_json, .. }) = tool_event {
+        if let Some(AppEvent::AgentToolCallStart {
+            tool_name,
+            input_json,
+            ..
+        }) = tool_event
+        {
             assert_eq!(tool_name, "file.read");
             assert!(input_json.contains("src/main.rs"));
         }
@@ -1059,8 +1149,12 @@ mod tests {
         process_ollama_lines(id, reader, &cancel, &sender, true).unwrap();
 
         let events: Vec<_> = channel.drain_coalesced();
-        assert!(events.iter().any(|e| matches!(e, AppEvent::AgentToolCallStart { .. })));
-        assert!(events.iter().any(|e| matches!(e, AppEvent::AgentTurnComplete { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, AppEvent::AgentToolCallStart { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, AppEvent::AgentTurnComplete { .. })));
     }
 
     /// Integration test — requires ANTHROPIC_API_KEY in the environment.
@@ -1087,13 +1181,18 @@ mod tests {
             api_key,
             "claude-opus-4-8".to_string(),
             messages,
+            "all".to_string(),
             cancel,
             sender,
         );
         handle.join().expect("stream thread panicked");
 
         let events = channel.drain_coalesced();
-        assert!(events.iter().any(|e| matches!(e, AppEvent::AgentTurnComplete { .. })));
-        assert!(events.iter().any(|e| matches!(e, AppEvent::AgentTokenChunk { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, AppEvent::AgentTurnComplete { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, AppEvent::AgentTokenChunk { .. })));
     }
 }

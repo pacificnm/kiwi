@@ -11,14 +11,12 @@ mod stream_event;
 pub mod tool_executor;
 pub mod tools;
 
-pub use api_client::{spawn_claude_stream, spawn_cursor_stream, spawn_ollama_stream, spawn_openai_stream, StreamCancelHandle};
+pub use api_client::{
+    spawn_claude_stream, spawn_cursor_stream, spawn_ollama_stream, spawn_openai_stream,
+    StreamCancelHandle,
+};
 pub use chat::{
     AgentProvider, ChatMessage, ChatSession, ContentBlock, MessageRole, ToolResult, ToolUse,
-};
-pub use tool_executor::{execute_tool, ExecutionResult};
-pub use tools::{
-    tools_for_claude, tools_for_openai, KiwiTool, KiwiToolDef, OpenAiToolSchema, ToolParseError,
-    ToolRegistry, ToolSchema, ollama_supports_tools,
 };
 pub use command::{agent_display_name, agent_launch_spec, AgentLaunchSpec};
 pub use error::AgentError;
@@ -29,3 +27,9 @@ pub use manager::{
 };
 pub use session::AgentSession;
 pub use status::{infer_status_from_scrollback, infer_status_from_text, AgentStatus};
+pub use tool_executor::{execute_tool, ExecutionResult};
+pub use tools::{
+    ollama_supports_tools, resolve_tool_profile, tool_profile_by_name, tools_for_claude,
+    tools_for_openai, KiwiTool, KiwiToolDef, OpenAiToolSchema, ToolParseError, ToolProfile,
+    ToolRegistry, ToolSchema,
+};

@@ -31,10 +31,10 @@ pub(super) fn reduce_plugin_install(
     src_path: PathBuf,
 ) -> Vec<SideEffect> {
     state.plugins.install_path_input.clear();
-    state.plugins.install_job.start(format!(
-        "Installing plugin from {}",
-        src_path.display()
-    ));
+    state
+        .plugins
+        .install_job
+        .start(format!("Installing plugin from {}", src_path.display()));
     state.set_dirty();
     vec![SideEffect::PluginInstall { src_path }]
 }
@@ -48,10 +48,10 @@ pub(super) fn reduce_plugin_reinstall(
     state: &mut ReduceView<'_>,
     src_path: PathBuf,
 ) -> Vec<SideEffect> {
-    state.plugins.install_job.start(format!(
-        "Reinstalling plugin from {}",
-        src_path.display()
-    ));
+    state
+        .plugins
+        .install_job
+        .start(format!("Reinstalling plugin from {}", src_path.display()));
     state.set_dirty();
     vec![SideEffect::PluginReinstall { src_path }]
 }
@@ -62,7 +62,10 @@ pub(super) fn reduce_plugin_install_progress(
     step: u32,
     total: u32,
 ) -> Vec<SideEffect> {
-    state.plugins.install_job.apply_progress(message, step, total);
+    state
+        .plugins
+        .install_job
+        .apply_progress(message, step, total);
     state.set_dirty();
     Vec::new()
 }
@@ -85,7 +88,10 @@ pub(super) fn reduce_plugin_install_finished(
             .unwrap_or_else(|| "Plugin install failed.".to_string())
     };
 
-    state.plugins.install_job.finish(success, Some(summary.clone()));
+    state
+        .plugins
+        .install_job
+        .finish(success, Some(summary.clone()));
     if success {
         state.logs.push_info(summary.clone());
     } else {
@@ -115,7 +121,11 @@ pub(super) fn reduce_set_agent(
     api_key: Option<String>,
 ) -> Vec<SideEffect> {
     let is_api = mode.as_deref() == Some("api");
-    let new_mode = if is_api { AgentMode::Api } else { AgentMode::Pty };
+    let new_mode = if is_api {
+        AgentMode::Api
+    } else {
+        AgentMode::Pty
+    };
 
     state.config.agent.command = command.clone();
     state.config.agent.args = args.clone();
@@ -125,23 +135,35 @@ pub(super) fn reduce_set_agent(
     state.set_dirty();
 
     if is_api {
-        let model_str = model.clone().unwrap_or_else(|| state.config.agent.model.clone());
+        let model_str = model
+            .clone()
+            .unwrap_or_else(|| state.config.agent.model.clone());
         let provider_str = provider.clone().unwrap_or_else(|| "claude".to_string());
 
         // Update per-provider settings in the resolved config map.
-        let entry = state.config.agent.providers
+        let entry = state
+            .config
+            .agent
+            .providers
             .entry(provider_str.clone())
             .or_insert_with(|| crate::config::ProviderSettings {
                 api_key_env: "ANTHROPIC_API_KEY".to_string(),
                 api_key: None,
                 model: model_str.clone(),
                 api_url: None,
+                tool_profile: None,
             });
         entry.model = model_str.clone();
-        if let Some(ref env) = api_key_env { entry.api_key_env = env.clone(); }
-        if let Some(ref url) = api_url     { entry.api_url = Some(url.clone()); }
+        if let Some(ref env) = api_key_env {
+            entry.api_key_env = env.clone();
+        }
+        if let Some(ref url) = api_url {
+            entry.api_url = Some(url.clone());
+        }
         // User-supplied key from Settings UI — update immediately so it's available for the session.
-        if let Some(ref key) = api_key     { entry.api_key = Some(key.clone()); }
+        if let Some(ref key) = api_key {
+            entry.api_key = Some(key.clone());
+        }
 
         state.config.agent.active_provider = Some(provider_str.clone());
         // Keep legacy flat fields in sync.
@@ -164,11 +186,16 @@ pub(super) fn reduce_set_agent(
         }
 
         let display = provider.as_deref().unwrap_or("API");
-        state.notifications.show_toast(format!("Switched to {display} agent (native chat)."));
+        state
+            .notifications
+            .show_toast(format!("Switched to {display} agent (native chat)."));
 
         // Carry forward any api_key already stored for this provider so
         // switching agents never drops a key that was previously persisted.
-        let existing_api_key = state.config.agent.providers
+        let existing_api_key = state
+            .config
+            .agent
+            .providers
             .get(&provider_str)
             .and_then(|p| p.api_key.clone());
 
@@ -183,7 +210,9 @@ pub(super) fn reduce_set_agent(
         if let Some(pty) = state.agent_manager.pty_mut(id) {
             pty.chat = None;
         }
-        state.notifications.show_toast(format!("Switching agent to `{command}`…"));
+        state
+            .notifications
+            .show_toast(format!("Switching agent to `{command}`…"));
         vec![
             SideEffect::PersistAgentConfig { command, args },
             SideEffect::Agent(AgentEffect::Restart(id)),
