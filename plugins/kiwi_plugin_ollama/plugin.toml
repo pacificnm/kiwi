@@ -8,7 +8,7 @@ author = "PacificNM"
 [agent]
 mode = "api"
 provider = "ollama"
-model = "llama3.2"
+model = "qwen2.5-coder:7b"
 
 [install]
 kind = "cargo"
