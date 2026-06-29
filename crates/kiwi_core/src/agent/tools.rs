@@ -14,6 +14,14 @@ pub struct KiwiToolDef {
 /// Central registry of all compiled-in agent tools.
 pub struct ToolRegistry;
 
+/// Action for [`KiwiTool::GitBranch`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GitBranchAction {
+    List,
+    Create,
+    Checkout,
+}
+
 /// A locally-executable tool that Claude can invoke via a `tool_use` block.
 #[derive(Debug, Clone)]
 pub enum KiwiTool {
@@ -26,6 +34,10 @@ pub enum KiwiTool {
     GitCommit {
         message: String,
         stage_all: bool,
+    },
+    GitBranch {
+        action: GitBranchAction,
+        name: Option<String>,
     },
     FileSearch { query: String },
     FileGrep { query: String, path: Option<String> },
@@ -137,6 +149,21 @@ fn init_tools() -> Vec<KiwiToolDef> {
             }),
         },
         KiwiToolDef {
+            id: "git.branch",
+            description: "List local branches, create a new branch, or checkout an existing branch.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["list", "create", "checkout"],
+                        "description": "Action to perform (default: list)."
+                    },
+                    "name": {"type": "string", "description": "Branch name (required for create/checkout)."}
+                }
+            }),
+        },
+        KiwiToolDef {
             id: "file.search",
             description: "Find files whose names contain a given substring.",
             input_schema: json!({
@@ -185,6 +212,7 @@ const TOOL_PROFILES: &[ToolProfile] = &[
             "shell.run",
             "git.status",
             "git.diff",
+            "git.branch",
             "git.commit",
             "cargo.check",
             "cargo.test",
@@ -347,6 +375,27 @@ impl KiwiTool {
                 message: str_field("message")?,
                 stage_all: input["stage_all"].as_bool().unwrap_or(true),
             }),
+            "git.branch" => {
+                let action = parse_git_branch_action(input)?;
+                let name = input["name"].as_str().map(str::to_owned);
+                match action {
+                    GitBranchAction::List => Ok(Self::GitBranch { action, name: None }),
+                    GitBranchAction::Create | GitBranchAction::Checkout => {
+                        let name = name.ok_or_else(|| {
+                            ToolParseError("missing required field 'name'".to_string())
+                        })?;
+                        if name.trim().is_empty() {
+                            return Err(ToolParseError(
+                                "branch name must not be empty".to_string(),
+                            ));
+                        }
+                        Ok(Self::GitBranch {
+                            action,
+                            name: Some(name),
+                        })
+                    }
+                }
+            }
             "file.search" => Ok(Self::FileSearch {
                 query: str_field("query")?,
             }),
@@ -356,6 +405,17 @@ impl KiwiTool {
             }),
             other => Err(ToolParseError(format!("unknown tool '{other}'"))),
         }
+    }
+}
+
+fn parse_git_branch_action(input: &Value) -> Result<GitBranchAction, ToolParseError> {
+    match input["action"].as_str().unwrap_or("list") {
+        "list" => Ok(GitBranchAction::List),
+        "create" => Ok(GitBranchAction::Create),
+        "checkout" => Ok(GitBranchAction::Checkout),
+        other => Err(ToolParseError(format!(
+            "invalid git.branch action '{other}'"
+        ))),
     }
 }
 
@@ -404,6 +464,52 @@ mod tests {
     fn parse_git_status() {
         let tool = KiwiTool::from_tool_use("git.status", &json!({})).unwrap();
         assert!(matches!(tool, KiwiTool::GitStatus));
+    }
+
+    #[test]
+    fn parse_git_branch_defaults_to_list() {
+        let tool = KiwiTool::from_tool_use("git.branch", &json!({})).unwrap();
+        assert!(matches!(
+            tool,
+            KiwiTool::GitBranch {
+                action: GitBranchAction::List,
+                name: None
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_git_branch_create_requires_name() {
+        let err = KiwiTool::from_tool_use("git.branch", &json!({"action": "create"}));
+        assert!(err.is_err());
+        let tool = KiwiTool::from_tool_use(
+            "git.branch",
+            &json!({"action": "create", "name": "feature-x"}),
+        )
+        .unwrap();
+        assert!(matches!(
+            tool,
+            KiwiTool::GitBranch {
+                action: GitBranchAction::Create,
+                name: Some(name)
+            } if name == "feature-x"
+        ));
+    }
+
+    #[test]
+    fn parse_git_branch_checkout() {
+        let tool = KiwiTool::from_tool_use(
+            "git.branch",
+            &json!({"action": "checkout", "name": "main"}),
+        )
+        .unwrap();
+        assert!(matches!(
+            tool,
+            KiwiTool::GitBranch {
+                action: GitBranchAction::Checkout,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -456,8 +562,8 @@ mod tests {
     }
 
     #[test]
-    fn registry_returns_nine_tools() {
-        assert_eq!(ToolRegistry::all().len(), 9);
+    fn registry_returns_ten_tools() {
+        assert_eq!(ToolRegistry::all().len(), 10);
     }
 
     #[test]
@@ -477,13 +583,14 @@ mod tests {
         assert!(ids.contains(&"shell.run"));
         assert!(ids.contains(&"git.status"));
         assert!(ids.contains(&"git.commit"));
+        assert!(ids.contains(&"git.branch"));
     }
 
     #[test]
     fn github_profile_includes_registered_git_tools() {
         let tools = ToolRegistry::for_profile("github");
         let ids: Vec<_> = tools.iter().map(|tool| tool.id).collect();
-        assert_eq!(ids, vec!["git.status", "git.commit"]);
+        assert_eq!(ids, vec!["git.status", "git.commit", "git.branch"]);
     }
 
     #[test]
@@ -503,7 +610,7 @@ mod tests {
     #[test]
     fn openai_adapter_uses_function_type() {
         let schemas = tools_for_openai(ToolRegistry::all());
-        assert_eq!(schemas.len(), 9);
+        assert_eq!(schemas.len(), 10);
         let first = serde_json::to_value(&schemas[0]).unwrap();
         assert_eq!(first["type"], "function");
         assert_eq!(first["function"]["name"], "file.read");
