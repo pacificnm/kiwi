@@ -111,14 +111,9 @@ impl ChatSession {
     }
 
     pub fn append_tool_result(&mut self, result: ToolResult) {
-        if let Some(last) = self.messages.last_mut() {
-            if last.role == MessageRole::Assistant {
-                last.blocks.push(ContentBlock::ToolResult(result));
-                return;
-            }
-        }
+        // Anthropic API requires tool_result blocks to be in user messages.
         self.messages.push(ChatMessage {
-            role: MessageRole::Assistant,
+            role: MessageRole::User,
             blocks: vec![ContentBlock::ToolResult(result)],
         });
     }
@@ -325,5 +320,23 @@ mod tests {
         assert!(!ok.is_error);
         let err = ToolResult::error("id".to_string(), "fail".to_string());
         assert!(err.is_error);
+    }
+
+    #[test]
+    fn append_tool_result_creates_user_message() {
+        let mut session = ChatSession::default();
+        // Precede with an assistant message (as happens after a tool_use turn).
+        session.messages.push(ChatMessage {
+            role: MessageRole::Assistant,
+            blocks: vec![ContentBlock::Text("I'll use a tool.".to_string())],
+        });
+        let result = ToolResult::ok("id1".to_string(), "output".to_string());
+        session.append_tool_result(result);
+        // Must create a NEW user message — never append to the assistant message.
+        assert_eq!(session.messages.len(), 2);
+        assert_eq!(session.messages[1].role, MessageRole::User);
+        assert!(
+            matches!(&session.messages[1].blocks[0], ContentBlock::ToolResult(r) if r.tool_use_id == "id1")
+        );
     }
 }
