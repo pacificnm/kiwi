@@ -29,6 +29,7 @@ Architecture Decision Records (ADRs) document significant technical and product 
 | [ADR-021](./ADR-021-desktop-gui-framework-selection.md) | Desktop GUI Framework Selection | Accepted |
 | [ADR-022](./ADR-022-gui-dock-layout-architecture.md) | GUI Dock Layout Architecture | Accepted |
 | [ADR-023](./ADR-023-ollama-agent-design.md) | Ollama Agent Design | Accepted |
+| [ADR-024](./ADR-024-native-chat-agent-architecture.md) | Native Chat Agent Architecture | Accepted |
 
 ## ADR Template
 
