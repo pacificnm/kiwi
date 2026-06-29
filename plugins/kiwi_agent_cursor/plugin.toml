@@ -2,12 +2,14 @@ name = "kiwi-agent-cursor"
 version = "0.1.0"
 min_kiwi_version = "0.1.0"
 display_name = "Cursor"
-description = "Cursor AI coding assistant — runs as the AI agent in the Agent panel."
+description = "Cursor AI models via the Cursor API — runs as the AI agent in the Agent panel."
 author = "PacificNM"
 
 [agent]
-command = "agent"
-args = []
+mode = "api"
+provider = "cursor"
+model = "cursor-small"
+api_key_env = "CURSOR_API_KEY"
 
 [install]
 kind = "copy"

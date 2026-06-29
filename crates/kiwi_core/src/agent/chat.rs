@@ -229,6 +229,8 @@ pub enum AgentProvider {
     Ollama,
     /// OpenAI API (`gpt-*` models).
     OpenAI,
+    /// Cursor AI API (`cursor-small` and proxied models).
+    Cursor,
     /// Legacy PTY subprocess (used when `provider = "pty"` in config).
     Pty,
 }

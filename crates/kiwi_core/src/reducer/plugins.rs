@@ -150,6 +150,7 @@ pub(super) fn reduce_set_agent(
         let agent_provider = match provider_str.as_str() {
             "ollama" => crate::agent::AgentProvider::Ollama,
             "openai" => crate::agent::AgentProvider::OpenAI,
+            "cursor" => crate::agent::AgentProvider::Cursor,
             _ => crate::agent::AgentProvider::Claude,
         };
 

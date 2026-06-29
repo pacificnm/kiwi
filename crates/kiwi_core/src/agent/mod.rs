@@ -11,7 +11,7 @@ mod stream_event;
 pub mod tool_executor;
 pub mod tools;
 
-pub use api_client::{spawn_claude_stream, spawn_ollama_stream, spawn_openai_stream, StreamCancelHandle};
+pub use api_client::{spawn_claude_stream, spawn_cursor_stream, spawn_ollama_stream, spawn_openai_stream, StreamCancelHandle};
 pub use chat::{
     AgentProvider, ChatMessage, ChatSession, ContentBlock, MessageRole, ToolResult, ToolUse,
 };

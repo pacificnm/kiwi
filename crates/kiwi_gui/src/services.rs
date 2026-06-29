@@ -8,8 +8,8 @@ use std::time::Duration;
 use arboard::Clipboard;
 
 use kiwi_core::agent::{
-    execute_tool, spawn_claude_stream, ExecutionResult, KiwiTool, StreamCancelHandle,
-    ToolParseError,
+    execute_tool, spawn_claude_stream, spawn_cursor_stream, ExecutionResult, KiwiTool,
+    StreamCancelHandle, ToolParseError,
 };
 use kiwi_core::diff::spawn_file_diff_load;
 use kiwi_core::editor::{
@@ -623,6 +623,19 @@ fn spawn_claude_stream_effect(ctx: &mut ServiceContext<'_>, agent_id: kiwi_core:
                 return;
             }
             kiwi_core::agent::spawn_openai_stream(agent_id, api_key, model, messages, cancel, sender);
+        }
+        AgentProvider::Cursor => {
+            let api_key = resolve_api_key("CURSOR_API_KEY");
+            if api_key.is_empty() {
+                let _ = sender.send(AppEvent::AgentApiError {
+                    agent_id,
+                    message: "API key not found. Export CURSOR_API_KEY in your shell, \
+                              or set api_key under [agent.providers.cursor] in config.toml"
+                        .to_string(),
+                });
+                return;
+            }
+            spawn_cursor_stream(agent_id, api_key, model, messages, cancel, sender);
         }
         _ => {
             let api_key = resolve_api_key("ANTHROPIC_API_KEY");
