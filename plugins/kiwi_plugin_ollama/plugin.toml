@@ -1,3 +1,33 @@
 name = "ollama"
 version = "0.1.0"
 min_kiwi_version = "0.1.0"
+display_name = "Ollama"
+description = "Local AI models via Ollama — runs as the AI agent in the Agent panel."
+author = "PacificNM"
+
+[agent]
+command = "kiwi-ollama"
+args = []
+
+[install]
+kind = "cargo"
+package = "kiwi_plugin_ollama"
+library = "kiwi_plugin_ollama"
+profile = "release"
+binaries = ["kiwi-ollama"]
+
+[[install.extra_packages]]
+package = "kiwi_mcp_memory"
+binaries = ["kiwi-mcp-memory"]
+
+[[install.extra_packages]]
+package = "kiwi_mcp_context"
+binaries = ["kiwi-mcp-context"]
+
+[[install.extra_packages]]
+package = "kiwi_mcp_git"
+binaries = ["kiwi-mcp-git"]
+
+[[install.extra_packages]]
+package = "kiwi_mcp_gitnexus"
+binaries = ["kiwi-mcp-gitnexus"]

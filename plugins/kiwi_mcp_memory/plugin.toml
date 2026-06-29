@@ -1,3 +1,13 @@
 name = "kiwi-mcp-memory"
 version = "0.1.0"
 min_kiwi_version = "0.1.0"
+display_name = "MCP Memory"
+description = "MCP server providing persistent project memory and knowledge base search."
+author = "PacificNM"
+
+[install]
+kind = "cargo"
+package = "kiwi_mcp_memory"
+library = "kiwi_mcp_memory"
+profile = "release"
+binaries = ["kiwi-mcp-memory"]

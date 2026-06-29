@@ -38,6 +38,85 @@ pub fn render(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
 
     ui.separator();
     render_install_footer(ui, ctx);
+    render_install_modal(ui.ctx(), ctx);
+}
+
+fn render_install_modal(ctx: &egui::Context, panel: &mut PanelContext<'_>) {
+    let job = &panel.state.plugins.install_job;
+    if !job.active {
+        return;
+    }
+
+    let mut dismiss = false;
+    let progress = if job.total > 0 {
+        job.step as f32 / job.total as f32
+    } else {
+        0.0
+    };
+
+    egui::Window::new(&job.title)
+        .collapsible(false)
+        .resizable(true)
+        .default_size([520.0, 360.0])
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ui.label(
+                RichText::new(&job.status_line)
+                    .color(panel.theme.role(SemanticRole::Fg)),
+            );
+            ui.add_space(6.0);
+
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::ProgressBar::new(progress.clamp(0.0, 1.0))
+                        .text(format!("Step {} of {}", job.step, job.total)),
+                );
+            });
+
+            ui.add_space(8.0);
+            ui.label(
+                RichText::new("Output")
+                    .color(panel.theme.role(SemanticRole::Muted))
+                    .small(),
+            );
+
+            ScrollArea::vertical()
+                .id_salt("plugin_install_log")
+                .max_height(220.0)
+                .stick_to_bottom(true)
+                .show(ui, |ui| {
+                    for line in &job.log {
+                        ui.label(
+                            RichText::new(line)
+                                .color(panel.theme.role(SemanticRole::Fg))
+                                .small()
+                                .monospace(),
+                        );
+                    }
+                });
+
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if job.finished {
+                    let label = if job.success { "Close" } else { "Dismiss" };
+                    if ui.button(label).clicked() {
+                        dismiss = true;
+                    }
+                } else {
+                    ui.spinner();
+                    ui.label(
+                        RichText::new("Installing…")
+                            .color(panel.theme.role(SemanticRole::Muted))
+                            .small(),
+                    );
+                }
+            });
+        });
+
+    if dismiss {
+        panel.state.plugins.install_job.dismiss();
+        panel.state.dirty = true;
+    }
 }
 
 fn render_plugin_list(ui: &mut Ui, ctx: &mut PanelContext<'_>, available: &[AvailablePlugin]) {
@@ -107,20 +186,38 @@ fn render_plugin_list(ui: &mut Ui, ctx: &mut PanelContext<'_>, available: &[Avai
 }
 
 fn render_action_button(ui: &mut Ui, ctx: &mut PanelContext<'_>, plugin: &AvailablePlugin) {
+    let install_busy = ctx.state.plugins.install_job.active && !ctx.state.plugins.install_job.finished;
     if !plugin.installed {
         let src = plugin.source_path.clone();
-        if ui.small_button("Install").clicked() {
+        if ui
+            .add_enabled(!install_busy, egui::Button::new("Install").small())
+            .clicked()
+        {
             (ctx.dispatch)(AppCommand::PluginInstall { src_path: src });
-        }
-    } else if plugin.enabled {
-        let name = plugin.name.clone();
-        if ui.small_button("Disable").clicked() {
-            (ctx.dispatch)(AppCommand::PluginSetEnabled { name, enabled: false });
         }
     } else {
         let name = plugin.name.clone();
-        if ui.small_button("Enable").clicked() {
+        let src = plugin.source_path.clone();
+        if ui
+            .add_enabled(!install_busy, egui::Button::new("Reinstall").small())
+            .clicked()
+        {
+            (ctx.dispatch)(AppCommand::PluginReinstall { src_path: src });
+        }
+        if plugin.enabled {
+            if ui.small_button("Disable").clicked() {
+                (ctx.dispatch)(AppCommand::PluginSetEnabled {
+                    name: name.clone(),
+                    enabled: false,
+                });
+            }
+        } else if ui.small_button("Enable").clicked() {
             (ctx.dispatch)(AppCommand::PluginSetEnabled { name, enabled: true });
+        }
+        if ui.small_button("Remove").clicked() {
+            (ctx.dispatch)(AppCommand::PluginRemove {
+                name: plugin.name.clone(),
+            });
         }
     }
 }
@@ -138,7 +235,9 @@ fn render_install_footer(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
         ui.add(input);
 
         let has_path = !ctx.state.plugins.install_path_input.trim().is_empty();
-        let btn = ui.add_enabled(has_path, egui::Button::new("Install"));
+        let install_busy =
+            ctx.state.plugins.install_job.active && !ctx.state.plugins.install_job.finished;
+        let btn = ui.add_enabled(has_path && !install_busy, egui::Button::new("Install"));
         if btn.clicked() {
             let src = std::path::PathBuf::from(ctx.state.plugins.install_path_input.trim());
             (ctx.dispatch)(AppCommand::PluginInstall { src_path: src });

@@ -1,5 +1,6 @@
 mod db;
 mod embed;
+mod env;
 mod indexer;
 mod kb_config;
 mod mcp;
@@ -56,27 +57,34 @@ struct Cli {
 }
 
 fn main() -> Result<()> {
+    env::load_mcp_env();
     let cli = Cli::parse();
 
     let db_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgresql:///kiwi_memory?host=/var/run/postgresql".into());
 
-    let embed = EmbedClient::from_env()?;
+    let mut db = MemoryDb::connect(&db_url)?;
+    let mut embed = EmbedClient::from_env()?;
+    if let Some(table_dim) = db.existing_dim()? {
+        embed = embed.align_to_table_dim(table_dim)?;
+    }
     let needed = embed.dim();
 
     // ── --setup-db ────────────────────────────────────────────────────────────
     if cli.setup_db {
-        let mut db = MemoryDb::connect(&db_url)?;
-        check_dim_compat(&mut db, needed, &embed)?;
-        db.setup_schema(needed)?;
-        db.setup_knowledge_schema(needed)?;
+        if db.existing_dim()?.is_none() {
+            check_dim_compat(&mut db, needed, &embed)?;
+            db.setup_schema(needed)?;
+        } else {
+            check_dim_compat(&mut db, needed, &embed)?;
+        }
+        try_ensure_knowledge_schema(&mut db, needed, &embed)?;
         eprintln!("schema ready ({needed}-dim, backend: {})", embed.backend_name());
         return Ok(());
     }
 
     // ── --list-collections ────────────────────────────────────────────────────
     if cli.list_collections {
-        let mut db = MemoryDb::connect(&db_url)?;
         let cols = db.list_collections()?;
         if cols.is_empty() {
             eprintln!("no collections indexed yet");
@@ -90,7 +98,6 @@ fn main() -> Result<()> {
 
     // ── --index (project docs) ────────────────────────────────────────────────
     if cli.index {
-        let mut db = MemoryDb::connect(&db_url)?;
         ensure_project_schema(&mut db, needed, &embed)?;
         let root = cli.root.canonicalize().context("invalid --root path")?;
         indexer::index_project(&root, &mut db, &embed)?;
@@ -99,7 +106,6 @@ fn main() -> Result<()> {
 
     // ── --index-kb ────────────────────────────────────────────────────────────
     if cli.index_kb {
-        let mut db = MemoryDb::connect(&db_url)?;
         ensure_knowledge_schema(&mut db, needed, &embed)?;
 
         if let Some(cfg_path) = &cli.kb_config {
@@ -139,8 +145,8 @@ fn main() -> Result<()> {
     }
 
     // ── MCP server mode ───────────────────────────────────────────────────────
-    let mut db = MemoryDb::connect(&db_url)?;
     check_dim_compat(&mut db, needed, &embed)?;
+    try_ensure_knowledge_schema(&mut db, needed, &embed)?;
 
     let stdin = io::stdin();
     let stdout = io::stdout();
@@ -195,6 +201,22 @@ fn ensure_knowledge_schema(db: &mut MemoryDb, needed: usize, embed: &EmbedClient
         }
     } else {
         db.setup_knowledge_schema(needed)?;
+    }
+    Ok(())
+}
+
+/// Best-effort knowledge_base setup for environments where tables are created by postgres.
+fn try_ensure_knowledge_schema(db: &mut MemoryDb, needed: usize, embed: &EmbedClient) -> Result<()> {
+    if let Err(err) = ensure_knowledge_schema(db, needed, embed) {
+        let message = format!("{err:#}");
+        if message.contains("permission denied") {
+            eprintln!(
+                "warning: could not create knowledge_base ({message}); \
+                 run once as postgres: sudo -u postgres psql kiwi_memory < tools/setup_knowledge_base.sql"
+            );
+            return Ok(());
+        }
+        return Err(err);
     }
     Ok(())
 }

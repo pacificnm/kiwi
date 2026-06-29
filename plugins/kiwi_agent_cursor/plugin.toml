@@ -1,0 +1,14 @@
+name = "kiwi-agent-cursor"
+version = "0.1.0"
+min_kiwi_version = "0.1.0"
+display_name = "Cursor"
+description = "Cursor AI coding assistant — runs as the AI agent in the Agent panel."
+author = "PacificNM"
+
+[agent]
+command = "agent"
+args = []
+
+[install]
+kind = "copy"
+files = ["plugin.toml"]

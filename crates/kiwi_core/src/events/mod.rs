@@ -127,6 +127,17 @@ pub enum AppEvent {
         branch_name: String,
         error: Option<String>,
     },
+    /// Progress update while installing or reinstalling a plugin in the GUI.
+    PluginInstallProgress {
+        message: String,
+        step: u32,
+        total: u32,
+    },
+    /// Plugin install/reinstall finished (success or failure).
+    PluginInstallFinished {
+        result: Option<crate::plugins::PluginInstallResult>,
+        error: Option<String>,
+    },
 }
 
 #[non_exhaustive]
@@ -258,6 +269,12 @@ pub enum AppCommand {
     PluginSetEnabled { name: String, enabled: bool },
     /// Install a plugin from a local directory into the plugins folder.
     PluginInstall { src_path: std::path::PathBuf },
+    /// Remove an installed plugin (files and registry entry).
+    PluginRemove { name: String },
+    /// Remove and reinstall a plugin from a local directory.
+    PluginReinstall { src_path: std::path::PathBuf },
+    /// Switch the active AI agent command. Updates config immediately; persisted via SideEffect.
+    SetAgent { command: String, args: Vec<String> },
 }
 
 #[non_exhaustive]
@@ -337,6 +354,16 @@ pub enum SideEffect {
     PluginSetEnabled { name: String, enabled: bool },
     /// Copy a plugin directory into the plugins folder and register it.
     PluginInstall { src_path: std::path::PathBuf },
+    /// Remove an installed plugin from disk and the registry.
+    PluginRemove { name: String },
+    /// Remove and reinstall a plugin from a local directory.
+    PluginReinstall { src_path: std::path::PathBuf },
+    /// Register a plugin after a successful background install.
+    PluginInstallRegister { result: crate::plugins::PluginInstallResult },
+    /// Refresh plugin list after a failed background install.
+    PluginInstallFailed,
+    /// Persist the chosen agent command to ~/.config/kiwi/config.toml.
+    PersistAgentConfig { command: String, args: Vec<String> },
 }
 
 impl AppCommand {

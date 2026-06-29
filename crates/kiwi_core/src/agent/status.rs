@@ -52,7 +52,7 @@ impl AgentStatus {
 /// Scan recent scrollback text for status keywords (patterns configurable later).
 #[must_use]
 pub fn infer_status_from_scrollback(buffer: &ScrollbackBuffer) -> Option<AgentStatus> {
-    infer_status_from_text(&buffer.recent_text(32))
+    infer_status_from_text(&buffer.recent_stripped_text(32))
 }
 
 #[must_use]
@@ -89,34 +89,6 @@ pub fn infer_status_from_text(text: &str) -> Option<AgentStatus> {
     if matches_pattern(
         &lower,
         &[
-            "success",
-            "completed",
-            "finished",
-            "all done",
-            "task complete",
-            "✓ done",
-            "done ✓",
-        ],
-    ) {
-        return Some(AgentStatus::Success);
-    }
-
-    if matches_pattern(
-        &lower,
-        &[
-            "thinking",
-            "planning",
-            "reasoning",
-            "considering",
-            "reflecting",
-        ],
-    ) {
-        return Some(AgentStatus::Thinking);
-    }
-
-    if matches_pattern(
-        &lower,
-        &[
             "executing",
             "running tool",
             "tool call",
@@ -132,6 +104,48 @@ pub fn infer_status_from_text(text: &str) -> Option<AgentStatus> {
         ],
     ) {
         return Some(AgentStatus::Executing);
+    }
+
+    if matches_pattern(
+        &lower,
+        &[
+            "thinking",
+            "planning",
+            "reasoning",
+            "considering",
+            "reflecting",
+            "generating",
+        ],
+    ) {
+        return Some(AgentStatus::Thinking);
+    }
+
+    if lower.contains("completed:") {
+        return Some(AgentStatus::Thinking);
+    }
+
+    if matches_pattern(
+        &lower,
+        &[
+            "success",
+            "task complete",
+            "all done",
+            "response ready",
+            "✓ done",
+            "done ✓",
+        ],
+    ) {
+        return Some(AgentStatus::Success);
+    }
+
+    if matches_pattern(
+        &lower,
+        &[
+            "finished",
+            "completed successfully",
+        ],
+    ) {
+        return Some(AgentStatus::Success);
     }
 
     None
@@ -182,6 +196,14 @@ mod tests {
         assert_eq!(
             infer_status_from_text("Task completed successfully."),
             Some(AgentStatus::Success)
+        );
+    }
+
+    #[test]
+    fn infer_status_tool_completed_stays_thinking() {
+        assert_eq!(
+            infer_status_from_text("completed: git_status → on branch main"),
+            Some(AgentStatus::Thinking)
         );
     }
 

@@ -8,6 +8,7 @@ use std::time::Duration;
 use portable_pty::{native_pty_system, Child, CommandBuilder, ExitStatus, MasterPty, PtySize};
 
 use crate::config::AgentSettings;
+use crate::env::repo_env_vars;
 
 use super::command::{agent_launch_spec, AgentLaunchSpec};
 use super::error::AgentError;
@@ -42,6 +43,7 @@ impl AgentSession {
         let mut command = CommandBuilder::new(&spec.command);
         command.cwd(repo_root);
         apply_pty_env(&mut command);
+        apply_repo_env(&mut command, repo_root, settings);
         for arg in &spec.args {
             command.arg(arg);
         }
@@ -169,6 +171,18 @@ impl Drop for AgentSession {
 fn apply_pty_env(command: &mut CommandBuilder) {
     let term = std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".to_string());
     command.env("TERM", term);
+}
+
+/// Forward repo `.env` MCP credentials to the agent without overriding explicit config.
+fn apply_repo_env(command: &mut CommandBuilder, repo_root: &Path, settings: &AgentSettings) {
+    command.env("KIWI_REPO_ROOT", repo_root.as_os_str());
+
+    for (key, value) in repo_env_vars(repo_root) {
+        if settings.env.contains_key(&key) {
+            continue;
+        }
+        command.env(key, value);
+    }
 }
 
 fn exit_status_code(status: &ExitStatus) -> i32 {

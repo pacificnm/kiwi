@@ -54,7 +54,7 @@ pub fn compute_status_bar_fields(
         remote_repo: git.remote_repo.clone(),
         root_name: status_bar.root_name.clone(),
         branch: git.branch.clone().unwrap_or_else(|| "no git".to_string()),
-        agent_label: agent_manager.status_bar_label(),
+        agent_label: agent_manager.status_bar_label().to_string(),
         git_label: git_label_from_count(git.changed_count()),
         issue_label: issue_label_from_state(config, git, github),
         agent_status: agent_manager.active_pty().status,
@@ -299,6 +299,8 @@ mod tests {
         ];
         state.active_agent_mut().running = true;
         state.active_agent_mut().status = AgentStatus::Executing;
+        state.active_agent_mut().refresh_status_bar_label();
+        state.agent_manager.refresh_status_label();
         state.github.selected_issue = Some(42);
 
         let snapshot = compute_status_bar(&state);

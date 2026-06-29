@@ -59,10 +59,15 @@ pub enum PluginSubcommand {
         /// Path to a directory containing `plugin.toml` and the shared library.
         path: PathBuf,
     },
-    /// Remove a plugin from the registry (files on disk are not deleted).
+    /// Remove an installed plugin (files and registry entry).
     Remove {
         /// Plugin name.
         name: String,
+    },
+    /// Remove and reinstall a plugin from a local directory.
+    Reinstall {
+        /// Path to a directory containing `plugin.toml`.
+        path: PathBuf,
     },
     /// Reload and re-save the registry from disk (normalises the file).
     Reload,

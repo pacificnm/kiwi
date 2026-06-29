@@ -230,6 +230,10 @@ pub struct AgentState {
     pub status: AgentStatus,
     pub exit_code: Option<i32>,
     pub restart_hint: Option<String>,
+    /// Bytes received since the last agent status heuristic scan.
+    pub status_check_accum: usize,
+    /// Cached status-bar label; refresh via [`Self::refresh_status_bar_label`].
+    pub status_bar_label: String,
 }
 
 impl Default for AgentState {
@@ -249,11 +253,19 @@ impl Default for AgentState {
             status: AgentStatus::Idle,
             exit_code: None,
             restart_hint: None,
+            status_check_accum: 0,
+            status_bar_label: AgentStatus::Idle
+                .status_bar_label(false)
+                .to_string(),
         }
     }
 }
 
 impl AgentState {
+    pub fn refresh_status_bar_label(&mut self) {
+        self.status_bar_label = self.status.status_bar_label(self.running).to_string();
+    }
+
     pub fn apply_spawn(
         &mut self,
         command: &str,
@@ -277,6 +289,8 @@ impl AgentState {
         self.viewport_offset = 0;
         self.follow_tail = true;
         self.status = AgentStatus::Executing;
+        self.status_check_accum = 0;
+        self.refresh_status_bar_label();
     }
 
     pub fn apply_spawn_error(&mut self, message: String) {
@@ -286,6 +300,7 @@ impl AgentState {
         self.spawn_error = Some(message);
         self.status = AgentStatus::Error;
         self.restart_hint = Some("Agent failed to start. Ctrl+Shift+R to retry.".to_string());
+        self.refresh_status_bar_label();
     }
 
     pub fn apply_exit(&mut self, code: i32) {
@@ -296,6 +311,7 @@ impl AgentState {
         self.restart_hint = Some(format!(
             "Agent exited (code {code}). Ctrl+Shift+R to restart."
         ));
+        self.refresh_status_bar_label();
     }
 
     pub fn prepare_restart(&mut self) {
@@ -306,6 +322,7 @@ impl AgentState {
         self.exit_code = None;
         self.restart_hint = None;
         self.status = AgentStatus::Idle;
+        self.refresh_status_bar_label();
     }
 
     pub fn apply_resize(&mut self, cols: u16, rows: u16) {
@@ -555,6 +572,10 @@ pub struct AvailablePlugin {
     pub installed: bool,
     /// `true` if installed and enabled in the registry.
     pub enabled: bool,
+    /// If set, this plugin provides an AI agent. Value is the executable command.
+    pub agent_command: Option<String>,
+    /// Arguments for the agent command declared in `plugin.toml`.
+    pub agent_args: Vec<String>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -570,6 +591,74 @@ pub struct PluginsState {
     pub detail_scroll: usize,
     /// Path typed into the "Install from directory" field in the Plugin Manager.
     pub install_path_input: String,
+    /// Background install/reinstall progress shown in a modal.
+    pub install_job: PluginInstallJob,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginInstallJob {
+    pub active: bool,
+    pub title: String,
+    pub step: u32,
+    pub total: u32,
+    pub status_line: String,
+    pub log: Vec<String>,
+    pub finished: bool,
+    pub success: bool,
+}
+
+impl Default for PluginInstallJob {
+    fn default() -> Self {
+        Self {
+            active: false,
+            title: String::new(),
+            step: 0,
+            total: 1,
+            status_line: String::new(),
+            log: Vec::new(),
+            finished: false,
+            success: false,
+        }
+    }
+}
+
+impl PluginInstallJob {
+    pub fn start(&mut self, title: impl Into<String>) {
+        self.active = true;
+        self.title = title.into();
+        self.step = 0;
+        self.total = 1;
+        self.status_line = "Starting…".to_string();
+        self.log.clear();
+        self.finished = false;
+        self.success = false;
+    }
+
+    pub fn apply_progress(&mut self, message: String, step: u32, total: u32) {
+        self.step = step;
+        self.total = total.max(1);
+        self.status_line = message.clone();
+        self.log.push(message);
+    }
+
+    pub fn finish(&mut self, success: bool, message: Option<String>) {
+        self.finished = true;
+        self.success = success;
+        if let Some(message) = message {
+            self.status_line.clone_from(&message);
+            self.log.push(message);
+        } else {
+            self.status_line = if success {
+                "Complete".to_string()
+            } else {
+                "Failed".to_string()
+            };
+        }
+    }
+
+    pub fn dismiss(&mut self) {
+        self.active = false;
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -11,7 +11,10 @@ pub use api::{
     KiwiPlugin, PluginApi, PluginCommand, PluginDescriptor, PluginInitFn, PluginRegisterFn,
     PluginRegistrar, PluginResult, StaticStr,
 };
-pub use manifest::{PluginCapabilities, PluginManifest};
+pub use manifest::{
+    AgentPluginConfig, PluginCapabilities, PluginExtraPackage, PluginInstallConfig,
+    PluginInstallKind, PluginManifest,
+};
 pub use version::{
     api_version_compatible, kiwi_version_compatible, API_VERSION, DEFAULT_PLUGIN_INIT_SYMBOL,
     PLUGIN_INIT_SYMBOL,

@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use kiwi_core::events::{AppCommand, AppEvent};
 use kiwi_core::navigation::FocusTarget;
-use kiwi_core::state::ReduceView;
+use kiwi_core::state::{AppState, ReduceView};
 use kiwi_core::status_bar::{compute_status_bar, StatusBarSnapshot};
 use kiwi_core::workspace::{try_merge_save_gui, try_save_from_reduce_view, GuiWorkspaceSnapshot};
 
@@ -12,6 +12,7 @@ use crate::chrome::{
     palette_keyboard_action, palette_open_shortcut_action, render_about_modal,
     render_command_palette, render_menu_bar, render_reset_layout_modal, render_shortcuts_modal,
     render_status_bar,
+    render_toast,
 };
 use crate::dock::{
     collect_github_keyboard, collect_pty_input, collect_search_keyboard, explorer_keyboard_action,
@@ -22,6 +23,7 @@ use crate::dock::{
 };
 use crate::navigation_bridge::{navigation_commands_for_dock_tab, sync_dock_from_navigation};
 use crate::runtime::GuiRuntime;
+use crate::services::MAX_EVENTS_PER_FRAME;
 use crate::theme::GuiTheme;
 
 /// GUI shell with egui_dock tab panels.
@@ -278,7 +280,19 @@ impl eframe::App for KiwiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let nav_before = self.runtime.state.navigation.clone();
         let dock_snapshot = snapshot_from_dock(self.dock.dock_state());
-        let (should_quit, event_count) = self.runtime.process_pending_events(Some(dock_snapshot));
+        let mut should_quit = false;
+        let mut total_events = 0usize;
+        loop {
+            let (quit, count) = self.runtime.process_pending_events(Some(dock_snapshot.clone()));
+            total_events += count;
+            if quit {
+                should_quit = true;
+                break;
+            }
+            if count == 0 || count < MAX_EVENTS_PER_FRAME {
+                break;
+            }
+        }
         if self.runtime.state.navigation != nav_before {
             self.sync_dock();
         }
@@ -339,6 +353,7 @@ impl eframe::App for KiwiApp {
         }
 
         render_status_bar(ctx, &self.gui_theme, &self.status_bar);
+        render_toast(ctx, &self.gui_theme, &self.runtime.state);
 
         let mut should_close = false;
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -413,7 +428,10 @@ impl eframe::App for KiwiApp {
             let _ = self.runtime.dispatch_command(AppCommand::SearchExecute);
         }
 
-        if event_count > 0 || self.runtime.state.dirty {
+        if total_events > 0
+            || self.runtime.state.dirty
+            || agent_stream_repaint_pending(&self.runtime.state)
+        {
             ctx.request_repaint();
         }
         self.runtime.state.mark_clean();
@@ -425,4 +443,10 @@ impl eframe::App for KiwiApp {
             self.save_workspace();
         }
     }
+}
+
+/// Repaint when the active agent is tailing an in-progress PTY line (no trailing newline yet).
+fn agent_stream_repaint_pending(state: &AppState) -> bool {
+    let agent = state.active_agent();
+    agent.follow_tail && agent.scrollback.has_pending_line()
 }

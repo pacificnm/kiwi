@@ -108,13 +108,30 @@ impl ScrollbackBuffer {
 
     #[must_use]
     pub fn recent_text(&self, max_lines: usize) -> String {
-        let lines = self.lines_for_display(true);
-        let start = lines.len().saturating_sub(max_lines);
-        lines[start..]
-            .iter()
-            .map(|line| crate::ansi::strip_ansi(line))
-            .collect::<Vec<_>>()
-            .join("\n")
+        self.recent_stripped_text(max_lines)
+    }
+
+    /// Last `max_lines` of scrollback with ANSI stripped, without cloning the full buffer.
+    #[must_use]
+    pub fn recent_stripped_text(&self, max_lines: usize) -> String {
+        if max_lines == 0 {
+            return String::new();
+        }
+
+        let count = self.display_line_count(true);
+        if count == 0 {
+            return String::new();
+        }
+
+        let start = count.saturating_sub(max_lines);
+        let mut out = String::new();
+        for idx in start..count {
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            out.push_str(&crate::ansi::strip_ansi(self.line_at(idx)));
+        }
+        out
     }
 
     #[must_use]
@@ -142,6 +159,20 @@ impl ScrollbackBuffer {
             .collect()
     }
 
+    fn display_line_count(&self, include_pending: bool) -> usize {
+        (self.history.len() + self.screen.len())
+            .saturating_sub(self.trailing_empty_count(include_pending))
+    }
+
+    fn line_at(&self, index: usize) -> &str {
+        let h_len = self.history.len();
+        if index < h_len {
+            &self.history[index]
+        } else {
+            &self.screen[index - h_len]
+        }
+    }
+
     fn trailing_empty_count(&self, include_pending: bool) -> usize {
         let h_len = self.history.len();
         let total = h_len + self.screen.len();
@@ -163,7 +194,8 @@ impl ScrollbackBuffer {
         count
     }
 
-    fn lines_for_display(&self, include_pending: bool) -> Vec<String> {
+    #[must_use]
+    pub fn lines_for_display(&self, include_pending: bool) -> Vec<String> {
         let total = self.history.len() + self.screen.len();
         let count = total.saturating_sub(self.trailing_empty_count(include_pending));
         self.history
@@ -687,6 +719,19 @@ mod tests {
         let mut buffer = ScrollbackBuffer::new();
         buffer.append_bytes(b"\x1b[32mRunning tool\x1b[0m\n");
         assert!(buffer.recent_text(4).contains("Running tool"));
+        assert!(buffer.recent_stripped_text(4).contains("Running tool"));
+    }
+
+    #[test]
+    fn recent_stripped_text_only_scans_tail() {
+        let mut buffer = ScrollbackBuffer::new();
+        for index in 0..40 {
+            buffer.append_bytes(format!("line {index}\n").as_bytes());
+        }
+        buffer.append_bytes(b"Running tool: grep\n");
+        let tail = buffer.recent_stripped_text(5);
+        assert!(tail.contains("Running tool"));
+        assert!(!tail.contains("line 0"));
     }
 
     #[test]

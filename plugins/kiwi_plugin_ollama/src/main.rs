@@ -1,9 +1,11 @@
 mod context;
+mod env_config;
 mod mcp_client;
 mod ollama;
+mod ollama_cli;
 mod rag;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 use context::ConversationContext;
 use mcp_client::McpProcess;
@@ -14,9 +16,22 @@ use std::io::{BufRead, Write};
 use std::path::PathBuf;
 use std::sync::mpsc;
 
+const DEFAULT_OLLAMA_URL: &str = "http://127.0.0.1:11434";
+
 #[derive(Parser)]
 #[command(name = "kiwi-ollama", about = "Ollama coding agent for Kiwi TUI")]
 struct Cli {
+    /// Fast streaming via `ollama run` without MCP tools (lower latency).
+    #[arg(long)]
+    stream: bool,
+
+    /// Deprecated: MCP tools mode is now the default.
+    #[arg(long, hide = true)]
+    tools: bool,
+
+    /// Pass `--verbose` to `ollama run` (shows token timing stats after each reply).
+    #[arg(long, default_value_t = true)]
+    verbose: bool,
     /// Ollama base URL (overridden by OLLAMA_URL env var)
     #[arg(long)]
     url: Option<String>,
@@ -71,21 +86,111 @@ fn main() {
 
 fn run() -> Result<()> {
     let args = Cli::parse();
+    let repo = args
+        .repo
+        .canonicalize()
+        .unwrap_or_else(|_| args.repo.clone());
+    env_config::load_repo_env(&repo);
 
     let url = args
         .url
+        .clone()
         .or_else(|| std::env::var("OLLAMA_URL").ok())
-        .unwrap_or_else(|| "http://localhost:11434".to_string());
+        .unwrap_or_else(|| DEFAULT_OLLAMA_URL.to_string());
 
     let model = args
         .model
+        .clone()
         .or_else(|| std::env::var("OLLAMA_MODEL").ok())
         .unwrap_or_else(|| "qwen2.5-coder".to_string());
 
+    let mut client = OllamaClient::new(url.clone(), model.clone(), String::new());
+    client
+        .resolve_chat_model()
+        .with_context(|| format!("failed to resolve chat model for Ollama at {url}"))?;
+    let model = client.model.clone();
+
+    if args.stream {
+        return run_streaming(&args, model);
+    }
+
+    run_with_tools(args, client)
+}
+
+fn run_streaming(args: &Cli, model: String) -> Result<()> {
+    println!("kiwi-ollama ready (model: {model})");
+    println!("Streaming via `ollama run` (no MCP). Type a prompt and press Enter. Commands: /help");
+    let _ = std::io::stdout().flush();
+
+    let stdin = std::io::stdin();
+    let mut input = String::new();
+
+    loop {
+        input.clear();
+        match stdin.lock().read_line(&mut input) {
+            Ok(0) => break,
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("error: stdin read failed: {e}");
+                break;
+            }
+        }
+
+        let prompt = input.trim();
+        if prompt.is_empty() {
+            continue;
+        }
+
+        if prompt.starts_with('/') {
+            if handle_slash_command(prompt)? {
+                continue;
+            }
+        }
+
+        if let Err(e) = ollama_cli::stream_run(&model, prompt, args.verbose) {
+            eprintln!("error: {e:#}");
+        }
+        println!();
+        let _ = std::io::stdout().flush();
+    }
+
+    Ok(())
+}
+
+fn handle_slash_command(prompt: &str) -> Result<bool> {
+    let (cmd, _rest) = prompt.split_once(' ').unwrap_or((prompt, ""));
+    match cmd {
+        "/help" => {
+            println!("Commands:");
+            println!("  /help   — show this help");
+            println!("MCP tools are enabled by default. Use --stream for fast `ollama run` mode.");
+            let _ = std::io::stdout().flush();
+            Ok(true)
+        }
+        _ => {
+            println!("error: unknown command '{cmd}'. Only /help is available in streaming mode.");
+            let _ = std::io::stdout().flush();
+            Ok(true)
+        }
+    }
+}
+
+fn run_with_tools(args: Cli, mut client: OllamaClient) -> Result<()> {
+    let url = client.base_url.clone();
     let embed_model = args
         .embed_model
         .or_else(|| std::env::var("OLLAMA_EMBED_MODEL").ok())
         .unwrap_or_else(|| "nomic-embed-text".to_string());
+    client.embed_model = embed_model.clone();
+
+    // MCP servers read OLLAMA_* from the environment; use the resolved values.
+    std::env::set_var("OLLAMA_URL", &url);
+    if std::env::var("DATABASE_URL").is_err() {
+        std::env::set_var(
+            "DATABASE_URL",
+            "postgresql:///kiwi_memory?host=/var/run/postgresql",
+        );
+    }
 
     let repo = args
         .repo
@@ -99,7 +204,13 @@ fn run() -> Result<()> {
         .filter(|s| !s.is_empty())
         .collect();
 
-    let client = OllamaClient::new(url.clone(), model.clone(), embed_model);
+    if let Err(err) = client.resolve_embed_model() {
+        eprintln!("warning: {err:#}");
+    }
+    let model = client.model.clone();
+    let embed_model = client.embed_model.clone();
+    std::env::set_var("OLLAMA_MODEL", &model);
+    std::env::set_var("OLLAMA_EMBED_MODEL", &embed_model);
     let mut ctx = ConversationContext::new();
 
     // Session key for context memory
@@ -118,34 +229,10 @@ fn run() -> Result<()> {
     let mut gitnexus_mcp: Option<McpProcess> = None;
 
     if !args.no_mcp {
-        match McpProcess::spawn(&args.mcp_memory_bin) {
-            Ok(proc) => {
-                eprintln!("mcp: project memory ready");
-                mem_mcp = Some(proc);
-            }
-            Err(e) => eprintln!("warning: project memory MCP unavailable: {e}"),
-        }
-        match McpProcess::spawn(&args.mcp_context_bin) {
-            Ok(proc) => {
-                eprintln!("mcp: context memory ready");
-                ctx_mcp = Some(proc);
-            }
-            Err(e) => eprintln!("warning: context memory MCP unavailable: {e}"),
-        }
-        match McpProcess::spawn(&args.mcp_git_bin) {
-            Ok(proc) => {
-                eprintln!("mcp: git/GitHub server ready");
-                git_mcp = Some(proc);
-            }
-            Err(e) => eprintln!("warning: git MCP unavailable: {e}"),
-        }
-        match McpProcess::spawn(&args.mcp_gitnexus_bin) {
-            Ok(proc) => {
-                eprintln!("mcp: Gitea server ready");
-                gitnexus_mcp = Some(proc);
-            }
-            Err(e) => eprintln!("warning: Gitea MCP unavailable (set GITEA_TOKEN/GITEA_URL/GITEA_REPO): {e}"),
-        }
+        mem_mcp = spawn_mcp_server("project memory", &args.mcp_memory_bin);
+        ctx_mcp = spawn_mcp_server("context memory", &args.mcp_context_bin);
+        git_mcp = spawn_mcp_server("git/GitHub", &args.mcp_git_bin);
+        gitnexus_mcp = spawn_mcp_server("GitNexus", &args.mcp_gitnexus_bin);
     }
 
     // Fetch tool lists from git and Gitea MCP servers, merge for Ollama tool calling
@@ -158,11 +245,9 @@ fn run() -> Result<()> {
     }
     let git_tools = all_tools;
 
-    println!("kiwi-ollama ready (model: {model}, url: {url})");
+    println!("kiwi-ollama ready (model: {model}, url: {url}, MCP tools enabled)");
     if !git_tools.is_empty() {
-        println!("thinking: {} git/GitHub tools available", git_tools.len());
-    } else {
-        println!("thinking: initializing...");
+        println!("{} git/GitHub tools available", git_tools.len());
     }
     println!("Type your prompt and press Enter. Commands: /clear /status /save [title] /help");
     let _ = std::io::stdout().flush();
@@ -290,12 +375,12 @@ fn run() -> Result<()> {
         }
 
         // ── Gather context ───────────────────────────────────────────────────
+        println!("preparing context for your request");
         let mut context_parts: Vec<String> = Vec::new();
 
         // 1. Project memory
         if let Some(mcp) = mem_mcp.as_mut() {
             println!("running tool: searching project memory");
-            let _ = std::io::stdout().flush();
             match mcp.call_tool("search_project_memory", json!({ "query": prompt, "limit": 5 })) {
                 Ok(text) if !text.is_empty() && text != "No results found." => {
                     context_parts.push(format!("[Project memory]\n{text}"));
@@ -308,7 +393,6 @@ fn run() -> Result<()> {
         // 2. Knowledge base
         if let Some(mcp) = mem_mcp.as_mut() {
             println!("running tool: searching knowledge base");
-            let _ = std::io::stdout().flush();
             if kb_collections.is_empty() {
                 match mcp.call_tool("search_knowledge_base", json!({ "query": prompt, "limit": 5 })) {
                     Ok(text) if !text.is_empty() && text != "No results found." => {
@@ -340,7 +424,6 @@ fn run() -> Result<()> {
         // 3. Context memory
         if let Some(mcp) = ctx_mcp.as_mut() {
             println!("running tool: searching context memory");
-            let _ = std::io::stdout().flush();
             match mcp.call_tool(
                 "search_context_memory",
                 json!({ "query": prompt, "limit": 3, "session_key": "" }),
@@ -356,7 +439,6 @@ fn run() -> Result<()> {
         // 4. Local RAG (live source code)
         if let Some(index) = rag.as_ref() {
             println!("running tool: searching codebase");
-            let _ = std::io::stdout().flush();
             let hits = index.retrieve(prompt, 5);
             if !hits.is_empty() {
                 context_parts.push(format!("[Codebase context]\n{}", hits.join("\n\n")));
@@ -367,7 +449,6 @@ fn run() -> Result<()> {
         //    current branch and which files are modified before reasoning about code.
         if let Some(mcp) = git_mcp.as_mut() {
             println!("running tool: analysing codebase state");
-            let _ = std::io::stdout().flush();
             if let Ok(status) = mcp.call_tool("git_status", json!({})) {
                 if !status.is_empty() {
                     context_parts.push(format!("[Code analysis]\n{status}"));
@@ -381,26 +462,37 @@ fn run() -> Result<()> {
             Some(context_parts.join("\n\n---\n\n"))
         };
 
-        println!("thinking: reasoning about your request");
-        let _ = std::io::stdout().flush();
+        println!("reasoning about your request");
 
         ctx.push_user(prompt.to_string());
         let base_messages = ctx.build_messages(combined_context.as_deref());
 
         // ── Agentic tool-call loop ───────────────────────────────────────────
-        let tools_ref: Option<&[OllamaTool]> =
-            if git_tools.is_empty() { None } else { Some(&git_tools) };
+        let tools_ref: Option<&[OllamaTool]> = if git_tools.is_empty()
+            || client.chat_tools_supported == Some(false)
+            || !client.model_likely_supports_tools()
+        {
+            None
+        } else {
+            Some(&git_tools)
+        };
 
         let mut turn_messages = base_messages;
         let mut full_response = String::new();
         let mut had_error = false;
         let mut called_tools: Vec<String> = Vec::new();
 
-        'tool_loop: for _round in 0..8 {
+        'tool_loop: for round in 0..8 {
+            if round == 0 {
+                println!("generating response…");
+            } else {
+                println!("continuing after tools (step {})…", round + 1);
+            }
+
             let stream = match client.chat_stream(&turn_messages, tools_ref) {
                 Ok(s) => s,
                 Err(e) => {
-                    println!("error: {e}");
+                    println!("{e:#}");
                     let _ = std::io::stdout().flush();
                     had_error = true;
                     break;
@@ -459,7 +551,6 @@ fn run() -> Result<()> {
 
             for (tool_name, tool_args) in &turn_calls {
                 println!("running tool: {tool_name}");
-                let _ = std::io::stdout().flush();
                 called_tools.push(tool_name.clone());
 
                 // Route to the correct MCP server: Gitea tools → gitnexus, rest → git
@@ -484,7 +575,6 @@ fn run() -> Result<()> {
                 // Print first line of result as status
                 let summary = result.lines().next().unwrap_or("done").trim();
                 println!("completed: {tool_name} → {summary}");
-                let _ = std::io::stdout().flush();
 
                 turn_messages.push(ChatMessage::tool_result(result));
             }
@@ -503,12 +593,10 @@ fn run() -> Result<()> {
         if code_was_modified {
             if let Some(mcp) = mem_mcp.as_mut() {
                 println!("running tool: re-indexing project memory after code edits");
-                let _ = std::io::stdout().flush();
                 let repo_str = repo.to_string_lossy();
                 match mcp.call_tool("index_project", json!({ "root": repo_str.as_ref() })) {
                     Ok(_) => {
                         println!("completed: project memory updated");
-                        let _ = std::io::stdout().flush();
                     }
                     Err(e) => eprintln!("warning: post-edit re-index failed: {e}"),
                 }
@@ -516,8 +604,7 @@ fn run() -> Result<()> {
         }
 
         if !full_response.is_empty() {
-            println!("\ncompleted: response ready");
-            let _ = std::io::stdout().flush();
+            println!("completed: response ready");
         }
         last_assistant_response = Some(full_response.clone());
         ctx.push_assistant(full_response.clone());
@@ -541,6 +628,19 @@ fn run() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn spawn_mcp_server(label: &str, binary: &str) -> Option<McpProcess> {
+    match McpProcess::spawn(binary) {
+        Ok(proc) => {
+            println!("mcp: {label} ready ({binary})");
+            Some(proc)
+        }
+        Err(err) => {
+            println!("warning: {label} MCP unavailable: {err:#}");
+            None
+        }
+    }
 }
 
 fn cache_dir() -> PathBuf {

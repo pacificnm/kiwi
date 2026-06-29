@@ -32,7 +32,7 @@ use kiwi_core::workspace::{try_merge_save_gui, try_save_from_reduce_view, GuiWor
 use crate::pty::PtyRuntime;
 
 /// Maximum events processed per frame to avoid stalling egui.
-pub const MAX_EVENTS_PER_FRAME: usize = 64;
+pub const MAX_EVENTS_PER_FRAME: usize = 256;
 
 /// Debounce/cancel state for background search jobs (SPEC-007).
 #[derive(Debug)]
@@ -370,6 +370,8 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
         SideEffect::PluginSetEnabled { name, enabled } => {
             if let Some(path) = kiwi_core::plugins::default_registry_path() {
                 let (mut registry, _) = kiwi_core::plugins::PluginRegistry::load(&path);
+                // Auto-register plugins that are on disk but not yet in the registry.
+                kiwi_core::plugins::ensure_registered(&mut registry, &name);
                 if enabled {
                     registry.enable(&name);
                 } else {
@@ -381,35 +383,45 @@ fn execute_gui_effect(ctx: &mut ServiceContext<'_>, effect: SideEffect) -> bool 
                         .show_toast(format!("Failed to save plugin registry: {e}"));
                     ctx.state.dirty = true;
                 } else {
+                    ctx.state.notifications.show_toast(format!(
+                        "Plugin `{name}` {}. Restart to apply.",
+                        if enabled { "enabled" } else { "disabled" }
+                    ));
                     refresh_available_plugins(ctx);
                 }
             }
         }
         SideEffect::PluginInstall { src_path } => {
-            match kiwi_core::plugins::install_plugin(&src_path) {
-                Err(e) => {
+            spawn_plugin_install(ctx, src_path, false);
+        }
+        SideEffect::PluginRemove { name } => {
+            handle_plugin_remove(ctx, &name);
+        }
+        SideEffect::PluginReinstall { src_path } => {
+            spawn_plugin_install(ctx, src_path, true);
+        }
+        SideEffect::PluginInstallRegister { result } => {
+            register_installed_plugin(ctx, result, "Plugin installed.");
+        }
+        SideEffect::PluginInstallFailed => {
+            refresh_available_plugins(ctx);
+        }
+        SideEffect::PersistAgentConfig { command, args } => {
+            let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+            match home {
+                Some(home) => {
+                    if let Err(e) = kiwi_core::config::persist_user_agent(&home, &command, &args) {
+                        ctx.state
+                            .notifications
+                            .show_toast(format!("Failed to save agent config: {e}"));
+                        ctx.state.dirty = true;
+                    }
+                }
+                None => {
                     ctx.state
                         .notifications
-                        .show_toast(format!("Plugin install failed: {e}"));
+                        .show_toast("Cannot save agent config: HOME not set");
                     ctx.state.dirty = true;
-                }
-                Ok(entry) => {
-                    let name = entry.name.clone();
-                    if let Some(path) = kiwi_core::plugins::default_registry_path() {
-                        let (mut registry, _) = kiwi_core::plugins::PluginRegistry::load(&path);
-                        registry.register(entry);
-                        if let Err(e) = registry.save(&path) {
-                            ctx.state
-                                .notifications
-                                .show_toast(format!("Plugin installed but registry save failed: {e}"));
-                            ctx.state.dirty = true;
-                        } else {
-                            ctx.state
-                                .notifications
-                                .show_toast(format!("Plugin `{name}` installed. Restart to load it."));
-                            refresh_available_plugins(ctx);
-                        }
-                    }
                 }
             }
         }
@@ -450,6 +462,136 @@ fn refresh_available_plugins(ctx: &mut ServiceContext<'_>) {
             kiwi_core::plugins::scan_available_plugins(&[&plugins_src], &registry);
         ctx.state.dirty = true;
     }
+}
+
+fn plugin_user_message(
+    result: &kiwi_core::plugins::PluginInstallResult,
+    fallback: &str,
+) -> String {
+    result
+        .messages
+        .last()
+        .cloned()
+        .unwrap_or_else(|| fallback.to_string())
+}
+
+fn register_installed_plugin(
+    ctx: &mut ServiceContext<'_>,
+    result: kiwi_core::plugins::PluginInstallResult,
+    fallback_message: &str,
+) {
+    let name = result.entry.name.clone();
+    let summary = plugin_user_message(&result, fallback_message);
+
+    if let Some(path) = kiwi_core::plugins::default_registry_path() {
+        let (mut registry, _) = kiwi_core::plugins::PluginRegistry::load(&path);
+        registry.register(result.entry);
+        match registry.save(&path) {
+            Ok(()) => {
+                ctx.state.logs.push_info(summary.clone());
+                ctx.state.notifications.show_toast(summary);
+            }
+            Err(e) => {
+                let message =
+                    format!("Plugin `{name}` installed on disk but registry save failed: {e}");
+                ctx.state.logs.push_info(message.clone());
+                ctx.state.notifications.show_toast(message);
+            }
+        }
+    } else {
+        let message = format!("Plugin `{name}` installed on disk (HOME not set — registry not updated)");
+        ctx.state.logs.push_info(message.clone());
+        ctx.state.notifications.show_toast(message);
+    }
+
+    refresh_available_plugins(ctx);
+}
+
+fn spawn_plugin_install(
+    ctx: &mut ServiceContext<'_>,
+    src_path: std::path::PathBuf,
+    reinstall: bool,
+) {
+    ctx.state.dirty = true;
+    let sender = ctx.events.sender();
+
+    std::thread::spawn(move || {
+        let mut send_progress = |update: kiwi_core::plugins::InstallProgressUpdate| {
+            let _ = sender.send(AppEvent::PluginInstallProgress {
+                message: update.message,
+                step: update.step,
+                total: update.total,
+            });
+        };
+
+        let result = if reinstall {
+            kiwi_core::plugins::reinstall_plugin_from_source_with_progress(
+                &src_path,
+                &mut send_progress,
+            )
+        } else {
+            kiwi_core::plugins::install_plugin_from_source_with_progress(
+                &src_path,
+                &mut send_progress,
+            )
+            .or_else(|err| {
+                if err.contains("already exists") {
+                    kiwi_core::plugins::reinstall_plugin_from_source_with_progress(
+                        &src_path,
+                        &mut send_progress,
+                    )
+                } else {
+                    Err(err)
+                }
+            })
+        };
+
+        let event = match result {
+            Ok(install_result) => AppEvent::PluginInstallFinished {
+                result: Some(install_result),
+                error: None,
+            },
+            Err(error) => AppEvent::PluginInstallFinished {
+                result: None,
+                error: Some(error),
+            },
+        };
+        let _ = sender.send(event);
+    });
+}
+
+fn handle_plugin_remove(ctx: &mut ServiceContext<'_>, name: &str) {
+    let disk_result = kiwi_core::plugins::remove_plugin(name);
+
+    if let Some(path) = kiwi_core::plugins::default_registry_path() {
+        let (mut registry, _) = kiwi_core::plugins::PluginRegistry::load(&path);
+        registry.remove(name);
+        if let Err(e) = registry.save(&path) {
+            let message = format!("Plugin `{name}` removed from disk but registry save failed: {e}");
+            ctx.state.logs.push_info(message.clone());
+            ctx.state.notifications.show_toast(message);
+        }
+    }
+
+    refresh_available_plugins(ctx);
+
+    match disk_result {
+        Ok(result) => {
+            let summary = result
+                .messages
+                .last()
+                .cloned()
+                .unwrap_or_else(|| format!("Plugin `{name}` removed."));
+            ctx.state.logs.push_info(summary.clone());
+            ctx.state.notifications.show_toast(summary);
+        }
+        Err(e) => {
+            let message = format!("Plugin `{name}` removed from registry: {e}");
+            ctx.state.logs.push_info(message.clone());
+            ctx.state.notifications.show_toast(message);
+        }
+    }
+    ctx.state.dirty = true;
 }
 
 fn spawn_editor_launch(

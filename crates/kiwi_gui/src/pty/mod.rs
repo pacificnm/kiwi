@@ -108,6 +108,7 @@ impl PtyRuntime {
                         session.rows,
                     );
                 }
+                state.agent_manager.refresh_status_label();
                 if let Ok(reader) = session.try_clone_reader() {
                     self.agent.attach_reader(id, reader, sender);
                 }
@@ -117,6 +118,7 @@ impl PtyRuntime {
                 if let Some(pty) = state.agent_manager.pty_mut(id) {
                     pty.apply_spawn_error(err.to_string());
                 }
+                state.agent_manager.refresh_status_label();
             }
         }
         state.dirty = true;

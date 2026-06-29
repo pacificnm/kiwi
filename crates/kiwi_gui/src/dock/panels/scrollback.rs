@@ -148,24 +148,22 @@ pub fn render_agent_panel(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
         ui.add_space(4.0);
     }
 
-    let footer = ctx.state.active_agent().restart_hint.clone();
     let idle_hint = agent_idle_hint(ctx.state);
-    let spawn_error = ctx.state.active_agent().spawn_error.clone();
     let mut follow_tail = ctx.state.active_agent().follow_tail;
     let mut viewport_offset = ctx.state.active_agent().viewport_offset;
     let mut _viewport_rows = 1usize;
 
     {
-        let scrollback = &ctx.state.active_agent().scrollback;
+        let agent = ctx.state.active_agent();
         render_pty_scrollback(
             ui,
             ctx.theme,
             PtyScrollbackView {
-                scrollback,
+                scrollback: &agent.scrollback,
                 follow_tail,
                 viewport_offset,
-                spawn_error: spawn_error.as_deref(),
-                idle_hint: idle_hint.as_deref(),
+                spawn_error: agent.spawn_error.as_deref(),
+                idle_hint,
             },
             &mut follow_tail,
             &mut viewport_offset,
@@ -183,17 +181,21 @@ pub fn render_agent_panel(ui: &mut Ui, ctx: &mut PanelContext<'_>) {
     ctx.state.viewport.agent_cols = cols;
     ctx.state.viewport.agent_rows = rows;
 
-    render_pty_footer(ui, ctx.theme, footer.as_deref());
+    render_pty_footer(
+        ui,
+        ctx.theme,
+        ctx.state.active_agent().restart_hint.as_deref(),
+    );
 }
 
-fn agent_idle_hint(state: &kiwi_core::state::AppState) -> Option<String> {
+fn agent_idle_hint(state: &kiwi_core::state::AppState) -> Option<&'static str> {
     let agent = state.active_agent();
     if agent.scrollback.line_count() > 0 || agent.scrollback.has_pending_line() {
         None
     } else if !agent.spawned {
-        Some("Agent spawns when you open this tab (View → Agent or Ctrl+2).".to_string())
+        Some("Agent spawns when you open this tab (View → Agent or Ctrl+2).")
     } else if agent.running {
-        Some("Starting agent…".to_string())
+        Some("Starting agent…")
     } else {
         None
     }

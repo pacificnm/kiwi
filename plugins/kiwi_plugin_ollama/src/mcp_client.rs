@@ -23,6 +23,7 @@ impl McpProcess {
             "OLLAMA_EMBED_MODEL",
             "OPENAI_API_KEY",
             "OPENAI_EMBED_MODEL",
+            "OPENAI_EMBED_DIMENSIONS",
             "GITHUB_TOKEN",
             "GITHUB_REPO",
             "GITHUB_API_URL",
@@ -41,7 +42,7 @@ impl McpProcess {
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
-            .with_context(|| format!("failed to spawn MCP server '{binary}'"))?;
+            .map_err(|err| spawn_error(binary, err))?;
 
         let writer = BufWriter::new(child.stdin.take().context("no stdin")?);
         let reader = BufReader::new(child.stdout.take().context("no stdout")?);
@@ -140,11 +141,31 @@ impl McpProcess {
         self.writer.flush().context("mcp flush error")?;
 
         let mut line = String::new();
-        self.reader.read_line(&mut line).context("mcp read error")?;
+        let bytes = self
+            .reader
+            .read_line(&mut line)
+            .context("mcp read error during initialize")?;
+        if bytes == 0 || line.trim().is_empty() {
+            bail!(
+                "MCP server exited during startup. Common causes: missing DATABASE_URL/PostgreSQL, \
+                 or an embedding dimension mismatch after switching embed backends. \
+                 See docs/agents/mcp-memory-servers.md and run `kiwi-mcp-memory --setup-db` if needed."
+            );
+        }
 
         let resp: Value = serde_json::from_str(line.trim())
             .with_context(|| format!("mcp parse error: {line}"))?;
 
         Ok(resp)
+    }
+}
+
+fn spawn_error(binary: &str, err: std::io::Error) -> anyhow::Error {
+    if err.kind() == std::io::ErrorKind::NotFound {
+        anyhow::anyhow!(
+            "MCP server `{binary}` not found on PATH — reinstall the Ollama plugin to install MCP tools (`kiwi plugin reinstall plugins/kiwi_plugin_ollama`)"
+        )
+    } else {
+        anyhow::anyhow!("failed to spawn MCP server `{binary}`: {err}")
     }
 }
