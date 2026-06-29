@@ -8,11 +8,15 @@ mod manager;
 mod session;
 mod status;
 mod stream_event;
+pub mod tool_executor;
+pub mod tools;
 
 pub use api_client::{spawn_claude_stream, StreamCancelHandle};
 pub use chat::{
     AgentProvider, ChatMessage, ChatSession, ContentBlock, MessageRole, ToolResult, ToolUse,
 };
+pub use tool_executor::{execute_tool, ExecutionResult};
+pub use tools::{KiwiTool, ToolParseError, ToolSchema};
 pub use command::{agent_display_name, agent_launch_spec, AgentLaunchSpec};
 pub use error::AgentError;
 pub use id::AgentId;

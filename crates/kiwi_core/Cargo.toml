@@ -21,6 +21,8 @@ log = "0.4"
 notify.workspace = true
 portable-pty.workspace = true
 reqwest.workspace = true
+walkdir.workspace = true
 
 [dev-dependencies]
 clap.workspace = true
+tempfile = "3"
