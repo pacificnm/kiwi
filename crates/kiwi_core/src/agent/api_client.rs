@@ -20,6 +20,7 @@ use super::stream_event::{ApiStreamEvent, ContentBlockStart, ContentDelta};
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 const OPENAI_API_URL: &str = "https://api.openai.com/v1/chat/completions";
+const CURSOR_API_URL: &str = "https://api.cursor.sh/v1/chat/completions";
 const DEFAULT_MAX_TOKENS: u32 = 8192;
 
 // ---------------------------------------------------------------------------
@@ -341,6 +342,64 @@ fn build_openai_request_body<'a>(model: &'a str, messages: &[ChatMessage]) -> Op
         messages: ollama_body.messages,
         stream: true,
     }
+}
+
+// ---------------------------------------------------------------------------
+// Cursor public API
+// ---------------------------------------------------------------------------
+
+/// Spawn a background thread that streams a Cursor AI chat turn and fires events.
+///
+/// Cursor's API is OpenAI-compatible (`/v1/chat/completions`, same SSE format).
+pub fn spawn_cursor_stream(
+    agent_id: AgentId,
+    api_key: String,
+    model: String,
+    messages: Vec<ChatMessage>,
+    cancel: StreamCancelHandle,
+    sender: EventSender,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        if let Err(msg) = run_cursor_stream(agent_id, &api_key, &model, &messages, &cancel, &sender) {
+            if !cancel.is_cancelled() {
+                let _ = sender.send(AppEvent::AgentApiError { agent_id, message: msg });
+            }
+        }
+    })
+}
+
+fn run_cursor_stream(
+    agent_id: AgentId,
+    api_key: &str,
+    model: &str,
+    messages: &[ChatMessage],
+    cancel: &StreamCancelHandle,
+    sender: &EventSender,
+) -> Result<(), String> {
+    let body = build_openai_request_body(model, messages);
+
+    let client = reqwest::blocking::Client::new();
+    let response = client
+        .post(CURSOR_API_URL)
+        .header("authorization", format!("Bearer {api_key}"))
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .map_err(|e| format!("Cursor request failed: {e}"))?;
+
+    if !response.status().is_success() {
+        let status = response.status().as_u16();
+        let body_text = response.text().unwrap_or_default();
+        let msg = match status {
+            401 => "Authentication failed — check CURSOR_API_KEY".to_string(),
+            429 => "Rate limit exceeded — please wait and retry".to_string(),
+            _ => format!("Cursor error {status}: {body_text}"),
+        };
+        return Err(msg);
+    }
+
+    let reader = std::io::BufReader::new(response);
+    process_openai_sse_lines(agent_id, reader, cancel, sender)
 }
 
 // ---------------------------------------------------------------------------
