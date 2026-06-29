@@ -73,6 +73,8 @@ pub struct AgentSection {
     pub api_key: Option<String>,
     /// Default model to request (e.g. `"claude-opus-4-8"`).
     pub model: Option<String>,
+    /// Base URL for the API endpoint; used by Ollama (`http://localhost:11434`).
+    pub api_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
@@ -225,6 +227,8 @@ pub struct AgentSettings {
     pub api_key: Option<String>,
     /// Model to request from the API.
     pub model: String,
+    /// Base URL for the API; defaults to Anthropic for Claude, `http://localhost:11434` for Ollama.
+    pub api_url: Option<String>,
 }
 
 impl Default for AgentSettings {
@@ -238,6 +242,7 @@ impl Default for AgentSettings {
             api_key_env: "ANTHROPIC_API_KEY".to_string(),
             api_key: None,
             model: "claude-opus-4-8".to_string(),
+            api_url: None,
         }
     }
 }
@@ -343,6 +348,7 @@ impl Default for ResolvedConfig {
                 api_key_env: "ANTHROPIC_API_KEY".to_string(),
                 api_key: None,
                 model: "claude-opus-4-8".to_string(),
+                api_url: None,
             },
             shell: ShellSettings {
                 command: default_shell_command(),
@@ -452,6 +458,9 @@ impl RawConfig {
             }
             if let Some(model) = &agent.model {
                 resolved.agent.model = model.clone();
+            }
+            if let Some(api_url) = &agent.api_url {
+                resolved.agent.api_url = Some(api_url.clone());
             }
         }
 

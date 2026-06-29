@@ -225,6 +225,8 @@ impl ToolResult {
 pub enum AgentProvider {
     /// Anthropic Claude API (`claude-*` models).
     Claude,
+    /// Local Ollama instance (`http://localhost:11434` by default).
+    Ollama,
     /// Legacy PTY subprocess (used when `provider = "pty"` in config).
     Pty,
 }

@@ -556,52 +556,70 @@ fn handle_execute_tool(
 }
 
 fn spawn_claude_stream_effect(ctx: &mut ServiceContext<'_>, agent_id: kiwi_core::agent::AgentId) {
-    let env_var_name = ctx.state.config.agent.api_key_env.clone();
-    let config_key = ctx.state.config.agent.api_key.clone();
+    use kiwi_core::agent::AgentProvider;
 
-    // Resolve API key: env var takes priority, then literal from config file.
-    let api_key = std::env::var(&env_var_name)
-        .ok()
-        .map(|k| k.trim().to_string())
-        .filter(|k| !k.is_empty())
-        .or_else(|| config_key.map(|k| k.trim().to_string()).filter(|k| !k.is_empty()))
-        .unwrap_or_default();
+    // Snapshot provider, model, messages, and api_url before any mutable borrows.
+    let snapshot = ctx
+        .state
+        .agent_manager
+        .pty(agent_id)
+        .and_then(|s| s.chat.as_ref())
+        .map(|chat| (chat.provider.clone(), chat.messages.clone(), chat.model.clone()));
 
-    if api_key.is_empty() {
-        let _ = ctx.events.sender().send(AppEvent::AgentApiError {
-            agent_id,
-            message: "API key not found. Export ANTHROPIC_API_KEY in your shell, \
-                      or add  api_key = \"sk-...\"  under [agent] in \
-                      ~/.config/kiwi/config.toml".to_string(),
-        });
+    let Some((provider, messages, model)) = snapshot else { return };
+    if messages.is_empty() {
         return;
     }
 
-    // Clear any previous error now that we have a key and are starting a new stream.
+    // Clear any previous error now that we are starting a new stream.
     if let Some(pty) = ctx.state.agent_manager.pty_mut(agent_id) {
         if let Some(chat) = &mut pty.chat {
             chat.error = None;
         }
     }
 
-    let snapshot = ctx
-        .state
-        .agent_manager
-        .pty(agent_id)
-        .and_then(|s| s.chat.as_ref())
-        .map(|chat| (chat.messages.clone(), chat.model.clone()));
-
-    let Some((messages, model)) = snapshot else {
-        return;
-    };
-    if messages.is_empty() {
-        return;
-    }
-
     let cancel = StreamCancelHandle::default();
     ctx.pty.register_stream(agent_id, cancel.clone());
+    let sender = ctx.events.sender();
 
-    spawn_claude_stream(agent_id, api_key, model, messages, cancel, ctx.events.sender());
+    match provider {
+        AgentProvider::Ollama => {
+            let api_url = ctx
+                .state
+                .config
+                .agent
+                .api_url
+                .clone()
+                .unwrap_or_else(|| "http://localhost:11434".to_string());
+            kiwi_core::agent::spawn_ollama_stream(
+                agent_id, api_url, model, messages, cancel, sender,
+            );
+        }
+        _ => {
+            // Claude (default) — resolve API key from env var then config literal.
+            let env_var_name = ctx.state.config.agent.api_key_env.clone();
+            let config_key = ctx.state.config.agent.api_key.clone();
+            let api_key = std::env::var(&env_var_name)
+                .ok()
+                .map(|k| k.trim().to_string())
+                .filter(|k| !k.is_empty())
+                .or_else(|| config_key.map(|k| k.trim().to_string()).filter(|k| !k.is_empty()))
+                .unwrap_or_default();
+
+            if api_key.is_empty() {
+                let _ = sender.send(AppEvent::AgentApiError {
+                    agent_id,
+                    message: "API key not found. Export ANTHROPIC_API_KEY in your shell, \
+                              or add  api_key = \"sk-...\"  under [agent] in \
+                              ~/.config/kiwi/config.toml"
+                        .to_string(),
+                });
+                return;
+            }
+
+            spawn_claude_stream(agent_id, api_key, model, messages, cancel, sender);
+        }
+    }
 }
 
 fn refresh_available_plugins(ctx: &mut ServiceContext<'_>) {

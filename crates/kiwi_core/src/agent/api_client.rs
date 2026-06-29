@@ -1,7 +1,9 @@
-//! Anthropic Claude API streaming client for the native chat agent architecture.
+//! LLM API streaming clients for the native chat agent architecture.
 //!
-//! Spawns a background thread that POSTs to the Messages API, reads the SSE response,
-//! and fires `AppEvent` variants into the `EventSender` loop.
+//! - Claude: POSTs to the Anthropic Messages API, reads Anthropic SSE format.
+//! - Ollama: POSTs to `/api/chat`, reads NDJSON stream (no `data:` prefix).
+//!
+//! Both spawn a background thread and fire `AppEvent` variants into the `EventSender`.
 
 use std::io::BufRead;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -68,7 +70,152 @@ pub fn spawn_claude_stream(
 }
 
 // ---------------------------------------------------------------------------
-// Internal streaming logic
+// Ollama public API
+// ---------------------------------------------------------------------------
+
+/// Spawn a background thread that streams an Ollama chat turn and fires events.
+///
+/// Uses Ollama's native `/api/chat` endpoint which returns NDJSON (one JSON object
+/// per line, no `data:` prefix). Tool calls are not supported; text-only streaming.
+pub fn spawn_ollama_stream(
+    agent_id: AgentId,
+    api_url: String,
+    model: String,
+    messages: Vec<ChatMessage>,
+    cancel: StreamCancelHandle,
+    sender: EventSender,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        if let Err(msg) = run_ollama_stream(agent_id, &api_url, &model, &messages, &cancel, &sender) {
+            if !cancel.is_cancelled() {
+                let _ = sender.send(AppEvent::AgentApiError { agent_id, message: msg });
+            }
+        }
+    })
+}
+
+fn run_ollama_stream(
+    agent_id: AgentId,
+    api_url: &str,
+    model: &str,
+    messages: &[ChatMessage],
+    cancel: &StreamCancelHandle,
+    sender: &EventSender,
+) -> Result<(), String> {
+    let url = format!("{}/api/chat", api_url.trim_end_matches('/'));
+    let body = build_ollama_request_body(model, messages);
+
+    let client = reqwest::blocking::Client::new();
+    let response = client
+        .post(&url)
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .map_err(|e| format!("Ollama request failed: {e} — is Ollama running?"))?;
+
+    if !response.status().is_success() {
+        let status = response.status().as_u16();
+        let body_text = response.text().unwrap_or_default();
+        return Err(format!("Ollama error {status}: {body_text}"));
+    }
+
+    let reader = std::io::BufReader::new(response);
+    process_ollama_lines(agent_id, reader, cancel, sender)
+}
+
+fn process_ollama_lines(
+    agent_id: AgentId,
+    reader: impl BufRead,
+    cancel: &StreamCancelHandle,
+    sender: &EventSender,
+) -> Result<(), String> {
+    for raw_line in reader.lines() {
+        if cancel.is_cancelled() {
+            return Ok(());
+        }
+
+        let line = raw_line.map_err(|e| format!("Stream read error: {e}"))?;
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        let obj: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        if obj.get("error").is_some() {
+            let msg = obj["error"].as_str().unwrap_or("Ollama error").to_string();
+            return Err(msg);
+        }
+
+        // Each chunk has `message.content` with the next token fragment.
+        if let Some(content) = obj
+            .get("message")
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_str())
+        {
+            if !content.is_empty() {
+                let _ = sender.send(AppEvent::AgentTokenChunk {
+                    agent_id,
+                    text: content.to_string(),
+                });
+            }
+        }
+
+        // `done: true` marks the end of the response.
+        if obj.get("done").and_then(|d| d.as_bool()).unwrap_or(false) {
+            let _ = sender.send(AppEvent::AgentTurnComplete { agent_id });
+            return Ok(());
+        }
+    }
+
+    let _ = sender.send(AppEvent::AgentTurnComplete { agent_id });
+    Ok(())
+}
+
+#[derive(Serialize)]
+struct OllamaRequestBody<'a> {
+    model: &'a str,
+    messages: Vec<OllamaMessage>,
+    stream: bool,
+}
+
+#[derive(Serialize)]
+struct OllamaMessage {
+    role: &'static str,
+    content: String,
+}
+
+fn build_ollama_request_body<'a>(model: &'a str, messages: &[ChatMessage]) -> OllamaRequestBody<'a> {
+    let mut ollama_messages = Vec::with_capacity(messages.len());
+
+    for msg in messages {
+        let role = match msg.role {
+            MessageRole::User => "user",
+            MessageRole::Assistant => "assistant",
+        };
+
+        // Flatten all content blocks to plain text for Ollama.
+        let content: String = msg.blocks.iter().filter_map(|b| match b {
+            ContentBlock::Text(t) => Some(t.as_str()),
+            // Tool results are rendered as plain text so context is preserved.
+            ContentBlock::ToolResult(r) => Some(r.content.as_str()),
+            // Tool use blocks have no text representation to send to Ollama.
+            ContentBlock::ToolUse(_) => None,
+        }).collect::<Vec<_>>().join("\n");
+
+        if !content.is_empty() {
+            ollama_messages.push(OllamaMessage { role, content });
+        }
+    }
+
+    OllamaRequestBody { model, messages: ollama_messages, stream: true }
+}
+
+// ---------------------------------------------------------------------------
+// Claude internal streaming logic
 // ---------------------------------------------------------------------------
 
 fn run_stream(
