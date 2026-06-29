@@ -162,11 +162,18 @@ pub(super) fn reduce_set_agent(
         let display = provider.as_deref().unwrap_or("API");
         state.notifications.show_toast(format!("Switched to {display} agent (native chat)."));
 
+        // Carry forward any api_key already stored for this provider so
+        // switching agents never drops a key that was previously persisted.
+        let existing_api_key = state.config.agent.providers
+            .get(&provider_str)
+            .and_then(|p| p.api_key.clone());
+
         vec![SideEffect::PersistAgentMode {
             provider: provider_str,
             model: model_str,
             api_key_env,
             api_url,
+            api_key: existing_api_key,
         }]
     } else {
         if let Some(pty) = state.agent_manager.pty_mut(id) {

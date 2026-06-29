@@ -448,7 +448,7 @@ pub enum SideEffect {
     /// Persist the chosen agent command to ~/.config/kiwi/config.toml.
     PersistAgentConfig { command: String, args: Vec<String> },
     /// Persist api-mode agent settings (mode, provider, model) to user config.
-    PersistAgentMode { provider: String, model: String, api_key_env: Option<String>, api_url: Option<String> },
+    PersistAgentMode { provider: String, model: String, api_key_env: Option<String>, api_url: Option<String>, api_key: Option<String> },
 }
 
 impl AppCommand {

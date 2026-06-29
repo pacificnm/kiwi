@@ -477,7 +477,10 @@ impl RawConfig {
                     if let Some(v) = &section.api_url    { entry.api_url = Some(v.clone()); }
                 }
             }
-            // Legacy flat fields — migrate into providers map for backward compat.
+            // Legacy flat fields — only migrate non-key fields (api_key_env, model, api_url)
+            // into the active provider's entry. The api_key is intentionally NOT migrated
+            // here because the flat [agent].api_key is provider-agnostic and putting it into
+            // providers[active] would corrupt other providers' entries when switching.
             let provider_name = agent.active.as_ref().or(agent.provider.as_ref());
             if let Some(name) = provider_name {
                 let entry = resolved.agent.providers.entry(name.clone()).or_insert_with(|| ProviderSettings {
@@ -487,7 +490,6 @@ impl RawConfig {
                     api_url: None,
                 });
                 if let Some(v) = &agent.api_key_env { entry.api_key_env = v.clone(); }
-                if let Some(v) = &agent.api_key     { entry.api_key = Some(v.clone()); }
                 if let Some(v) = &agent.model       { entry.model = v.clone(); }
                 if let Some(v) = &agent.api_url     { entry.api_url = Some(v.clone()); }
                 // Keep active_provider in sync when only legacy field is present

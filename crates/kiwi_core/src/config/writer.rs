@@ -71,6 +71,7 @@ pub fn persist_user_agent_mode(
     model: &str,
     api_key_env: Option<&str>,
     api_url: Option<&str>,
+    api_key: Option<&str>,
 ) -> Result<(), ConfigError> {
     let path = user_config_path(home);
     if let Some(parent) = path.parent() {
@@ -95,6 +96,13 @@ pub fn persist_user_agent_mode(
     let Some(agent_table) = agent.as_table_mut() else {
         return Err(ConfigError::validation("[agent] must be a table"));
     };
+
+    // Read the flat api_key before taking any sub-table borrows (borrow-checker requires this).
+    let flat_api_key = api_key.map(|s| s.to_string()).or_else(|| {
+        agent_table.get("api_key")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+    });
 
     // Top-level agent fields.
     agent_table.insert("mode".to_string(),     toml::Value::String("api".to_string()));
@@ -122,6 +130,12 @@ pub fn persist_user_agent_mode(
     }
     if let Some(url) = api_url {
         p.insert("api_url".to_string(), toml::Value::String(url.to_string()));
+    }
+    // Write the api_key (explicit from memory, or one-time migration from flat [agent]).
+    // Use `or_insert_with` so a key already in the provider section is never overwritten.
+    if let Some(key) = flat_api_key {
+        p.entry("api_key".to_string())
+            .or_insert_with(|| toml::Value::String(key));
     }
 
     let serialized =
@@ -239,5 +253,35 @@ mod tests {
         assert!(project_has_theme_override(&repo));
 
         let _ = fs::remove_dir_all(repo);
+    }
+
+    #[test]
+    fn switching_providers_migrates_flat_api_key_and_preserves_other_provider_keys() {
+        let home = TestHome::new("switch-provider");
+        let config_dir = home.home.join(".config/kiwi");
+        fs::create_dir_all(&config_dir).expect("create config dir");
+        // Simulate old flat config with an api_key
+        fs::write(
+            config_dir.join("config.toml"),
+            "[agent]\nmode = \"api\"\nprovider = \"claude\"\napi_key = \"sk-ant-MY-KEY\"\nmodel = \"claude-opus-4-8\"\n\n[theme]\nname = \"kiwi-dark\"\n",
+        ).expect("write config");
+
+        // Apply Claude — should migrate flat api_key into [agent.providers.claude]
+        persist_user_agent_mode(&home.home, "claude", "claude-opus-4-8", Some("ANTHROPIC_API_KEY"), None, None)
+            .expect("persist claude");
+        let content = fs::read_to_string(user_config_path(&home.home)).expect("read");
+        assert!(content.contains("[agent.providers.claude]"), "missing claude provider section");
+        assert!(content.contains("sk-ant-MY-KEY"), "api_key was lost during migration");
+
+        // Apply Ollama — should NOT touch Claude's key
+        persist_user_agent_mode(&home.home, "ollama", "qwen2.5-coder:7b", None, Some("http://localhost:11434"), None)
+            .expect("persist ollama");
+        let content = fs::read_to_string(user_config_path(&home.home)).expect("read");
+        assert!(content.contains("[agent.providers.claude]"), "claude section removed after switch");
+        assert!(content.contains("sk-ant-MY-KEY"), "claude api_key cleared after switching to ollama");
+        assert!(content.contains("[agent.providers.ollama]"), "missing ollama provider section");
+
+        // Theme should survive all of this
+        assert!(content.contains("kiwi-dark"), "theme was clobbered");
     }
 }
