@@ -32,6 +32,7 @@ pub fn execute_tool(tool: &KiwiTool, repo_root: &Path) -> ExecutionResult {
         KiwiTool::GitBranch { action, name } => {
             git_branch(*action, name.as_deref(), repo_root)
         }
+        KiwiTool::CargoCheck { package } => cargo_check(package.as_deref(), repo_root),
         KiwiTool::FileSearch { query } => search_files(query, repo_root),
         KiwiTool::FileGrep { query, path } => search_content(query, path.as_deref(), repo_root),
     }
@@ -60,6 +61,7 @@ fn safe_join(repo_root: &Path, relative: &str) -> Result<PathBuf, String> {
 // ---------------------------------------------------------------------------
 
 const MAX_FILE_BYTES: usize = 100_000; // 100 KB read limit
+const MAX_CARGO_OUTPUT_BYTES: usize = 10_000; // 10 KB cargo check limit
 const MAX_SEARCH_RESULTS: usize = 100;
 
 fn read_file(path: &str, repo_root: &Path) -> ExecutionResult {
@@ -352,6 +354,108 @@ fn run_git_checkout(repo_root: &Path, args: &[&str]) -> ExecutionResult {
             is_error: true,
         },
     }
+}
+
+fn cargo_check(package: Option<&str>, repo_root: &Path) -> ExecutionResult {
+    let mut cmd = Command::new("cargo");
+    cmd.args(["check", "--message-format=short"]);
+    if let Some(package) = package {
+        if package.trim().is_empty() {
+            return ExecutionResult::Done {
+                content: "package name must not be empty".to_string(),
+                is_error: true,
+            };
+        }
+        cmd.args(["-p", package]);
+    }
+    cmd.current_dir(repo_root);
+
+    match cmd.output() {
+        Ok(out) => {
+            let raw = format_git_output(&out.stdout, &out.stderr);
+            let (error_count, warning_count) = count_cargo_diagnostics(&raw);
+            let mut content = format_cargo_check_output(&raw, error_count, warning_count);
+            if content.len() > MAX_CARGO_OUTPUT_BYTES {
+                content = format!(
+                    "{}\n\n[... output truncated at {} bytes ...]",
+                    &content[..MAX_CARGO_OUTPUT_BYTES],
+                    MAX_CARGO_OUTPUT_BYTES
+                );
+            }
+            ExecutionResult::Done {
+                content,
+                is_error: !out.status.success() || error_count > 0,
+            }
+        }
+        Err(e) => ExecutionResult::Done {
+            content: format!("cargo check failed: {e}"),
+            is_error: true,
+        },
+    }
+}
+
+fn count_cargo_diagnostics(text: &str) -> (usize, usize) {
+    let mut errors = 0;
+    let mut warnings = 0;
+    for line in text.lines() {
+        if is_cargo_error_line(line) {
+            errors += 1;
+        } else if is_cargo_warning_line(line) {
+            warnings += 1;
+        }
+    }
+    (errors, warnings)
+}
+
+fn is_cargo_error_line(line: &str) -> bool {
+    line.contains(": error:") || line.contains(": error[") || line.starts_with("error:")
+}
+
+fn is_cargo_warning_line(line: &str) -> bool {
+    line.contains(": warning:") || line.starts_with("warning:")
+}
+
+fn format_cargo_check_output(raw: &str, error_count: usize, warning_count: usize) -> String {
+    let mut errors = Vec::new();
+    let mut warnings = Vec::new();
+    let mut other = Vec::new();
+
+    for line in raw.lines() {
+        if is_cargo_error_line(line) {
+            errors.push(line);
+        } else if is_cargo_warning_line(line) {
+            warnings.push(line);
+        } else if !line.trim().is_empty() {
+            other.push(line);
+        }
+    }
+
+    let status = if error_count > 0 {
+        "finished with errors"
+    } else if warning_count > 0 {
+        "finished with warnings"
+    } else {
+        "passed"
+    };
+
+    let mut content = format!(
+        "cargo check {status} ({error_count} error(s), {warning_count} warning(s))"
+    );
+
+    if !errors.is_empty() {
+        content.push_str("\n\n--- errors ---\n");
+        content.push_str(&errors.join("\n"));
+    }
+    if !warnings.is_empty() {
+        content.push_str("\n\n--- warnings ---\n");
+        content.push_str(&warnings.join("\n"));
+    }
+    if !other.is_empty() {
+        content.push_str("\n\n--- output ---\n");
+        content.push_str(&other.join("\n"));
+    }
+
+    content
 }
 
 fn git_diff(path: Option<&str>, repo_root: &Path) -> ExecutionResult {
@@ -806,6 +910,43 @@ mod tests {
         assert_eq!(
             String::from_utf8_lossy(&current.stdout).trim(),
             initial_branch
+        );
+    }
+
+    fn temp_cargo_project(main_rs: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path();
+        fs::write(
+            path.join("Cargo.toml"),
+            "[package]\nname = \"agent_tool_test\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+        fs::create_dir_all(path.join("src")).unwrap();
+        fs::write(path.join("src/main.rs"), main_rs).unwrap();
+        dir
+    }
+
+    #[test]
+    fn cargo_check_clean_project_succeeds() {
+        let dir = temp_cargo_project("fn main() {}\n");
+        let result = execute_tool(
+            &KiwiTool::CargoCheck { package: None },
+            dir.path(),
+        );
+        assert!(
+            matches!(result, ExecutionResult::Done { ref content, is_error: false } if content.contains("cargo check passed"))
+        );
+    }
+
+    #[test]
+    fn cargo_check_reports_compile_errors() {
+        let dir = temp_cargo_project("fn main() { broken }\n");
+        let result = execute_tool(
+            &KiwiTool::CargoCheck { package: None },
+            dir.path(),
+        );
+        assert!(
+            matches!(result, ExecutionResult::Done { ref content, is_error: true } if content.contains("--- errors ---"))
         );
     }
 }
