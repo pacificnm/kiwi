@@ -52,6 +52,7 @@ mod tests {
             command: "agent".to_string(),
             args: vec!["--help".to_string()],
             env,
+            ..AgentSettings::default()
         };
         let spec = agent_launch_spec(&settings);
         assert_eq!(spec.command, "agent");

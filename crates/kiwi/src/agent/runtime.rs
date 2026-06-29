@@ -120,6 +120,7 @@ mod tests {
             command: "bash".to_string(),
             args: Vec::new(),
             env: Default::default(),
+            ..AgentSettings::default()
         };
         let session = AgentSession::spawn(&repo, &settings, 80, 24).expect("spawn");
         let mut runtime = AgentRuntime::new();

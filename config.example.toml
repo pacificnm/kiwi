@@ -24,16 +24,33 @@ size = 14.0 # base egui font scale (8.0–32.0)
 command = "nvim"
 # terminal = true   # optional: force suspend/resume (true) or detached (false)
 
+# ── Agent (PTY subprocess — legacy default) ────────────────────────────────
+# mode = "pty" spawns the agent as a subprocess and renders its PTY output.
+# Use mode = "api" for the native chat panel (recommended for Claude).
+#
 [agent]
+mode = "pty"            # "api" | "pty" (default)
 command = "agent"
 # args = ["--flag"]
 # [agent.env]
 # EXAMPLE = "value"
 
-# ── Claude Code agent ─────────────────────────────────────────────────────
-# Requires Claude Code installed and authenticated (`claude` on PATH).
+# ── Claude — native API agent (recommended) ────────────────────────────────
+# Calls the Anthropic Messages API directly; renders a native chat panel.
+# Requires ANTHROPIC_API_KEY set in your environment.
 #
 # [agent]
+# mode = "api"
+# provider = "claude"
+# model = "claude-opus-4-8"
+# api_key_env = "ANTHROPIC_API_KEY"  # default; change if key is stored elsewhere
+
+# ── Claude Code CLI — PTY subprocess (deprecated) ─────────────────────────
+# Requires Claude Code installed and authenticated (`claude` on PATH).
+# Consider switching to mode = "api" above.
+#
+# [agent]
+# mode = "pty"
 # command = "claude"
 
 # ── Ollama / qwen2.5-coder agent ──────────────────────────────────────────
@@ -41,6 +58,7 @@ command = "agent"
 # Requires Ollama running locally with qwen2.5-coder and nomic-embed-text.
 #
 # [agent]
+# mode = "pty"
 # command = "kiwi-ollama"
 # [agent.env]
 # OLLAMA_URL = "http://127.0.0.1:11434"

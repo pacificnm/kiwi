@@ -210,6 +210,7 @@ mod tests {
             command: "bash".to_string(),
             args: Vec::new(),
             env: Default::default(),
+            ..AgentSettings::default()
         };
         let mut session = AgentSession::spawn(&repo, &settings, 80, 24).expect("spawn agent");
         assert!(session.pid().is_some());
