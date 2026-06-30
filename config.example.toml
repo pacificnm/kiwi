@@ -103,6 +103,18 @@ command = "agent"
 # model = "claude-opus-4-8"
 # api_key_env = "ANTHROPIC_API_KEY"
 
+# ── Planner agent (context gathering, read-only) ─────────────────────────────
+# Gathers repo context — no file.write, shell, or git-mutation tools.
+#
+# [agent]
+# mode = "api"
+# active = "claude"
+# tool_profile = "planner"
+#
+# [agent.providers.claude]
+# model = "claude-opus-4-8"
+# api_key_env = "ANTHROPIC_API_KEY"
+
 [shell]
 command = "bash"
 # args = ["-l"]
