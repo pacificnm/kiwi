@@ -55,6 +55,10 @@ pub enum KiwiTool {
         limit: u32,
         base: Option<String>,
     },
+    MemorySearch {
+        query: String,
+        limit: u32,
+    },
     FileSearch { query: String },
     FileGrep { query: String, path: Option<String> },
 }
@@ -248,6 +252,24 @@ fn init_tools() -> Vec<KiwiToolDef> {
             }),
         },
         KiwiToolDef {
+            id: "memory.search",
+            description: "Search indexed project documentation (SPECs, ADRs, architecture notes) via semantic similarity.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Natural language search query."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max results to return (default 5)."
+                    }
+                },
+                "required": ["query"]
+            }),
+        },
+        KiwiToolDef {
             id: "file.search",
             description: "Find files whose names contain a given substring.",
             input_schema: json!({
@@ -280,6 +302,9 @@ pub struct ToolProfile {
     pub allowed: &'static [&'static str],
 }
 
+/// Tools always exposed to the agent regardless of the active profile.
+const MANDATORY_TOOL_IDS: &[&str] = &["memory.search"];
+
 const TOOL_PROFILES: &[ToolProfile] = &[
     ToolProfile {
         name: "all",
@@ -300,6 +325,7 @@ const TOOL_PROFILES: &[ToolProfile] = &[
             "git.commit",
             "cargo.check",
             "cargo.test",
+            "memory.search",
         ],
     },
     ToolProfile {
@@ -575,7 +601,7 @@ impl ToolRegistry {
         TOOLS.get_or_init(init_tools).as_slice()
     }
 
-    /// Registry entries allowed by `profile_name` (unknown names fall back to `all`).
+    /// Registry entries allowed by `profile_name`, plus mandatory tools (unknown names fall back to `all`).
     pub fn for_profile(profile_name: &str) -> Vec<KiwiToolDef> {
         let profile = tool_profile_by_name(profile_name)
             .unwrap_or_else(|| tool_profile_by_name("all").expect("all profile must exist"));
@@ -584,7 +610,9 @@ impl ToolRegistry {
         }
         Self::all()
             .iter()
-            .filter(|tool| profile.allowed.contains(&tool.id))
+            .filter(|tool| {
+                profile.allowed.contains(&tool.id) || MANDATORY_TOOL_IDS.contains(&tool.id)
+            })
             .cloned()
             .collect()
     }
@@ -670,6 +698,10 @@ impl KiwiTool {
                 limit: parse_github_prs_limit(input),
                 base: optional_str_field(input, "base"),
             }),
+            "memory.search" => Ok(Self::MemorySearch {
+                query: str_field("query")?,
+                limit: parse_memory_search_limit(input),
+            }),
             "file.search" => Ok(Self::FileSearch {
                 query: str_field("query")?,
             }),
@@ -702,6 +734,10 @@ fn parse_github_issues_limit(input: &Value) -> u32 {
 
 fn parse_github_prs_limit(input: &Value) -> u32 {
     parse_github_issues_limit(input)
+}
+
+fn parse_memory_search_limit(input: &Value) -> u32 {
+    input["limit"].as_u64().unwrap_or(5).clamp(1, 20) as u32
 }
 
 #[cfg(test)]
@@ -896,6 +932,34 @@ mod tests {
     }
 
     #[test]
+    fn parse_memory_search_requires_query_and_clamps_limit() {
+        let err = KiwiTool::from_tool_use("memory.search", &json!({}));
+        assert!(err.is_err());
+
+        let tool = KiwiTool::from_tool_use(
+            "memory.search",
+            &json!({"query": "layout engine", "limit": 99}),
+        )
+        .unwrap();
+        assert!(matches!(
+            tool,
+            KiwiTool::MemorySearch {
+                query,
+                limit: 20
+            } if query == "layout engine"
+        ));
+
+        let tool = KiwiTool::from_tool_use("memory.search", &json!({"query": "ADR-003"})).unwrap();
+        assert!(matches!(
+            tool,
+            KiwiTool::MemorySearch {
+                query,
+                limit: 5
+            } if query == "ADR-003"
+        ));
+    }
+
+    #[test]
     fn parse_cargo_check_optional_package() {
         let tool = KiwiTool::from_tool_use("cargo.check", &json!({})).unwrap();
         assert!(matches!(tool, KiwiTool::CargoCheck { package: None }));
@@ -958,8 +1022,8 @@ mod tests {
     }
 
     #[test]
-    fn registry_returns_fourteen_tools() {
-        assert_eq!(ToolRegistry::all().len(), 14);
+    fn registry_returns_fifteen_tools() {
+        assert_eq!(ToolRegistry::all().len(), 15);
     }
 
     #[test]
@@ -982,6 +1046,7 @@ mod tests {
         assert!(ids.contains(&"git.branch"));
         assert!(ids.contains(&"cargo.check"));
         assert!(ids.contains(&"cargo.test"));
+        assert!(ids.contains(&"memory.search"));
     }
 
     #[test]
@@ -1003,9 +1068,22 @@ mod tests {
                 "git.commit",
                 "git.branch",
                 "github.issues",
-                "github.prs"
+                "github.prs",
+                "memory.search"
             ]
         );
+    }
+
+    #[test]
+    fn memory_search_is_mandatory_in_code_review_profile() {
+        let tools = ToolRegistry::for_profile("code_review");
+        assert!(tools.iter().any(|tool| tool.id == "memory.search"));
+    }
+
+    #[test]
+    fn memory_search_is_mandatory_in_planner_profile() {
+        let tools = ToolRegistry::for_profile("planner");
+        assert!(tools.iter().any(|tool| tool.id == "memory.search"));
     }
 
     #[test]
@@ -1025,7 +1103,7 @@ mod tests {
     #[test]
     fn openai_adapter_uses_function_type() {
         let schemas = tools_for_openai(ToolRegistry::all());
-        assert_eq!(schemas.len(), 14);
+        assert_eq!(schemas.len(), 15);
         let first = serde_json::to_value(&schemas[0]).unwrap();
         assert_eq!(first["type"], "function");
         assert_eq!(first["function"]["name"], "file_read");

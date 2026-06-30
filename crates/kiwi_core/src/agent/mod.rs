@@ -5,6 +5,7 @@ mod error;
 mod id;
 mod io;
 mod manager;
+mod memory_client;
 mod session;
 mod status;
 mod stream_event;
