@@ -46,6 +46,11 @@ pub enum KiwiTool {
         filter: Option<String>,
         package: Option<String>,
     },
+    GitHubIssues {
+        limit: u32,
+        label: Option<String>,
+        milestone: Option<String>,
+    },
     FileSearch { query: String },
     FileGrep { query: String, path: Option<String> },
 }
@@ -196,6 +201,27 @@ fn init_tools() -> Vec<KiwiToolDef> {
                     "package": {
                         "type": "string",
                         "description": "Limit to a specific package (optional)."
+                    }
+                }
+            }),
+        },
+        KiwiToolDef {
+            id: "github.issues",
+            description: "List open GitHub issues for the current repository using the gh CLI.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max issues to return (default 20, max 100)."
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "Filter by label (optional)."
+                    },
+                    "milestone": {
+                        "type": "string",
+                        "description": "Filter by milestone title (optional)."
                     }
                 }
             }),
@@ -614,6 +640,11 @@ impl KiwiTool {
                 filter: optional_str_field(input, "filter"),
                 package: optional_str_field(input, "package"),
             }),
+            "github.issues" => Ok(Self::GitHubIssues {
+                limit: parse_github_issues_limit(input),
+                label: optional_str_field(input, "label"),
+                milestone: optional_str_field(input, "milestone"),
+            }),
             "file.search" => Ok(Self::FileSearch {
                 query: str_field("query")?,
             }),
@@ -635,6 +666,13 @@ fn parse_git_branch_action(input: &Value) -> Result<GitBranchAction, ToolParseEr
             "invalid git.branch action '{other}'"
         ))),
     }
+}
+
+fn parse_github_issues_limit(input: &Value) -> u32 {
+    input["limit"]
+        .as_u64()
+        .unwrap_or(20)
+        .clamp(1, 100) as u32
 }
 
 #[cfg(test)]
@@ -774,6 +812,36 @@ mod tests {
     }
 
     #[test]
+    fn parse_github_issues_defaults_and_clamps_limit() {
+        let tool = KiwiTool::from_tool_use("github.issues", &json!({})).unwrap();
+        assert!(matches!(
+            tool,
+            KiwiTool::GitHubIssues {
+                limit: 20,
+                label: None,
+                milestone: None
+            }
+        ));
+
+        let tool = KiwiTool::from_tool_use("github.issues", &json!({"limit": 500})).unwrap();
+        assert!(matches!(tool, KiwiTool::GitHubIssues { limit: 100, .. }));
+
+        let tool = KiwiTool::from_tool_use(
+            "github.issues",
+            &json!({"limit": 5, "label": "bug", "milestone": "M1"}),
+        )
+        .unwrap();
+        assert!(matches!(
+            tool,
+            KiwiTool::GitHubIssues {
+                limit: 5,
+                label: Some(l),
+                milestone: Some(m)
+            } if l == "bug" && m == "M1"
+        ));
+    }
+
+    #[test]
     fn parse_cargo_check_optional_package() {
         let tool = KiwiTool::from_tool_use("cargo.check", &json!({})).unwrap();
         assert!(matches!(tool, KiwiTool::CargoCheck { package: None }));
@@ -836,8 +904,8 @@ mod tests {
     }
 
     #[test]
-    fn registry_returns_twelve_tools() {
-        assert_eq!(ToolRegistry::all().len(), 12);
+    fn registry_returns_thirteen_tools() {
+        assert_eq!(ToolRegistry::all().len(), 13);
     }
 
     #[test]
@@ -871,10 +939,18 @@ mod tests {
     }
 
     #[test]
-    fn github_profile_includes_registered_git_tools() {
+    fn github_profile_includes_github_and_git_tools() {
         let tools = ToolRegistry::for_profile("github");
         let ids: Vec<_> = tools.iter().map(|tool| tool.id).collect();
-        assert_eq!(ids, vec!["git.status", "git.commit", "git.branch"]);
+        assert_eq!(
+            ids,
+            vec![
+                "git.status",
+                "git.commit",
+                "git.branch",
+                "github.issues"
+            ]
+        );
     }
 
     #[test]
@@ -894,7 +970,7 @@ mod tests {
     #[test]
     fn openai_adapter_uses_function_type() {
         let schemas = tools_for_openai(ToolRegistry::all());
-        assert_eq!(schemas.len(), 12);
+        assert_eq!(schemas.len(), 13);
         let first = serde_json::to_value(&schemas[0]).unwrap();
         assert_eq!(first["type"], "function");
         assert_eq!(first["function"]["name"], "file_read");
