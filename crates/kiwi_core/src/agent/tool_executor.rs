@@ -1800,6 +1800,63 @@ mod tests {
         );
     }
 
+    #[test]
+    fn cargo_build_clean_project_succeeds() {
+        let dir = temp_cargo_project("fn main() {}\n");
+        let result = execute_tool(
+            &KiwiTool::CargoBuild {
+                package: None,
+                release: false,
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                ref content,
+                is_error: false
+            } if content.contains("cargo build passed")
+        ));
+    }
+
+    #[test]
+    fn cargo_build_reports_failure() {
+        let dir = temp_cargo_project("fn main() { broken }\n");
+        let result = execute_tool(
+            &KiwiTool::CargoBuild {
+                package: None,
+                release: false,
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                ref content,
+                is_error: true
+            } if content.contains("cargo build failed")
+        ));
+    }
+
+    #[test]
+    fn cargo_build_rejects_empty_package_name() {
+        let dir = temp_cargo_project("fn main() {}\n");
+        let result = execute_tool(
+            &KiwiTool::CargoBuild {
+                package: Some("   ".to_string()),
+                release: false,
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                is_error: true,
+                ref content,
+            } if content.contains("package name must not be empty")
+        ));
+    }
+
     fn temp_cargo_test_project(main_rs: &str) -> tempfile::TempDir {
         let dir = temp_cargo_project(main_rs);
         dir
