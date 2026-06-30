@@ -685,24 +685,23 @@ fn spawn_claude_stream_effect(ctx: &mut ServiceContext<'_>, agent_id: kiwi_core:
                 .as_ref()
                 .and_then(|p| p.api_url.clone())
                 .or_else(|| ctx.state.config.agent.api_url.clone())
-                .unwrap_or_else(|| "http://localhost:11434".to_string());
-            let ollama_settings = provider_settings.clone().unwrap_or_else(|| {
-                kiwi_core::config::ProviderSettings {
-                    api_key_env: String::new(),
-                    api_key: None,
-                    model: model.clone(),
-                    api_url: Some(api_url.clone()),
-                    tool_profile: None,
-                    tool_model: None,
-                    code_model: None,
-                    embedding_model: None,
-                }
-            });
-            let plan = kiwi_core::agent::resolve_ollama_stream(
-                &ollama_settings,
-                &messages,
-                &tool_profile,
-            );
+                .map(|url| kiwi_core::agent::normalize_ollama_api_url(&url))
+                .unwrap_or_else(|| kiwi_core::agent::normalize_ollama_api_url(""));
+            let ollama_settings =
+                provider_settings
+                    .clone()
+                    .unwrap_or_else(|| kiwi_core::config::ProviderSettings {
+                        api_key_env: String::new(),
+                        api_key: None,
+                        model: model.clone(),
+                        api_url: Some(api_url.clone()),
+                        tool_profile: None,
+                        tool_model: None,
+                        code_model: None,
+                        embedding_model: None,
+                    });
+            let plan =
+                kiwi_core::agent::resolve_ollama_stream(&ollama_settings, &messages, &tool_profile);
             if let Some(pty) = ctx.state.agent_manager.pty_mut(agent_id) {
                 if let Some(chat) = &mut pty.chat {
                     chat.model = plan.model.clone();

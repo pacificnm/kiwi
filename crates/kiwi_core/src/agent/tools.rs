@@ -25,8 +25,13 @@ pub enum GitBranchAction {
 /// A locally-executable tool that Claude can invoke via a `tool_use` block.
 #[derive(Debug, Clone)]
 pub enum KiwiTool {
-    FileRead { path: String },
-    FileWrite { path: String, content: String },
+    FileRead {
+        path: String,
+    },
+    FileWrite {
+        path: String,
+        content: String,
+    },
     FilePatch {
         path: String,
         old_str: String,
@@ -37,16 +42,28 @@ pub enum KiwiTool {
         start_line: u32,
         end_line: Option<u32>,
     },
-    FileDelete { path: String },
-    FileMove { src: String, dest: String },
-    FileList { path: String, depth: u8 },
-    ShellRun { command: String },
+    FileDelete {
+        path: String,
+    },
+    FileMove {
+        src: String,
+        dest: String,
+    },
+    FileList {
+        path: String,
+        depth: u8,
+    },
+    ShellRun {
+        command: String,
+    },
     ShellCapture {
         command: String,
         timeout_secs: u32,
     },
     GitStatus,
-    GitDiff { path: Option<String> },
+    GitDiff {
+        path: Option<String>,
+    },
     GitCommit {
         message: String,
         stage_all: bool,
@@ -80,8 +97,13 @@ pub enum KiwiTool {
         limit: u32,
     },
     ProjectContext,
-    FileSearch { query: String },
-    FileGrep { query: String, path: Option<String> },
+    FileSearch {
+        query: String,
+    },
+    FileGrep {
+        query: String,
+        path: Option<String>,
+    },
 }
 
 /// JSON schema descriptor for a single tool — Claude Messages API wire format.
@@ -454,11 +476,11 @@ const TOOL_PROFILES: &[ToolProfile] = &[
     ToolProfile {
         name: "github",
         allowed: &[
-            "github.issues",
-            "github.prs",
+            "git.status",
             "git.branch",
             "git.commit",
-            "git.status",
+            "github.issues",
+            "github.prs",
         ],
     },
     ToolProfile {
@@ -621,12 +643,9 @@ pub fn normalize_tool_arguments(input: Value) -> Value {
                 .collect();
             Value::Object(cleaned)
         }
-        Value::Array(items) => Value::Array(
-            items
-                .into_iter()
-                .map(normalize_tool_arguments)
-                .collect(),
-        ),
+        Value::Array(items) => {
+            Value::Array(items.into_iter().map(normalize_tool_arguments).collect())
+        }
         other => other,
     }
 }
@@ -866,10 +885,7 @@ fn parse_git_branch_action(input: &Value) -> Result<GitBranchAction, ToolParseEr
 }
 
 fn parse_github_issues_limit(input: &Value) -> u32 {
-    input["limit"]
-        .as_u64()
-        .unwrap_or(20)
-        .clamp(1, 100) as u32
+    input["limit"].as_u64().unwrap_or(20).clamp(1, 100) as u32
 }
 
 fn parse_github_prs_limit(input: &Value) -> u32 {
@@ -891,13 +907,9 @@ fn parse_positive_line_number(input: &Value, field: &str) -> Result<u32, ToolPar
 }
 
 fn optional_line_number(input: &Value, field: &str) -> Option<u32> {
-    input[field].as_u64().and_then(|line| {
-        if line == 0 {
-            None
-        } else {
-            Some(line as u32)
-        }
-    })
+    input[field]
+        .as_u64()
+        .and_then(|line| if line == 0 { None } else { Some(line as u32) })
 }
 
 fn parse_shell_capture_timeout(input: &Value) -> u32 {
@@ -983,11 +995,9 @@ mod tests {
 
     #[test]
     fn parse_git_branch_checkout() {
-        let tool = KiwiTool::from_tool_use(
-            "git.branch",
-            &json!({"action": "checkout", "name": "main"}),
-        )
-        .unwrap();
+        let tool =
+            KiwiTool::from_tool_use("git.branch", &json!({"action": "checkout", "name": "main"}))
+                .unwrap();
         assert!(matches!(
             tool,
             KiwiTool::GitBranch {
@@ -1007,12 +1017,16 @@ mod tests {
 
     #[test]
     fn parse_git_commit_stage_all_false() {
-        let tool = KiwiTool::from_tool_use(
-            "git.commit",
-            &json!({"message": "wip", "stage_all": false}),
-        )
-        .unwrap();
-        assert!(matches!(tool, KiwiTool::GitCommit { stage_all: false, .. }));
+        let tool =
+            KiwiTool::from_tool_use("git.commit", &json!({"message": "wip", "stage_all": false}))
+                .unwrap();
+        assert!(matches!(
+            tool,
+            KiwiTool::GitCommit {
+                stage_all: false,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -1128,17 +1142,14 @@ mod tests {
         let tool = KiwiTool::from_tool_use("cargo.check", &json!({})).unwrap();
         assert!(matches!(tool, KiwiTool::CargoCheck { package: None }));
 
-        let tool = KiwiTool::from_tool_use("cargo.check", &json!({"package": "kiwi_core"}))
-            .unwrap();
-        assert!(
-            matches!(tool, KiwiTool::CargoCheck { package: Some(pkg) } if pkg == "kiwi_core")
-        );
+        let tool =
+            KiwiTool::from_tool_use("cargo.check", &json!({"package": "kiwi_core"})).unwrap();
+        assert!(matches!(tool, KiwiTool::CargoCheck { package: Some(pkg) } if pkg == "kiwi_core"));
     }
 
     #[test]
     fn parse_cargo_check_treats_null_package_as_absent() {
-        let tool =
-            KiwiTool::from_tool_use("cargo.check", &json!({"package": null})).unwrap();
+        let tool = KiwiTool::from_tool_use("cargo.check", &json!({"package": null})).unwrap();
         assert!(matches!(tool, KiwiTool::CargoCheck { package: None }));
 
         let normalized = normalize_tool_arguments(json!({"package": null}));
@@ -1237,7 +1248,42 @@ mod tests {
             .collect();
         assert!(names.contains(&"coding"));
         assert!(names.contains(&"code_review"));
+        assert!(names.contains(&"github"));
         assert!(names.contains(&"all"));
+    }
+
+    #[test]
+    fn github_profile_matches_spec_tool_set() {
+        let tools = ToolRegistry::for_profile("github");
+        let ids: Vec<_> = tools.iter().map(|tool| tool.id).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "git.status",
+                "git.commit",
+                "git.branch",
+                "github.issues",
+                "github.prs",
+                "memory.search",
+            ]
+        );
+    }
+
+    #[test]
+    fn github_profile_excludes_write_and_shell_tools() {
+        let tools = ToolRegistry::for_profile("github");
+        let ids: Vec<_> = tools.iter().map(|tool| tool.id).collect();
+        assert!(!ids.contains(&"file.write"));
+        assert!(!ids.contains(&"file.patch"));
+        assert!(!ids.contains(&"shell.run"));
+        assert!(!ids.contains(&"shell.capture"));
+        assert!(!ids.contains(&"cargo.check"));
+    }
+
+    #[test]
+    fn memory_search_is_mandatory_in_github_profile() {
+        let tools = ToolRegistry::for_profile("github");
+        assert!(tools.iter().any(|tool| tool.id == "memory.search"));
     }
 
     #[test]
@@ -1280,17 +1326,11 @@ mod tests {
     fn github_profile_includes_github_and_git_tools() {
         let tools = ToolRegistry::for_profile("github");
         let ids: Vec<_> = tools.iter().map(|tool| tool.id).collect();
-        assert_eq!(
-            ids,
-            vec![
-                "git.status",
-                "git.commit",
-                "git.branch",
-                "github.issues",
-                "github.prs",
-                "memory.search"
-            ]
-        );
+        assert!(ids.contains(&"git.status"));
+        assert!(ids.contains(&"git.branch"));
+        assert!(ids.contains(&"git.commit"));
+        assert!(ids.contains(&"github.issues"));
+        assert!(ids.contains(&"github.prs"));
     }
 
     #[test]
@@ -1486,7 +1526,9 @@ mod tests {
         assert!(streaming_text_is_ollama_tool_json(
             r#"{"name":"cargo_check","arguments":{}}"#
         ));
-        assert!(!streaming_text_is_ollama_tool_json("I'll run cargo check now."));
+        assert!(!streaming_text_is_ollama_tool_json(
+            "I'll run cargo check now."
+        ));
     }
 
     #[test]

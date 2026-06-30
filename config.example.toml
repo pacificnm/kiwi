@@ -91,6 +91,18 @@ command = "agent"
 # model = "claude-opus-4-8"
 # api_key_env = "ANTHROPIC_API_KEY"
 
+# ── GitHub agent (issues, PRs, git workflow) ────────────────────────────────
+# GitHub operations only — no file.write or shell tools.
+#
+# [agent]
+# mode = "api"
+# active = "claude"
+# tool_profile = "github"
+#
+# [agent.providers.claude]
+# model = "claude-opus-4-8"
+# api_key_env = "ANTHROPIC_API_KEY"
+
 [shell]
 command = "bash"
 # args = ["-l"]
