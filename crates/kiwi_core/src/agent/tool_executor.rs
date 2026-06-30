@@ -44,6 +44,9 @@ pub fn execute_tool(tool: &KiwiTool, repo_root: &Path) -> ExecutionResult {
             label,
             milestone,
         } => github_issues(*limit, label.as_deref(), milestone.as_deref(), repo_root),
+        KiwiTool::GitHubPrs { limit, base } => {
+            github_prs(*limit, base.as_deref(), repo_root)
+        }
         KiwiTool::FileSearch { query } => search_files(query, repo_root),
         KiwiTool::FileGrep { query, path } => search_content(query, path.as_deref(), repo_root),
     }
@@ -828,6 +831,99 @@ fn format_github_issues_list(issues: &[GhIssueRow]) -> String {
     out.trim_end().to_string()
 }
 
+#[derive(Debug, Deserialize)]
+struct GhPrRow {
+    number: u32,
+    title: String,
+    state: String,
+    #[serde(rename = "headRefName")]
+    head_ref_name: String,
+    #[serde(rename = "baseRefName")]
+    base_ref_name: String,
+}
+
+fn github_prs(limit: u32, base: Option<&str>, repo_root: &Path) -> ExecutionResult {
+    let limit_str = limit.to_string();
+    let mut args = vec![
+        "pr",
+        "list",
+        "--json",
+        "number,title,state,headRefName,baseRefName",
+        "--limit",
+        limit_str.as_str(),
+    ];
+    if let Some(base) = base {
+        args.push("--base");
+        args.push(base);
+    }
+
+    let output = Command::new(GH_COMMAND)
+        .args(&args)
+        .current_dir(repo_root)
+        .output();
+
+    match output {
+        Err(err) if err.kind() == ErrorKind::NotFound => ExecutionResult::Done {
+            content: format!("GitHub CLI ({GH_COMMAND}) not found on PATH"),
+            is_error: true,
+        },
+        Err(err) => ExecutionResult::Done {
+            content: format!("Failed to run `{GH_COMMAND} pr list`: {err}"),
+            is_error: true,
+        },
+        Ok(result) if !result.status.success() => {
+            let stderr = String::from_utf8_lossy(&result.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&result.stdout).trim().to_string();
+            let message = if !stderr.is_empty() {
+                stderr
+            } else if !stdout.is_empty() {
+                stdout
+            } else {
+                "gh pr list failed".to_string()
+            };
+            ExecutionResult::Done {
+                content: message,
+                is_error: true,
+            }
+        }
+        Ok(result) => match serde_json::from_slice::<Vec<GhPrRow>>(&result.stdout) {
+            Ok(prs) => ExecutionResult::Done {
+                content: format_github_prs_list(&prs),
+                is_error: false,
+            },
+            Err(err) => {
+                let raw = String::from_utf8_lossy(&result.stdout).into_owned();
+                ExecutionResult::Done {
+                    content: format!(
+                        "parse_error: true\nInvalid gh pr JSON: {err}\n\nRaw output:\n{raw}"
+                    ),
+                    is_error: true,
+                }
+            }
+        },
+    }
+}
+
+fn format_github_prs_list(prs: &[GhPrRow]) -> String {
+    if prs.is_empty() {
+        return "No pull requests found.".to_string();
+    }
+
+    let mut out = format!("GitHub pull requests ({}):\n", prs.len());
+    for (index, pr) in prs.iter().enumerate() {
+        out.push_str(&format!(
+            "{}. #{} [{}] {} ({} -> {})\n",
+            index + 1,
+            pr.number,
+            pr.state,
+            pr.title,
+            pr.head_ref_name,
+            pr.base_ref_name
+        ));
+    }
+    out.trim_end().to_string()
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -1290,6 +1386,48 @@ mod tests {
         let raw = "{not json}".to_string();
         let content = format!(
             "parse_error: true\nInvalid gh issue JSON: {err}\n\nRaw output:\n{raw}"
+        );
+        assert!(content.contains("parse_error: true"));
+        assert!(content.contains("{not json}"));
+    }
+
+    #[test]
+    fn format_github_prs_list_renders_numbered_entries() {
+        let prs = vec![
+            GhPrRow {
+                number: 379,
+                title: "Add github.issues".to_string(),
+                state: "OPEN".to_string(),
+                head_ref_name: "357-branch".to_string(),
+                base_ref_name: "main".to_string(),
+            },
+            GhPrRow {
+                number: 378,
+                title: "Add cargo.test".to_string(),
+                state: "OPEN".to_string(),
+                head_ref_name: "356-branch".to_string(),
+                base_ref_name: "main".to_string(),
+            },
+        ];
+
+        let formatted = format_github_prs_list(&prs);
+        assert!(formatted.contains("GitHub pull requests (2):"));
+        assert!(formatted.contains("1. #379 [OPEN] Add github.issues (357-branch -> main)"));
+        assert!(formatted.contains("2. #378 [OPEN] Add cargo.test (356-branch -> main)"));
+    }
+
+    #[test]
+    fn format_github_prs_list_empty_returns_message() {
+        assert_eq!(format_github_prs_list(&[]), "No pull requests found.");
+    }
+
+    #[test]
+    fn github_prs_parse_failure_includes_raw_json() {
+        let prs: Result<Vec<GhPrRow>, _> = serde_json::from_slice(b"{not json}");
+        let err = prs.expect_err("invalid json");
+        let raw = "{not json}".to_string();
+        let content = format!(
+            "parse_error: true\nInvalid gh pr JSON: {err}\n\nRaw output:\n{raw}"
         );
         assert!(content.contains("parse_error: true"));
         assert!(content.contains("{not json}"));
