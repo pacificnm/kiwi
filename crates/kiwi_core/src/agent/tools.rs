@@ -1585,6 +1585,28 @@ mod tests {
     }
 
     #[test]
+    fn cargo_build_schema_matches_spec() {
+        let def = ToolRegistry::all()
+            .iter()
+            .find(|tool| tool.id == "cargo.build")
+            .expect("cargo.build must be registered");
+        assert_eq!(
+            def.description,
+            "Run cargo build in the repository root and return build output."
+        );
+        let schema = &def.input_schema;
+        assert_eq!(schema["type"], "object");
+        assert!(schema["properties"]["package"].is_object());
+        assert!(schema["properties"]["release"].is_object());
+    }
+
+    #[test]
+    fn coding_profile_includes_cargo_build() {
+        let tools = ToolRegistry::for_profile("coding");
+        assert!(tools.iter().any(|tool| tool.id == "cargo.build"));
+    }
+
+    #[test]
     fn parse_cargo_build_optional_release() {
         let tool = KiwiTool::from_tool_use("cargo.build", &json!({"release": true})).unwrap();
         assert!(matches!(
