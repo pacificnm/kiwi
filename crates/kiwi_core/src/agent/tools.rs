@@ -466,6 +466,7 @@ const TOOL_PROFILES: &[ToolProfile] = &[
         name: "code_review",
         allowed: &[
             "file.read",
+            "file.read_range",
             "file.list",
             "file.search",
             "file.grep",
@@ -1324,6 +1325,7 @@ mod tests {
             ids,
             vec![
                 "file.read",
+                "file.read_range",
                 "file.list",
                 "git.diff",
                 "cargo.check",
@@ -1332,6 +1334,30 @@ mod tests {
                 "file.grep",
             ]
         );
+    }
+
+    #[test]
+    fn file_read_range_schema_matches_spec() {
+        let def = ToolRegistry::all()
+            .iter()
+            .find(|tool| tool.id == "file.read_range")
+            .expect("file.read_range must be registered");
+        assert_eq!(
+            def.description,
+            "Read a specific line range from a file with line numbers."
+        );
+        let schema = &def.input_schema;
+        assert_eq!(schema["type"], "object");
+        assert_eq!(schema["required"], json!(["path", "start_line"]));
+        assert!(schema["properties"]["path"].is_object());
+        assert!(schema["properties"]["start_line"].is_object());
+        assert!(schema["properties"]["end_line"].is_object());
+    }
+
+    #[test]
+    fn code_review_profile_includes_file_read_range() {
+        let tools = ToolRegistry::for_profile("code_review");
+        assert!(tools.iter().any(|tool| tool.id == "file.read_range"));
     }
 
     #[test]

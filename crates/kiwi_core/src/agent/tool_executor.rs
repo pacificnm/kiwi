@@ -2103,6 +2103,100 @@ mod tests {
     }
 
     #[test]
+    fn read_file_range_reads_to_eof_when_end_line_omitted() {
+        let dir = temp_repo();
+        fs::write(dir.path().join("tail.txt"), "one\ntwo\nthree\n").unwrap();
+
+        let result = execute_tool(
+            &KiwiTool::FileReadRange {
+                path: "tail.txt".to_string(),
+                start_line: 2,
+                end_line: None,
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                ref content,
+                is_error: false
+            } if content == "2: two\n3: three"
+        ));
+    }
+
+    #[test]
+    fn read_file_range_truncates_at_500_lines() {
+        let dir = temp_repo();
+        let body = (1..=600)
+            .map(|n| format!("line {n}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(dir.path().join("big.txt"), body).unwrap();
+
+        let result = execute_tool(
+            &KiwiTool::FileReadRange {
+                path: "big.txt".to_string(),
+                start_line: 1,
+                end_line: None,
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                ref content,
+                is_error: false,
+            } if content.contains("500: line 500")
+                && content.contains("truncated at 500 lines")
+                && !content.contains("501: line 501")
+        ));
+    }
+
+    #[test]
+    fn read_file_range_errors_when_start_beyond_eof() {
+        let dir = temp_repo();
+        fs::write(dir.path().join("short.txt"), "only\n").unwrap();
+
+        let result = execute_tool(
+            &KiwiTool::FileReadRange {
+                path: "short.txt".to_string(),
+                start_line: 5,
+                end_line: None,
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                is_error: true,
+                ref content,
+            } if content.contains("beyond end of file")
+        ));
+    }
+
+    #[test]
+    fn read_file_range_blocks_path_traversal() {
+        let dir = temp_repo();
+        fs::write(dir.path().join("safe.txt"), "secret\n").unwrap();
+
+        let result = execute_tool(
+            &KiwiTool::FileReadRange {
+                path: "../safe.txt".to_string(),
+                start_line: 1,
+                end_line: None,
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                is_error: true,
+                ref content,
+            } if content.contains("path traversal")
+        ));
+    }
+
+    #[test]
     fn shell_capture_runs_command() {
         let dir = temp_repo();
         let result = execute_tool(
