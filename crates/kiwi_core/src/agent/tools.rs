@@ -1452,6 +1452,23 @@ mod tests {
     }
 
     #[test]
+    fn shell_capture_schema_matches_spec() {
+        let def = ToolRegistry::all()
+            .iter()
+            .find(|tool| tool.id == "shell.capture")
+            .expect("shell.capture must be registered");
+        assert_eq!(
+            def.description,
+            "Run a shell command and return captured stdout/stderr to the agent."
+        );
+        let schema = &def.input_schema;
+        assert_eq!(schema["type"], "object");
+        assert_eq!(schema["required"], json!(["command"]));
+        assert!(schema["properties"]["command"].is_object());
+        assert!(schema["properties"]["timeout_secs"].is_object());
+    }
+
+    #[test]
     fn parse_shell_capture_defaults_timeout() {
         let tool =
             KiwiTool::from_tool_use("shell.capture", &json!({"command": "echo hi"})).unwrap();
@@ -1461,6 +1478,22 @@ mod tests {
                 command,
                 timeout_secs: 30
             } if command == "echo hi"
+        ));
+    }
+
+    #[test]
+    fn parse_shell_capture_clamps_timeout() {
+        let tool = KiwiTool::from_tool_use(
+            "shell.capture",
+            &json!({"command": "echo hi", "timeout_secs": 999}),
+        )
+        .unwrap();
+        assert!(matches!(
+            tool,
+            KiwiTool::ShellCapture {
+                timeout_secs: 120,
+                ..
+            }
         ));
     }
 

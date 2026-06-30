@@ -2117,7 +2117,71 @@ mod tests {
             ExecutionResult::Done {
                 ref content,
                 is_error: false
-            } if content.contains("exit code: 0") && content.contains("hello")
+            } if content.contains("exit code: 0")
+                && content.contains("--- stdout ---")
+                && content.contains("hello")
+        ));
+    }
+
+    #[test]
+    fn shell_capture_includes_stderr_and_nonzero_exit() {
+        let dir = temp_repo();
+        let result = execute_tool(
+            &KiwiTool::ShellCapture {
+                command: "echo out; echo err 1>&2; exit 2".to_string(),
+                timeout_secs: 5,
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                ref content,
+                is_error: true,
+            } if content.contains("exit code: 2")
+                && content.contains("--- stdout ---")
+                && content.contains("out")
+                && content.contains("--- stderr ---")
+                && content.contains("err")
+        ));
+    }
+
+    #[test]
+    fn shell_capture_truncates_large_output() {
+        let dir = temp_repo();
+        let result = execute_tool(
+            &KiwiTool::ShellCapture {
+                command: "python3 -c \"print('x' * 30000)\"".to_string(),
+                timeout_secs: 10,
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                ref content,
+                is_error: false,
+                ..
+            } if content.contains("output truncated at 20000 bytes")
+        ));
+    }
+
+    #[test]
+    fn shell_capture_times_out() {
+        let dir = temp_repo();
+        let result = execute_tool(
+            &KiwiTool::ShellCapture {
+                command: "sleep 3".to_string(),
+                timeout_secs: 1,
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                is_error: true,
+                ref content,
+            } if content.contains("timed out after 1s")
         ));
     }
 
