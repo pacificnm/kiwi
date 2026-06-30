@@ -7,6 +7,7 @@ use std::process::Command;
 
 use serde::Deserialize;
 
+use super::memory_client;
 use super::tools::{GitBranchAction, KiwiTool};
 
 /// Result of executing a `KiwiTool`.
@@ -47,6 +48,7 @@ pub fn execute_tool(tool: &KiwiTool, repo_root: &Path) -> ExecutionResult {
         KiwiTool::GitHubPrs { limit, base } => {
             github_prs(*limit, base.as_deref(), repo_root)
         }
+        KiwiTool::MemorySearch { query, limit } => memory_search(query, *limit),
         KiwiTool::FileSearch { query } => search_files(query, repo_root),
         KiwiTool::FileGrep { query, path } => search_content(query, path.as_deref(), repo_root),
     }
@@ -922,6 +924,19 @@ fn format_github_prs_list(prs: &[GhPrRow]) -> String {
         ));
     }
     out.trim_end().to_string()
+}
+
+fn memory_search(query: &str, limit: u32) -> ExecutionResult {
+    match memory_client::search_project_memory(query, limit) {
+        Ok(text) => ExecutionResult::Done {
+            content: text,
+            is_error: false,
+        },
+        Err(message) => ExecutionResult::Done {
+            content: message,
+            is_error: true,
+        },
+    }
 }
 
 // ---------------------------------------------------------------------------
