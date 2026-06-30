@@ -2361,6 +2361,93 @@ mod tests {
     }
 
     #[test]
+    fn move_file_renames_with_confirmation() {
+        let dir = temp_repo();
+        fs::write(dir.path().join("module.rs"), "pub fn run() {}\n").unwrap();
+
+        let result = execute_tool(
+            &KiwiTool::FileMove {
+                src: "module.rs".to_string(),
+                dest: "src/module.rs".to_string(),
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                is_error: false,
+                ref content,
+            } if content == "Moved 'module.rs' -> 'src/module.rs'."
+        ));
+        assert!(!dir.path().join("module.rs").exists());
+        assert!(dir.path().join("src/module.rs").is_file());
+    }
+
+    #[test]
+    fn move_file_creates_parent_directories() {
+        let dir = temp_repo();
+        fs::write(dir.path().join("flat.txt"), "content\n").unwrap();
+
+        let result = execute_tool(
+            &KiwiTool::FileMove {
+                src: "flat.txt".to_string(),
+                dest: "deep/nested/flat.txt".to_string(),
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                is_error: false,
+                ..
+            }
+        ));
+        assert!(dir.path().join("deep/nested/flat.txt").is_file());
+    }
+
+    #[test]
+    fn move_file_blocks_path_traversal() {
+        let dir = temp_repo();
+        fs::write(dir.path().join("inside.txt"), "data\n").unwrap();
+
+        let result = execute_tool(
+            &KiwiTool::FileMove {
+                src: "inside.txt".to_string(),
+                dest: "../outside.txt".to_string(),
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                is_error: true,
+                ref content,
+            } if content.contains("path traversal")
+        ));
+        assert!(dir.path().join("inside.txt").is_file());
+    }
+
+    #[test]
+    fn move_file_errors_when_source_missing() {
+        let dir = temp_repo();
+
+        let result = execute_tool(
+            &KiwiTool::FileMove {
+                src: "missing.txt".to_string(),
+                dest: "dest.txt".to_string(),
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                is_error: true,
+                ref content,
+            } if content.contains("Source file not found")
+        ));
+    }
+
+    #[test]
     fn move_and_delete_file_work() {
         let dir = temp_repo();
         fs::write(dir.path().join("old.txt"), "data").unwrap();

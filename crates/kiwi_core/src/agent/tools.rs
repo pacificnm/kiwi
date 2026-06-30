@@ -1447,6 +1447,41 @@ mod tests {
     }
 
     #[test]
+    fn file_move_schema_matches_spec() {
+        let def = ToolRegistry::all()
+            .iter()
+            .find(|tool| tool.id == "file.move")
+            .expect("file.move must be registered");
+        assert_eq!(
+            def.description,
+            "Rename or move a file within the repository."
+        );
+        let schema = &def.input_schema;
+        assert_eq!(schema["type"], "object");
+        assert_eq!(schema["required"], json!(["src", "dest"]));
+        assert!(schema["properties"]["src"].is_object());
+        assert!(schema["properties"]["dest"].is_object());
+    }
+
+    #[test]
+    fn parse_file_move_requires_src_and_dest() {
+        let tool =
+            KiwiTool::from_tool_use("file.move", &json!({"src": "old.rs", "dest": "new.rs"}))
+                .unwrap();
+        assert!(matches!(
+            tool,
+            KiwiTool::FileMove { src, dest } if src == "old.rs" && dest == "new.rs"
+        ));
+        assert!(KiwiTool::from_tool_use("file.move", &json!({"src": "old.rs"})).is_err());
+    }
+
+    #[test]
+    fn coding_profile_includes_file_move() {
+        let tools = ToolRegistry::for_profile("coding");
+        assert!(tools.iter().any(|tool| tool.id == "file.move"));
+    }
+
+    #[test]
     fn file_delete_schema_matches_spec() {
         let def = ToolRegistry::all()
             .iter()
