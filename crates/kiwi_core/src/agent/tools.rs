@@ -27,8 +27,24 @@ pub enum GitBranchAction {
 pub enum KiwiTool {
     FileRead { path: String },
     FileWrite { path: String, content: String },
+    FilePatch {
+        path: String,
+        old_str: String,
+        new_str: String,
+    },
+    FileReadRange {
+        path: String,
+        start_line: u32,
+        end_line: Option<u32>,
+    },
+    FileDelete { path: String },
+    FileMove { src: String, dest: String },
     FileList { path: String, depth: u8 },
     ShellRun { command: String },
+    ShellCapture {
+        command: String,
+        timeout_secs: u32,
+    },
     GitStatus,
     GitDiff { path: Option<String> },
     GitCommit {
@@ -41,6 +57,10 @@ pub enum KiwiTool {
     },
     CargoCheck {
         package: Option<String>,
+    },
+    CargoBuild {
+        package: Option<String>,
+        release: bool,
     },
     CargoTest {
         filter: Option<String>,
@@ -120,6 +140,55 @@ fn init_tools() -> Vec<KiwiToolDef> {
             }),
         },
         KiwiToolDef {
+            id: "file.patch",
+            description: "Surgical edit: replace a unique old_str with new_str in a file.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File path relative to repo root."},
+                    "old_str": {"type": "string", "description": "Exact string to find (must be unique in the file)."},
+                    "new_str": {"type": "string", "description": "Replacement string."}
+                },
+                "required": ["path", "old_str", "new_str"]
+            }),
+        },
+        KiwiToolDef {
+            id: "file.read_range",
+            description: "Read a specific line range from a file with line numbers.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File path relative to repo root."},
+                    "start_line": {"type": "integer", "description": "First line to return (1-indexed)."},
+                    "end_line": {"type": "integer", "description": "Last line to return (inclusive). Omit to read to end of file."}
+                },
+                "required": ["path", "start_line"]
+            }),
+        },
+        KiwiToolDef {
+            id: "file.delete",
+            description: "Delete a file from the repository.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File path relative to repo root."}
+                },
+                "required": ["path"]
+            }),
+        },
+        KiwiToolDef {
+            id: "file.move",
+            description: "Rename or move a file within the repository.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "src": {"type": "string", "description": "Current file path relative to repo root."},
+                    "dest": {"type": "string", "description": "Destination path relative to repo root."}
+                },
+                "required": ["src", "dest"]
+            }),
+        },
+        KiwiToolDef {
             id: "file.list",
             description: "List files and directories under a path (up to a given depth).",
             input_schema: json!({
@@ -138,6 +207,18 @@ fn init_tools() -> Vec<KiwiToolDef> {
                 "type": "object",
                 "properties": {
                     "command": {"type": "string", "description": "Shell command to execute."}
+                },
+                "required": ["command"]
+            }),
+        },
+        KiwiToolDef {
+            id: "shell.capture",
+            description: "Run a shell command and return captured stdout/stderr to the agent.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "Shell command to run (executed via sh -c)."},
+                    "timeout_secs": {"type": "integer", "description": "Max seconds to wait (default 30, max 120)."}
                 },
                 "required": ["command"]
             }),
@@ -194,6 +275,17 @@ fn init_tools() -> Vec<KiwiToolDef> {
                         "type": "string",
                         "description": "Limit check to a specific package (optional, runs workspace check by default)."
                     }
+                }
+            }),
+        },
+        KiwiToolDef {
+            id: "cargo.build",
+            description: "Run cargo build in the repository root and return build output.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "package": {"type": "string", "description": "Limit to a specific package (optional)."},
+                    "release": {"type": "boolean", "description": "Build in release mode (default false)."}
                 }
             }),
         },
@@ -311,6 +403,13 @@ pub struct ToolProfile {
     pub allowed: &'static [&'static str],
 }
 
+impl ToolProfile {
+    /// Every pre-defined tool permission profile.
+    pub fn all_profiles() -> &'static [ToolProfile] {
+        TOOL_PROFILES
+    }
+}
+
 /// Tools always exposed to the agent regardless of the active profile.
 const MANDATORY_TOOL_IDS: &[&str] = &["memory.search"];
 
@@ -323,25 +422,29 @@ const TOOL_PROFILES: &[ToolProfile] = &[
         name: "coding",
         allowed: &[
             "file.read",
+            "file.read_range",
             "file.write",
+            "file.patch",
             "file.list",
             "file.search",
             "file.grep",
+            "file.delete",
+            "file.move",
             "shell.run",
+            "shell.capture",
             "git.status",
             "git.diff",
-            "git.branch",
             "git.commit",
             "cargo.check",
+            "cargo.build",
             "cargo.test",
-            "memory.search",
-            "project.context",
         ],
     },
     ToolProfile {
         name: "code_review",
         allowed: &[
             "file.read",
+            "file.read_range",
             "file.search",
             "file.grep",
             "git.diff",
@@ -656,12 +759,33 @@ impl KiwiTool {
                 path: str_field("path")?,
                 content: str_field("content")?,
             }),
+            "file.patch" => Ok(Self::FilePatch {
+                path: str_field("path")?,
+                old_str: str_field("old_str")?,
+                new_str: str_field("new_str")?,
+            }),
+            "file.read_range" => Ok(Self::FileReadRange {
+                path: str_field("path")?,
+                start_line: parse_positive_line_number(input, "start_line")?,
+                end_line: optional_line_number(input, "end_line"),
+            }),
+            "file.delete" => Ok(Self::FileDelete {
+                path: str_field("path")?,
+            }),
+            "file.move" => Ok(Self::FileMove {
+                src: str_field("src")?,
+                dest: str_field("dest")?,
+            }),
             "file.list" => Ok(Self::FileList {
                 path: str_field("path")?,
                 depth: input["depth"].as_u64().unwrap_or(2).min(5) as u8,
             }),
             "shell.run" => Ok(Self::ShellRun {
                 command: str_field("command")?,
+            }),
+            "shell.capture" => Ok(Self::ShellCapture {
+                command: str_field("command")?,
+                timeout_secs: parse_shell_capture_timeout(input),
             }),
             "git.status" => Ok(Self::GitStatus),
             "git.diff" => Ok(Self::GitDiff {
@@ -694,6 +818,10 @@ impl KiwiTool {
             }
             "cargo.check" => Ok(Self::CargoCheck {
                 package: optional_str_field(input, "package"),
+            }),
+            "cargo.build" => Ok(Self::CargoBuild {
+                package: optional_str_field(input, "package"),
+                release: input["release"].as_bool().unwrap_or(false),
             }),
             "cargo.test" => Ok(Self::CargoTest {
                 filter: optional_str_field(input, "filter"),
@@ -749,6 +877,30 @@ fn parse_github_prs_limit(input: &Value) -> u32 {
 
 fn parse_memory_search_limit(input: &Value) -> u32 {
     input["limit"].as_u64().unwrap_or(5).clamp(1, 20) as u32
+}
+
+fn parse_positive_line_number(input: &Value, field: &str) -> Result<u32, ToolParseError> {
+    let line = input[field]
+        .as_u64()
+        .ok_or_else(|| ToolParseError(format!("missing required field '{field}'")))?;
+    if line == 0 {
+        return Err(ToolParseError(format!("'{field}' must be >= 1")));
+    }
+    Ok(line as u32)
+}
+
+fn optional_line_number(input: &Value, field: &str) -> Option<u32> {
+    input[field].as_u64().and_then(|line| {
+        if line == 0 {
+            None
+        } else {
+            Some(line as u32)
+        }
+    })
+}
+
+fn parse_shell_capture_timeout(input: &Value) -> u32 {
+    input["timeout_secs"].as_u64().unwrap_or(30).clamp(1, 120) as u32
 }
 
 #[cfg(test)]
@@ -1033,8 +1185,8 @@ mod tests {
     }
 
     #[test]
-    fn registry_returns_sixteen_tools() {
-        assert_eq!(ToolRegistry::all().len(), 16);
+    fn registry_returns_twenty_two_tools() {
+        assert_eq!(ToolRegistry::all().len(), 22);
     }
 
     #[test]
@@ -1047,18 +1199,43 @@ mod tests {
     }
 
     #[test]
-    fn coding_profile_includes_registered_file_and_git_tools() {
+    fn coding_profile_matches_spec_tool_set() {
         let tools = ToolRegistry::for_profile("coding");
         let ids: Vec<_> = tools.iter().map(|tool| tool.id).collect();
-        assert!(ids.contains(&"file.read"));
-        assert!(ids.contains(&"shell.run"));
-        assert!(ids.contains(&"git.status"));
-        assert!(ids.contains(&"git.commit"));
-        assert!(ids.contains(&"git.branch"));
-        assert!(ids.contains(&"cargo.check"));
-        assert!(ids.contains(&"cargo.test"));
-        assert!(ids.contains(&"memory.search"));
-        assert!(ids.contains(&"project.context"));
+        assert_eq!(
+            ids,
+            vec![
+                "file.read",
+                "file.write",
+                "file.patch",
+                "file.read_range",
+                "file.delete",
+                "file.move",
+                "file.list",
+                "shell.run",
+                "shell.capture",
+                "git.status",
+                "git.diff",
+                "git.commit",
+                "cargo.check",
+                "cargo.build",
+                "cargo.test",
+                "memory.search",
+                "file.search",
+                "file.grep",
+            ]
+        );
+    }
+
+    #[test]
+    fn all_profiles_lists_every_defined_profile() {
+        assert_eq!(ToolProfile::all_profiles().len(), 5);
+        let names: Vec<_> = ToolProfile::all_profiles()
+            .iter()
+            .map(|profile| profile.name)
+            .collect();
+        assert!(names.contains(&"coding"));
+        assert!(names.contains(&"all"));
     }
 
     #[test]
@@ -1105,6 +1282,79 @@ mod tests {
     }
 
     #[test]
+    fn parse_file_patch_requires_unique_fields() {
+        let tool = KiwiTool::from_tool_use(
+            "file.patch",
+            &json!({"path": "src/main.rs", "old_str": "foo", "new_str": "bar"}),
+        )
+        .unwrap();
+        assert!(matches!(
+            tool,
+            KiwiTool::FilePatch {
+                path,
+                old_str,
+                new_str
+            } if path == "src/main.rs" && old_str == "foo" && new_str == "bar"
+        ));
+    }
+
+    #[test]
+    fn parse_file_read_range_optional_end_line() {
+        let tool = KiwiTool::from_tool_use(
+            "file.read_range",
+            &json!({"path": "src/lib.rs", "start_line": 10, "end_line": 20}),
+        )
+        .unwrap();
+        assert!(matches!(
+            tool,
+            KiwiTool::FileReadRange {
+                start_line: 10,
+                end_line: Some(20),
+                ..
+            }
+        ));
+
+        let tool = KiwiTool::from_tool_use(
+            "file.read_range",
+            &json!({"path": "src/lib.rs", "start_line": 1}),
+        )
+        .unwrap();
+        assert!(matches!(
+            tool,
+            KiwiTool::FileReadRange {
+                start_line: 1,
+                end_line: None,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_shell_capture_defaults_timeout() {
+        let tool =
+            KiwiTool::from_tool_use("shell.capture", &json!({"command": "echo hi"})).unwrap();
+        assert!(matches!(
+            tool,
+            KiwiTool::ShellCapture {
+                command,
+                timeout_secs: 30
+            } if command == "echo hi"
+        ));
+    }
+
+    #[test]
+    fn parse_cargo_build_optional_release() {
+        let tool = KiwiTool::from_tool_use("cargo.build", &json!({"release": true})).unwrap();
+        assert!(matches!(
+            tool,
+            KiwiTool::CargoBuild {
+                release: true,
+                package: None
+            }
+        ));
+    }
+
+    #[test]
     fn parse_project_context_accepts_empty_input() {
         let tool = KiwiTool::from_tool_use("project.context", &json!({})).unwrap();
         assert!(matches!(tool, KiwiTool::ProjectContext));
@@ -1127,7 +1377,7 @@ mod tests {
     #[test]
     fn openai_adapter_uses_function_type() {
         let schemas = tools_for_openai(ToolRegistry::all());
-        assert_eq!(schemas.len(), 16);
+        assert_eq!(schemas.len(), 22);
         let first = serde_json::to_value(&schemas[0]).unwrap();
         assert_eq!(first["type"], "function");
         assert_eq!(first["function"]["name"], "file_read");

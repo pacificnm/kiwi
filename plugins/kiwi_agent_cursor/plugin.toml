@@ -10,6 +10,7 @@ mode = "api"
 provider = "cursor"
 model = "cursor-small"
 api_key_env = "CURSOR_API_KEY"
+# tool_profile = "coding"  # file.patch, shell.capture, cargo.test, memory.search, ...
 
 [install]
 kind = "copy"
