@@ -7,6 +7,7 @@
 //! All implementations spawn a background thread and fire `AppEvent` variants into the `EventSender`.
 
 use std::collections::BTreeMap;
+use std::error::Error;
 use std::io::BufRead;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -16,9 +17,9 @@ use serde_json::{Map, Value};
 
 use crate::agent::tools::{
     kiwi_tool_id_from_openai, normalize_tool_arguments, normalize_tool_arguments_json,
-    ollama_split_models, ollama_supports_tools, ollama_uses_native_tool_calls,
-    openai_tool_name, parse_ollama_content_tool_calls, tools_for_claude, tools_for_ollama,
-    tools_for_openai, OpenAiToolSchema, ToolRegistry,
+    ollama_supports_tools, ollama_uses_native_tool_calls, openai_tool_name,
+    parse_ollama_content_tool_calls, tools_for_claude, tools_for_ollama, tools_for_openai,
+    OpenAiToolSchema, ToolRegistry,
 };
 use crate::agent::{AgentId, ChatMessage, ContentBlock, MessageRole};
 use crate::config::ProviderSettings;
@@ -28,6 +29,43 @@ use super::stream_event::{ApiStreamEvent, ContentBlockStart, ContentDelta};
 
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
+const DEFAULT_OLLAMA_API_URL: &str = "http://127.0.0.1:11434";
+const OLLAMA_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Normalize user/config Ollama base URLs for reliable local connections.
+pub fn normalize_ollama_api_url(api_url: &str) -> String {
+    let trimmed = api_url.trim();
+    if trimmed.is_empty() {
+        return DEFAULT_OLLAMA_API_URL.to_string();
+    }
+    let with_scheme = if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        trimmed.to_string()
+    } else {
+        format!("http://{trimmed}")
+    };
+    with_scheme
+        .replace("://localhost:", "://127.0.0.1:")
+        .replace("://localhost/", "://127.0.0.1/")
+        .replace("://localhost", "://127.0.0.1")
+}
+
+fn ollama_http_client() -> Result<reqwest::blocking::Client, String> {
+    reqwest::blocking::Client::builder()
+        .no_proxy()
+        .connect_timeout(OLLAMA_CONNECT_TIMEOUT)
+        .build()
+        .map_err(|e| format!("failed to build Ollama HTTP client: {e}"))
+}
+
+fn format_reqwest_error(url: &str, err: reqwest::Error) -> String {
+    let mut detail = err.to_string();
+    let mut source = err.source();
+    while let Some(cause) = source {
+        detail.push_str(&format!(" ({cause})"));
+        source = cause.source();
+    }
+    format!("Ollama request failed for {url}: {detail}")
+}
 const OPENAI_API_URL: &str = "https://api.openai.com/v1/chat/completions";
 const CURSOR_API_URL: &str = "https://api.cursor.sh/v1/chat/completions";
 const DEFAULT_MAX_TOKENS: u32 = 8192;
@@ -111,53 +149,29 @@ pub struct OllamaStreamPlan {
     pub history_format: OllamaHistoryFormat,
 }
 
-/// Pick orchestration vs synthesis model for split Ollama setups.
+/// Pick model and tool settings for one Ollama stream request.
+///
+/// Always uses `settings.model` — split `tool_model` / `code_model` configs are
+/// ignored so only one chat model is loaded in Ollama at a time.
 pub fn resolve_ollama_stream(
     settings: &ProviderSettings,
-    messages: &[ChatMessage],
+    _messages: &[ChatMessage],
     tool_profile: &str,
 ) -> OllamaStreamPlan {
-    let tool_model = settings
-        .tool_model
-        .as_deref()
-        .unwrap_or(settings.model.as_str());
-    let code_model = settings
-        .code_model
-        .as_deref()
-        .unwrap_or(settings.model.as_str());
-
-    if ollama_split_models(settings) && messages_end_with_tool_result(messages) {
-        return OllamaStreamPlan {
-            model: code_model.to_string(),
-            include_tools: false,
-            history_format: OllamaHistoryFormat::ContentJson,
-        };
-    }
-
+    let model = settings.model.as_str();
     let tools = tools_for_ollama(tool_profile);
-    let include_tools = ollama_supports_tools(tool_model) && !tools.is_empty();
-    let history_format = if ollama_uses_native_tool_calls(tool_model) {
+    let include_tools = ollama_supports_tools(model) && !tools.is_empty();
+    let history_format = if ollama_uses_native_tool_calls(model) {
         OllamaHistoryFormat::NativeToolCalls
     } else {
         OllamaHistoryFormat::ContentJson
     };
 
     OllamaStreamPlan {
-        model: tool_model.to_string(),
+        model: model.to_string(),
         include_tools,
         history_format,
     }
-}
-
-fn messages_end_with_tool_result(messages: &[ChatMessage]) -> bool {
-    let Some(last) = messages.last() else {
-        return false;
-    };
-    last.role == MessageRole::User
-        && last
-            .blocks
-            .iter()
-            .any(|block| matches!(block, ContentBlock::ToolResult(_)))
 }
 
 /// Spawn a background thread that streams an Ollama chat turn and fires events.
@@ -202,7 +216,8 @@ fn run_ollama_stream(
     cancel: &StreamCancelHandle,
     sender: &EventSender,
 ) -> Result<(), String> {
-    let url = format!("{}/api/chat", api_url.trim_end_matches('/'));
+    let api_url = normalize_ollama_api_url(api_url);
+    let url = format!("{api_url}/api/chat");
     let tools = tools_for_ollama(tool_profile);
     let include_tools = plan.include_tools && !tools.is_empty();
     let body = build_ollama_request_body(
@@ -213,13 +228,13 @@ fn run_ollama_stream(
         plan.history_format,
     );
 
-    let client = reqwest::blocking::Client::new();
+    let client = ollama_http_client()?;
     let response = client
         .post(&url)
         .header("content-type", "application/json")
         .json(&body)
         .send()
-        .map_err(|e| format!("Ollama request failed: {e} — is Ollama running?"))?;
+        .map_err(|e| format_reqwest_error(&url, e))?;
 
     if !response.status().is_success() {
         let status = response.status().as_u16();
@@ -356,21 +371,11 @@ fn emit_ollama_tool_calls(
             .and_then(|id| id.as_str())
             .map(str::to_owned)
             .unwrap_or_else(|| format!("ollama_call_{index}"));
-        emit_ollama_tool_call_start(
-            agent_id,
-            &tool_use_id,
-            wire_name,
-            &arguments,
-            sender,
-        );
+        emit_ollama_tool_call_start(agent_id, &tool_use_id, wire_name, &arguments, sender);
     }
 }
 
-fn emit_ollama_content_tool_calls(
-    agent_id: AgentId,
-    content: &str,
-    sender: &EventSender,
-) -> bool {
+fn emit_ollama_content_tool_calls(agent_id: AgentId, content: &str, sender: &EventSender) -> bool {
     let calls: Vec<_> = parse_ollama_content_tool_calls(content)
         .into_iter()
         .filter(|call| kiwi_tool_id_from_openai(&call.wire_name).is_some())
@@ -382,13 +387,7 @@ fn emit_ollama_content_tool_calls(
         let input_json = serde_json::to_string(&normalize_tool_arguments(call.arguments.clone()))
             .unwrap_or_else(|_| "{}".to_string());
         let tool_use_id = format!("ollama_content_call_{index}");
-        emit_ollama_tool_call_start(
-            agent_id,
-            &tool_use_id,
-            &call.wire_name,
-            &input_json,
-            sender,
-        );
+        emit_ollama_tool_call_start(agent_id, &tool_use_id, &call.wire_name, &input_json, sender);
     }
     true
 }
@@ -1271,8 +1270,8 @@ fn build_request_body<'a>(
                         serde_json::from_str(&tool.input_json)
                             .unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
                     );
-                    let kiwi_name = kiwi_tool_id_from_openai(&tool.name)
-                        .unwrap_or(tool.name.as_str());
+                    let kiwi_name =
+                        kiwi_tool_id_from_openai(&tool.name).unwrap_or(tool.name.as_str());
                     content.push(ApiContent::ToolUse {
                         id: tool.id.clone(),
                         name: openai_tool_name(kiwi_name),
@@ -1507,7 +1506,10 @@ mod tests {
         let assistant = &json["messages"][1];
         assert!(assistant["tool_calls"].is_null() || assistant["tool_calls"].as_array().is_none());
         let content = assistant["content"].as_str().expect("assistant content");
-        assert!(content.contains("\"name\":\"cargo_check\"") || content.contains("\"name\": \"cargo_check\""));
+        assert!(
+            content.contains("\"name\":\"cargo_check\"")
+                || content.contains("\"name\": \"cargo_check\"")
+        );
         assert_eq!(json["messages"][2]["tool_name"], "cargo_check");
         let tool_names: Vec<_> = json["tools"]
             .as_array()
@@ -1557,13 +1559,13 @@ mod tests {
     }
 
     #[test]
-    fn resolve_ollama_stream_split_mode_picks_models_by_phase() {
+    fn resolve_ollama_stream_uses_single_model_for_all_phases() {
         use crate::config::ProviderSettings;
 
         let settings = ProviderSettings {
             api_key_env: String::new(),
             api_key: None,
-            model: "qwen2.5-coder:7b".to_string(),
+            model: "gpt-oss:20b".to_string(),
             api_url: Some("http://localhost:11434".to_string()),
             tool_profile: None,
             tool_model: Some("llama3.1:8b".to_string()),
@@ -1576,9 +1578,12 @@ mod tests {
             blocks: vec![ContentBlock::Text("run cargo check".to_string())],
         }];
         let orchestrate = resolve_ollama_stream(&settings, &user_only, "coding");
-        assert_eq!(orchestrate.model, "llama3.1:8b");
+        assert_eq!(orchestrate.model, "gpt-oss:20b");
         assert!(orchestrate.include_tools);
-        assert_eq!(orchestrate.history_format, OllamaHistoryFormat::NativeToolCalls);
+        assert_eq!(
+            orchestrate.history_format,
+            OllamaHistoryFormat::NativeToolCalls
+        );
 
         let after_tool = vec![
             user_only[0].clone(),
@@ -1598,10 +1603,10 @@ mod tests {
                 ))],
             },
         ];
-        let synthesize = resolve_ollama_stream(&settings, &after_tool, "coding");
-        assert_eq!(synthesize.model, "qwen2.5-coder:7b");
-        assert!(!synthesize.include_tools);
-        assert_eq!(synthesize.history_format, OllamaHistoryFormat::ContentJson);
+        let after = resolve_ollama_stream(&settings, &after_tool, "coding");
+        assert_eq!(after.model, "gpt-oss:20b");
+        assert!(after.include_tools);
+        assert_eq!(after.history_format, OllamaHistoryFormat::NativeToolCalls);
     }
 
     #[test]
@@ -1763,11 +1768,9 @@ mod tests {
             assert_eq!(tool_name, "cargo.check");
             assert_eq!(input_json, "{}");
         }
-        assert!(
-            !events
-                .iter()
-                .any(|e| matches!(e, AppEvent::AgentTurnComplete { .. }))
-        );
+        assert!(!events
+            .iter()
+            .any(|e| matches!(e, AppEvent::AgentTurnComplete { .. })));
     }
 
     #[test]
@@ -1803,6 +1806,142 @@ mod tests {
             .expect("tool result message");
         assert_eq!(tool_msg.tool_call_id.as_deref(), Some("call_1"));
         assert_eq!(tool_msg.tool_name.as_deref(), Some("cargo_check"));
+    }
+
+    #[test]
+    fn normalize_ollama_api_url_maps_localhost_to_loopback() {
+        assert_eq!(
+            normalize_ollama_api_url("http://localhost:11434"),
+            "http://127.0.0.1:11434"
+        );
+        assert_eq!(normalize_ollama_api_url(""), "http://127.0.0.1:11434");
+        assert_eq!(
+            normalize_ollama_api_url("127.0.0.1:11434"),
+            "http://127.0.0.1:11434"
+        );
+    }
+
+    /// Integration test — requires local Ollama with gpt-oss:20b.
+    #[test]
+    #[ignore]
+    fn live_ollama_after_tool_result() {
+        use crate::agent::{AgentId, ChatMessage, ContentBlock, MessageRole, ToolResult, ToolUse};
+        use crate::config::ProviderSettings;
+        use crate::events::EventChannel;
+
+        let mut channel = EventChannel::new();
+        let sender = channel.sender();
+        let id = AgentId::from_u32(1);
+        let cancel = StreamCancelHandle::default();
+
+        let messages = vec![
+            ChatMessage {
+                role: MessageRole::User,
+                blocks: vec![ContentBlock::Text("run cargo check".to_string())],
+            },
+            ChatMessage {
+                role: MessageRole::Assistant,
+                blocks: vec![ContentBlock::ToolUse(ToolUse::new(
+                    "call_1".to_string(),
+                    "cargo.check".to_string(),
+                    "{}".to_string(),
+                ))],
+            },
+            ChatMessage {
+                role: MessageRole::User,
+                blocks: vec![ContentBlock::ToolResult(ToolResult::ok(
+                    "call_1".to_string(),
+                    "Finished dev".to_string(),
+                ))],
+            },
+        ];
+
+        let settings = ProviderSettings {
+            api_key_env: String::new(),
+            api_key: None,
+            model: "gpt-oss:20b".to_string(),
+            api_url: Some("http://localhost:11434".to_string()),
+            tool_profile: None,
+            tool_model: None,
+            code_model: None,
+            embedding_model: None,
+        };
+        let plan = resolve_ollama_stream(&settings, &messages, "coding");
+
+        let handle = spawn_ollama_stream(
+            id,
+            "http://localhost:11434".to_string(),
+            plan,
+            messages,
+            "coding".to_string(),
+            cancel,
+            sender,
+        );
+        handle.join().expect("stream thread panicked");
+
+        let events = channel.drain_coalesced();
+        for event in &events {
+            eprintln!("{event:?}");
+        }
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, AppEvent::AgentApiError { .. })),
+            "ollama follow-up stream should not error"
+        );
+    }
+
+    /// Integration test — requires local Ollama with gpt-oss:20b.
+    #[test]
+    #[ignore]
+    fn live_ollama_coding_profile() {
+        use crate::agent::{AgentId, ChatMessage, ContentBlock, MessageRole};
+        use crate::config::ProviderSettings;
+        use crate::events::EventChannel;
+
+        let mut channel = EventChannel::new();
+        let sender = channel.sender();
+        let id = AgentId::from_u32(1);
+        let cancel = StreamCancelHandle::default();
+
+        let messages = vec![ChatMessage {
+            role: MessageRole::User,
+            blocks: vec![ContentBlock::Text("Say exactly: hello".to_string())],
+        }];
+
+        let settings = ProviderSettings {
+            api_key_env: String::new(),
+            api_key: None,
+            model: "gpt-oss:20b".to_string(),
+            api_url: Some("http://localhost:11434".to_string()),
+            tool_profile: None,
+            tool_model: None,
+            code_model: None,
+            embedding_model: None,
+        };
+        let plan = resolve_ollama_stream(&settings, &messages, "coding");
+
+        let handle = spawn_ollama_stream(
+            id,
+            "http://localhost:11434".to_string(),
+            plan,
+            messages,
+            "coding".to_string(),
+            cancel,
+            sender,
+        );
+        handle.join().expect("stream thread panicked");
+
+        let events = channel.drain_coalesced();
+        for event in &events {
+            eprintln!("{event:?}");
+        }
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, AppEvent::AgentApiError { .. })),
+            "ollama stream should not error"
+        );
     }
 
     /// Integration test — requires ANTHROPIC_API_KEY in the environment.

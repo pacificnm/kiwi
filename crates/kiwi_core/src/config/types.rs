@@ -513,15 +513,14 @@ impl RawConfig {
                     if let Some(v) = &section.tool_profile {
                         entry.tool_profile = Some(v.clone());
                     }
-                    if let Some(v) = &section.tool_model {
-                        entry.tool_model = Some(v.clone());
-                    }
-                    if let Some(v) = &section.code_model {
-                        entry.code_model = Some(v.clone());
-                    }
                     if let Some(v) = &section.embedding_model {
                         entry.embedding_model = Some(v.clone());
                     }
+                }
+                // Ollama uses a single chat model; ignore legacy split-model fields.
+                if let Some(ollama) = resolved.agent.providers.get_mut("ollama") {
+                    ollama.tool_model = None;
+                    ollama.code_model = None;
                 }
             }
             // Legacy flat fields — only migrate non-key fields (api_key_env, model, api_url)
