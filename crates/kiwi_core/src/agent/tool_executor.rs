@@ -1,8 +1,11 @@
 //! Synchronous tool executor — runs locally on a background thread for the native-chat agent.
 
 use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use serde::Deserialize;
 
 use super::tools::{GitBranchAction, KiwiTool};
 
@@ -36,6 +39,11 @@ pub fn execute_tool(tool: &KiwiTool, repo_root: &Path) -> ExecutionResult {
         KiwiTool::CargoTest { filter, package } => {
             cargo_test(filter.as_deref(), package.as_deref(), repo_root)
         }
+        KiwiTool::GitHubIssues {
+            limit,
+            label,
+            milestone,
+        } => github_issues(*limit, label.as_deref(), milestone.as_deref(), repo_root),
         KiwiTool::FileSearch { query } => search_files(query, repo_root),
         KiwiTool::FileGrep { query, path } => search_content(query, path.as_deref(), repo_root),
     }
@@ -697,6 +705,129 @@ fn search_content(query: &str, path: Option<&str>, repo_root: &Path) -> Executio
     }
 }
 
+const GH_COMMAND: &str = "gh";
+
+#[derive(Debug, Deserialize)]
+struct GhIssueRow {
+    number: u32,
+    title: String,
+    state: String,
+    labels: Vec<GhLabelRow>,
+    milestone: Option<GhMilestoneRow>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GhLabelRow {
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GhMilestoneRow {
+    title: String,
+}
+
+fn github_issues(
+    limit: u32,
+    label: Option<&str>,
+    milestone: Option<&str>,
+    repo_root: &Path,
+) -> ExecutionResult {
+    let limit_str = limit.to_string();
+    let mut args = vec![
+        "issue",
+        "list",
+        "--json",
+        "number,title,state,labels,milestone",
+        "--limit",
+        limit_str.as_str(),
+    ];
+    if let Some(label) = label {
+        args.push("--label");
+        args.push(label);
+    }
+    if let Some(milestone) = milestone {
+        args.push("--milestone");
+        args.push(milestone);
+    }
+
+    let output = Command::new(GH_COMMAND)
+        .args(&args)
+        .current_dir(repo_root)
+        .output();
+
+    match output {
+        Err(err) if err.kind() == ErrorKind::NotFound => ExecutionResult::Done {
+            content: format!("GitHub CLI ({GH_COMMAND}) not found on PATH"),
+            is_error: true,
+        },
+        Err(err) => ExecutionResult::Done {
+            content: format!("Failed to run `{GH_COMMAND} issue list`: {err}"),
+            is_error: true,
+        },
+        Ok(result) if !result.status.success() => {
+            let stderr = String::from_utf8_lossy(&result.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&result.stdout).trim().to_string();
+            let message = if !stderr.is_empty() {
+                stderr
+            } else if !stdout.is_empty() {
+                stdout
+            } else {
+                "gh issue list failed".to_string()
+            };
+            ExecutionResult::Done {
+                content: message,
+                is_error: true,
+            }
+        }
+        Ok(result) => match serde_json::from_slice::<Vec<GhIssueRow>>(&result.stdout) {
+            Ok(issues) => ExecutionResult::Done {
+                content: format_github_issues_list(&issues),
+                is_error: false,
+            },
+            Err(err) => {
+                let raw = String::from_utf8_lossy(&result.stdout).into_owned();
+                ExecutionResult::Done {
+                    content: format!(
+                        "parse_error: true\nInvalid gh issue JSON: {err}\n\nRaw output:\n{raw}"
+                    ),
+                    is_error: true,
+                }
+            }
+        },
+    }
+}
+
+fn format_github_issues_list(issues: &[GhIssueRow]) -> String {
+    if issues.is_empty() {
+        return "No issues found.".to_string();
+    }
+
+    let mut out = format!("GitHub issues ({}):\n", issues.len());
+    for (index, issue) in issues.iter().enumerate() {
+        let labels: Vec<_> = issue.labels.iter().map(|label| label.name.as_str()).collect();
+        let labels_part = if labels.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}]", labels.join(", "))
+        };
+        let milestone_part = issue
+            .milestone
+            .as_ref()
+            .map(|milestone| format!(" (milestone: {})", milestone.title))
+            .unwrap_or_default();
+        out.push_str(&format!(
+            "{}. #{} [{}] {}{}{}\n",
+            index + 1,
+            issue.number,
+            issue.state,
+            issue.title,
+            labels_part,
+            milestone_part
+        ));
+    }
+    out.trim_end().to_string()
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -1116,5 +1247,51 @@ mod tests {
         assert!(
             matches!(result, ExecutionResult::Done { ref content, is_error: false } if content.contains("1 passed"))
         );
+    }
+
+    #[test]
+    fn format_github_issues_list_renders_numbered_entries() {
+        let issues = vec![
+            GhIssueRow {
+                number: 42,
+                title: "Fix bug".to_string(),
+                state: "OPEN".to_string(),
+                labels: vec![GhLabelRow {
+                    name: "bug".to_string(),
+                }],
+                milestone: Some(GhMilestoneRow {
+                    title: "M1".to_string(),
+                }),
+            },
+            GhIssueRow {
+                number: 7,
+                title: "Docs".to_string(),
+                state: "OPEN".to_string(),
+                labels: vec![],
+                milestone: None,
+            },
+        ];
+
+        let formatted = format_github_issues_list(&issues);
+        assert!(formatted.contains("GitHub issues (2):"));
+        assert!(formatted.contains("1. #42 [OPEN] Fix bug [bug] (milestone: M1)"));
+        assert!(formatted.contains("2. #7 [OPEN] Docs"));
+    }
+
+    #[test]
+    fn format_github_issues_list_empty_returns_message() {
+        assert_eq!(format_github_issues_list(&[]), "No issues found.");
+    }
+
+    #[test]
+    fn github_issues_parse_failure_includes_raw_json() {
+        let issues: Result<Vec<GhIssueRow>, _> = serde_json::from_slice(b"{not json}");
+        let err = issues.expect_err("invalid json");
+        let raw = "{not json}".to_string();
+        let content = format!(
+            "parse_error: true\nInvalid gh issue JSON: {err}\n\nRaw output:\n{raw}"
+        );
+        assert!(content.contains("parse_error: true"));
+        assert!(content.contains("{not json}"));
     }
 }
