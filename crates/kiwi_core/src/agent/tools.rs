@@ -59,6 +59,7 @@ pub enum KiwiTool {
         query: String,
         limit: u32,
     },
+    ProjectContext,
     FileSearch { query: String },
     FileGrep { query: String, path: Option<String> },
 }
@@ -270,6 +271,14 @@ fn init_tools() -> Vec<KiwiToolDef> {
             }),
         },
         KiwiToolDef {
+            id: "project.context",
+            description: "Return a structured overview of the repository: branch, recent commits, directory layout, and key config files.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {}
+            }),
+        },
+        KiwiToolDef {
             id: "file.search",
             description: "Find files whose names contain a given substring.",
             input_schema: json!({
@@ -326,6 +335,7 @@ const TOOL_PROFILES: &[ToolProfile] = &[
             "cargo.check",
             "cargo.test",
             "memory.search",
+            "project.context",
         ],
     },
     ToolProfile {
@@ -702,6 +712,7 @@ impl KiwiTool {
                 query: str_field("query")?,
                 limit: parse_memory_search_limit(input),
             }),
+            "project.context" => Ok(Self::ProjectContext),
             "file.search" => Ok(Self::FileSearch {
                 query: str_field("query")?,
             }),
@@ -1022,8 +1033,8 @@ mod tests {
     }
 
     #[test]
-    fn registry_returns_fifteen_tools() {
-        assert_eq!(ToolRegistry::all().len(), 15);
+    fn registry_returns_sixteen_tools() {
+        assert_eq!(ToolRegistry::all().len(), 16);
     }
 
     #[test]
@@ -1047,6 +1058,7 @@ mod tests {
         assert!(ids.contains(&"cargo.check"));
         assert!(ids.contains(&"cargo.test"));
         assert!(ids.contains(&"memory.search"));
+        assert!(ids.contains(&"project.context"));
     }
 
     #[test]
@@ -1087,6 +1099,18 @@ mod tests {
     }
 
     #[test]
+    fn planner_profile_includes_project_context() {
+        let tools = ToolRegistry::for_profile("planner");
+        assert!(tools.iter().any(|tool| tool.id == "project.context"));
+    }
+
+    #[test]
+    fn parse_project_context_accepts_empty_input() {
+        let tool = KiwiTool::from_tool_use("project.context", &json!({})).unwrap();
+        assert!(matches!(tool, KiwiTool::ProjectContext));
+    }
+
+    #[test]
     fn unknown_profile_falls_back_to_all() {
         assert_eq!(
             ToolRegistry::for_profile("nonexistent").len(),
@@ -1103,7 +1127,7 @@ mod tests {
     #[test]
     fn openai_adapter_uses_function_type() {
         let schemas = tools_for_openai(ToolRegistry::all());
-        assert_eq!(schemas.len(), 15);
+        assert_eq!(schemas.len(), 16);
         let first = serde_json::to_value(&schemas[0]).unwrap();
         assert_eq!(first["type"], "function");
         assert_eq!(first["function"]["name"], "file_read");
