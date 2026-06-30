@@ -3,7 +3,7 @@ use crate::ollama::ChatMessage;
 const MAX_HISTORY_TURNS: usize = 20;
 
 const SYSTEM_PROMPT: &str = "\
-You are qwen2.5-coder, an expert programming assistant embedded in Kiwi, a terminal AI workspace.
+You are an expert programming assistant embedded in Kiwi, a terminal AI workspace.
 
 When you begin reasoning about a problem, output a line starting with \"thinking: \" followed by what you are considering.
 When you search code, read files, or take any action, output a line starting with \"running tool: \" followed by a brief description.

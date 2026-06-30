@@ -102,7 +102,7 @@ fn run() -> Result<()> {
         .model
         .clone()
         .or_else(|| std::env::var("OLLAMA_MODEL").ok())
-        .unwrap_or_else(|| "qwen2.5-coder".to_string());
+        .unwrap_or_else(|| "gpt-oss:20b".to_string());
 
     let mut client = OllamaClient::new(url.clone(), model.clone(), String::new());
     client
