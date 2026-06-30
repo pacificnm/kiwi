@@ -1447,6 +1447,32 @@ mod tests {
     }
 
     #[test]
+    fn file_delete_schema_matches_spec() {
+        let def = ToolRegistry::all()
+            .iter()
+            .find(|tool| tool.id == "file.delete")
+            .expect("file.delete must be registered");
+        assert_eq!(def.description, "Delete a file from the repository.");
+        let schema = &def.input_schema;
+        assert_eq!(schema["type"], "object");
+        assert_eq!(schema["required"], json!(["path"]));
+        assert!(schema["properties"]["path"].is_object());
+    }
+
+    #[test]
+    fn parse_file_delete_requires_path() {
+        let tool = KiwiTool::from_tool_use("file.delete", &json!({"path": "src/old.rs"})).unwrap();
+        assert!(matches!(tool, KiwiTool::FileDelete { path } if path == "src/old.rs"));
+        assert!(KiwiTool::from_tool_use("file.delete", &json!({})).is_err());
+    }
+
+    #[test]
+    fn coding_profile_includes_file_delete() {
+        let tools = ToolRegistry::for_profile("coding");
+        assert!(tools.iter().any(|tool| tool.id == "file.delete"));
+    }
+
+    #[test]
     fn parse_file_read_range_optional_end_line() {
         let tool = KiwiTool::from_tool_use(
             "file.read_range",
