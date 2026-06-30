@@ -4,6 +4,9 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 
 use serde::Deserialize;
 
@@ -24,10 +27,24 @@ pub fn execute_tool(tool: &KiwiTool, repo_root: &Path) -> ExecutionResult {
     match tool {
         KiwiTool::FileRead { path } => read_file(path, repo_root),
         KiwiTool::FileWrite { path, content } => write_file(path, content, repo_root),
+        KiwiTool::FilePatch { path, old_str, new_str } => {
+            patch_file(path, old_str, new_str, repo_root)
+        }
+        KiwiTool::FileReadRange {
+            path,
+            start_line,
+            end_line,
+        } => read_file_range(path, *start_line, *end_line, repo_root),
+        KiwiTool::FileDelete { path } => delete_file(path, repo_root),
+        KiwiTool::FileMove { src, dest } => move_file(src, dest, repo_root),
         KiwiTool::FileList { path, depth } => list_directory(path, *depth, repo_root),
         KiwiTool::ShellRun { command } => ExecutionResult::ShellRun {
             command: command.clone(),
         },
+        KiwiTool::ShellCapture {
+            command,
+            timeout_secs,
+        } => shell_capture(command, *timeout_secs, repo_root),
         KiwiTool::GitStatus => git_status(repo_root),
         KiwiTool::GitDiff { path } => git_diff(path.as_deref(), repo_root),
         KiwiTool::GitCommit { message, stage_all } => {
@@ -37,6 +54,9 @@ pub fn execute_tool(tool: &KiwiTool, repo_root: &Path) -> ExecutionResult {
             git_branch(*action, name.as_deref(), repo_root)
         }
         KiwiTool::CargoCheck { package } => cargo_check(package.as_deref(), repo_root),
+        KiwiTool::CargoBuild { package, release } => {
+            cargo_build(package.as_deref(), *release, repo_root)
+        }
         KiwiTool::CargoTest { filter, package } => {
             cargo_test(filter.as_deref(), package.as_deref(), repo_root)
         }
@@ -79,7 +99,10 @@ fn safe_join(repo_root: &Path, relative: &str) -> Result<PathBuf, String> {
 
 const MAX_FILE_BYTES: usize = 100_000; // 100 KB read limit
 const MAX_CARGO_OUTPUT_BYTES: usize = 10_000; // 10 KB cargo check limit
+const MAX_CARGO_BUILD_OUTPUT_BYTES: usize = 20_000; // 20 KB cargo build limit
 const MAX_CARGO_TEST_OUTPUT_BYTES: usize = 20_000; // 20 KB cargo test limit
+const MAX_SHELL_CAPTURE_OUTPUT_BYTES: usize = 20_000; // 20 KB shell.capture limit
+const MAX_READ_RANGE_LINES: u32 = 500;
 const MAX_SEARCH_RESULTS: usize = 100;
 
 fn read_file(path: &str, repo_root: &Path) -> ExecutionResult {
@@ -140,6 +163,297 @@ fn write_file(path: &str, content: &str, repo_root: &Path) -> ExecutionResult {
         },
         Err(e) => ExecutionResult::Done {
             content: format!("Cannot write '{path}': {e}"),
+            is_error: true,
+        },
+    }
+}
+
+fn patch_file(path: &str, old_str: &str, new_str: &str, repo_root: &Path) -> ExecutionResult {
+    let full = match safe_join(repo_root, path) {
+        Ok(p) => p,
+        Err(e) => {
+            return ExecutionResult::Done {
+                content: e,
+                is_error: true,
+            }
+        }
+    };
+
+    let content = match fs::read_to_string(&full) {
+        Ok(content) => content,
+        Err(e) => {
+            return ExecutionResult::Done {
+                content: format!("Cannot read '{path}': {e}"),
+                is_error: true,
+            }
+        }
+    };
+
+    let matches: Vec<_> = content.match_indices(old_str).collect();
+    match matches.len() {
+        0 => ExecutionResult::Done {
+            content: format!(
+                "old_str not found in '{path}'. Re-read the file to get the exact text to replace."
+            ),
+            is_error: true,
+        },
+        1 => {
+            let (byte_index, _) = matches[0];
+            let line_number = content[..byte_index].bytes().filter(|&b| b == b'\n').count() + 1;
+            let updated = format!(
+                "{}{}{}",
+                &content[..byte_index],
+                new_str,
+                &content[byte_index + old_str.len()..]
+            );
+            match fs::write(&full, &updated) {
+                Ok(()) => ExecutionResult::Done {
+                    content: format!("Patched '{path}' at line {line_number}."),
+                    is_error: false,
+                },
+                Err(e) => ExecutionResult::Done {
+                    content: format!("Cannot write '{path}': {e}"),
+                    is_error: true,
+                },
+            }
+        }
+        count => ExecutionResult::Done {
+            content: format!(
+                "old_str matches {count} times in '{path}'. Include more surrounding context to make it unique."
+            ),
+            is_error: true,
+        },
+    }
+}
+
+fn read_file_range(
+    path: &str,
+    start_line: u32,
+    end_line: Option<u32>,
+    repo_root: &Path,
+) -> ExecutionResult {
+    let full = match safe_join(repo_root, path) {
+        Ok(p) => p,
+        Err(e) => {
+            return ExecutionResult::Done {
+                content: e,
+                is_error: true,
+            }
+        }
+    };
+
+    let content = match fs::read_to_string(&full) {
+        Ok(content) => content,
+        Err(e) => {
+            return ExecutionResult::Done {
+                content: format!("Cannot read '{path}': {e}"),
+                is_error: true,
+            }
+        }
+    };
+
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.is_empty() {
+        return ExecutionResult::Done {
+            content: format!("'{path}' is empty."),
+            is_error: true,
+        };
+    }
+
+    let start_idx = (start_line - 1) as usize;
+    if start_idx >= lines.len() {
+        return ExecutionResult::Done {
+            content: format!(
+                "start_line {start_line} is beyond end of file ({} lines).",
+                lines.len()
+            ),
+            is_error: true,
+        };
+    }
+
+    let end_line = end_line.unwrap_or(lines.len() as u32);
+    if end_line < start_line {
+        return ExecutionResult::Done {
+            content: format!("end_line {end_line} must be >= start_line {start_line}."),
+            is_error: true,
+        };
+    }
+
+    let end_idx = ((end_line as usize).min(lines.len())).saturating_sub(1);
+    let mut selected = Vec::new();
+    for (line_no, line) in lines
+        .iter()
+        .enumerate()
+        .skip(start_idx)
+        .take(end_idx - start_idx + 1)
+    {
+        selected.push(format!("{}: {}", line_no + 1, line));
+        if selected.len() as u32 >= MAX_READ_RANGE_LINES {
+            selected.push(format!(
+                "[... truncated at {MAX_READ_RANGE_LINES} lines; use a narrower range ...]"
+            ));
+            break;
+        }
+    }
+
+    ExecutionResult::Done {
+        content: selected.join("\n"),
+        is_error: false,
+    }
+}
+
+fn delete_file(path: &str, repo_root: &Path) -> ExecutionResult {
+    let full = match safe_join(repo_root, path) {
+        Ok(p) => p,
+        Err(e) => {
+            return ExecutionResult::Done {
+                content: e,
+                is_error: true,
+            }
+        }
+    };
+
+    if full.is_dir() {
+        return ExecutionResult::Done {
+            content: format!("'{path}' is a directory, not a file."),
+            is_error: true,
+        };
+    }
+    if !full.is_file() {
+        return ExecutionResult::Done {
+            content: format!("File not found: '{path}'."),
+            is_error: true,
+        };
+    }
+
+    match fs::remove_file(&full) {
+        Ok(()) => ExecutionResult::Done {
+            content: format!("Deleted '{path}'."),
+            is_error: false,
+        },
+        Err(e) => ExecutionResult::Done {
+            content: format!("Cannot delete '{path}': {e}"),
+            is_error: true,
+        },
+    }
+}
+
+fn move_file(src: &str, dest: &str, repo_root: &Path) -> ExecutionResult {
+    let src_path = match safe_join(repo_root, src) {
+        Ok(p) => p,
+        Err(e) => {
+            return ExecutionResult::Done {
+                content: e,
+                is_error: true,
+            }
+        }
+    };
+    let dest_path = match safe_join(repo_root, dest) {
+        Ok(p) => p,
+        Err(e) => {
+            return ExecutionResult::Done {
+                content: e,
+                is_error: true,
+            }
+        }
+    };
+
+    if !src_path.is_file() {
+        return ExecutionResult::Done {
+            content: format!("Source file not found: '{src}'."),
+            is_error: true,
+        };
+    }
+
+    if let Some(parent) = dest_path.parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+            return ExecutionResult::Done {
+                content: format!("Cannot create directories for '{dest}': {e}"),
+                is_error: true,
+            };
+        }
+    }
+
+    match fs::rename(&src_path, &dest_path) {
+        Ok(()) => ExecutionResult::Done {
+            content: format!("Moved '{src}' -> '{dest}'."),
+            is_error: false,
+        },
+        Err(e) => ExecutionResult::Done {
+            content: format!("Cannot move '{src}' to '{dest}': {e}"),
+            is_error: true,
+        },
+    }
+}
+
+fn shell_capture(command: &str, timeout_secs: u32, repo_root: &Path) -> ExecutionResult {
+    let timeout = Duration::from_secs(timeout_secs as u64);
+    let repo = repo_root.to_path_buf();
+    let cmd = command.to_string();
+    let (tx, rx) = mpsc::channel();
+
+    thread::spawn(move || {
+        let result = Command::new("sh")
+            .arg("-c")
+            .arg(&cmd)
+            .current_dir(&repo)
+            .output();
+        let _ = tx.send(result);
+    });
+
+    let output = match rx.recv_timeout(timeout) {
+        Ok(result) => result,
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            return ExecutionResult::Done {
+                content: format!("Command timed out after {timeout_secs}s: `{command}`"),
+                is_error: true,
+            };
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            return ExecutionResult::Done {
+                content: format!("Command failed to run: `{command}`"),
+                is_error: true,
+            };
+        }
+    };
+
+    match output {
+        Ok(out) => {
+            let exit_code = out.status.code().unwrap_or(-1);
+            let mut content = format!("exit code: {exit_code}\n");
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            if !stdout.trim().is_empty() {
+                content.push_str("\n--- stdout ---\n");
+                content.push_str(stdout.trim_end());
+                content.push('\n');
+            }
+            if !stderr.trim().is_empty() {
+                content.push_str("\n--- stderr ---\n");
+                content.push_str(stderr.trim_end());
+                content.push('\n');
+            }
+            if stdout.trim().is_empty() && stderr.trim().is_empty() {
+                content.push_str("(no output)\n");
+            }
+            if content.len() > MAX_SHELL_CAPTURE_OUTPUT_BYTES {
+                content = format!(
+                    "{}\n\n[... output truncated at {} bytes ...]",
+                    &content[..MAX_SHELL_CAPTURE_OUTPUT_BYTES],
+                    MAX_SHELL_CAPTURE_OUTPUT_BYTES
+                );
+            }
+            ExecutionResult::Done {
+                content: content.trim_end().to_string(),
+                is_error: !out.status.success(),
+            }
+        }
+        Err(err) if err.kind() == ErrorKind::NotFound => ExecutionResult::Done {
+            content: "Shell (`sh`) not found on PATH".to_string(),
+            is_error: true,
+        },
+        Err(err) => ExecutionResult::Done {
+            content: format!("Command failed: {err}"),
             is_error: true,
         },
     }
@@ -474,6 +788,51 @@ fn format_cargo_check_output(raw: &str, error_count: usize, warning_count: usize
     }
 
     content
+}
+
+fn cargo_build(package: Option<&str>, release: bool, repo_root: &Path) -> ExecutionResult {
+    let mut cmd = Command::new("cargo");
+    cmd.args(["build", "--message-format=short"]);
+    if release {
+        cmd.arg("--release");
+    }
+    if let Some(package) = package {
+        if package.trim().is_empty() {
+            return ExecutionResult::Done {
+                content: "package name must not be empty".to_string(),
+                is_error: true,
+            };
+        }
+        cmd.args(["-p", package]);
+    }
+    cmd.current_dir(repo_root);
+
+    match cmd.output() {
+        Ok(out) => {
+            let raw = format_git_output(&out.stdout, &out.stderr);
+            let status = if out.status.success() {
+                "cargo build passed"
+            } else {
+                "cargo build failed"
+            };
+            let mut content = format!("{status}\n\n{raw}");
+            if content.len() > MAX_CARGO_BUILD_OUTPUT_BYTES {
+                content = format!(
+                    "{}\n\n[... output truncated at {} bytes ...]",
+                    &content[..MAX_CARGO_BUILD_OUTPUT_BYTES],
+                    MAX_CARGO_BUILD_OUTPUT_BYTES
+                );
+            }
+            ExecutionResult::Done {
+                content,
+                is_error: !out.status.success(),
+            }
+        }
+        Err(e) => ExecutionResult::Done {
+            content: format!("cargo build failed: {e}"),
+            is_error: true,
+        },
+    }
 }
 
 fn cargo_test(filter: Option<&str>, package: Option<&str>, repo_root: &Path) -> ExecutionResult {
@@ -1627,5 +1986,131 @@ mod tests {
         assert!(preview.contains("line 1"));
         assert!(preview.contains("line 20"));
         assert!(!preview.contains("line 21"));
+    }
+
+    #[test]
+    fn patch_file_replaces_unique_match() {
+        let dir = temp_repo();
+        fs::write(dir.path().join("edit.rs"), "fn old_name() {}\n").unwrap();
+
+        let result = execute_tool(
+            &KiwiTool::FilePatch {
+                path: "edit.rs".to_string(),
+                old_str: "old_name".to_string(),
+                new_str: "new_name".to_string(),
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                ref content,
+                is_error: false
+            } if content.contains("line 1")
+        ));
+        assert_eq!(
+            fs::read_to_string(dir.path().join("edit.rs")).unwrap(),
+            "fn new_name() {}\n"
+        );
+    }
+
+    #[test]
+    fn patch_file_rejects_ambiguous_match() {
+        let dir = temp_repo();
+        fs::write(dir.path().join("dup.rs"), "foo\nfoo\n").unwrap();
+
+        let result = execute_tool(
+            &KiwiTool::FilePatch {
+                path: "dup.rs".to_string(),
+                old_str: "foo".to_string(),
+                new_str: "bar".to_string(),
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                is_error: true,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn read_file_range_returns_numbered_lines() {
+        let dir = temp_repo();
+        fs::write(dir.path().join("lines.txt"), "a\nb\nc\n").unwrap();
+
+        let result = execute_tool(
+            &KiwiTool::FileReadRange {
+                path: "lines.txt".to_string(),
+                start_line: 2,
+                end_line: Some(3),
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                ref content,
+                is_error: false
+            } if content == "2: b\n3: c"
+        ));
+    }
+
+    #[test]
+    fn shell_capture_runs_command() {
+        let dir = temp_repo();
+        let result = execute_tool(
+            &KiwiTool::ShellCapture {
+                command: "echo hello".to_string(),
+                timeout_secs: 5,
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                ref content,
+                is_error: false
+            } if content.contains("exit code: 0") && content.contains("hello")
+        ));
+    }
+
+    #[test]
+    fn move_and_delete_file_work() {
+        let dir = temp_repo();
+        fs::write(dir.path().join("old.txt"), "data").unwrap();
+
+        let move_result = execute_tool(
+            &KiwiTool::FileMove {
+                src: "old.txt".to_string(),
+                dest: "nested/new.txt".to_string(),
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            move_result,
+            ExecutionResult::Done {
+                is_error: false,
+                ..
+            }
+        ));
+        assert!(dir.path().join("nested/new.txt").is_file());
+
+        let delete_result = execute_tool(
+            &KiwiTool::FileDelete {
+                path: "nested/new.txt".to_string(),
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            delete_result,
+            ExecutionResult::Done {
+                is_error: false,
+                ..
+            }
+        ));
+        assert!(!dir.path().join("nested/new.txt").exists());
     }
 }
