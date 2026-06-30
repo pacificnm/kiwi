@@ -42,6 +42,10 @@ pub enum KiwiTool {
     CargoCheck {
         package: Option<String>,
     },
+    CargoTest {
+        filter: Option<String>,
+        package: Option<String>,
+    },
     FileSearch { query: String },
     FileGrep { query: String, path: Option<String> },
 }
@@ -175,6 +179,23 @@ fn init_tools() -> Vec<KiwiToolDef> {
                     "package": {
                         "type": "string",
                         "description": "Limit check to a specific package (optional, runs workspace check by default)."
+                    }
+                }
+            }),
+        },
+        KiwiToolDef {
+            id: "cargo.test",
+            description: "Run cargo test in the repository root and return test output.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "filter": {
+                        "type": "string",
+                        "description": "Test name substring filter (optional)."
+                    },
+                    "package": {
+                        "type": "string",
+                        "description": "Limit to a specific package (optional)."
                     }
                 }
             }),
@@ -589,6 +610,10 @@ impl KiwiTool {
             "cargo.check" => Ok(Self::CargoCheck {
                 package: optional_str_field(input, "package"),
             }),
+            "cargo.test" => Ok(Self::CargoTest {
+                filter: optional_str_field(input, "filter"),
+                package: optional_str_field(input, "package"),
+            }),
             "file.search" => Ok(Self::FileSearch {
                 query: str_field("query")?,
             }),
@@ -724,6 +749,31 @@ mod tests {
     }
 
     #[test]
+    fn parse_cargo_test_optional_filter_and_package() {
+        let tool = KiwiTool::from_tool_use("cargo.test", &json!({})).unwrap();
+        assert!(matches!(
+            tool,
+            KiwiTool::CargoTest {
+                filter: None,
+                package: None
+            }
+        ));
+
+        let tool = KiwiTool::from_tool_use(
+            "cargo.test",
+            &json!({"filter": "integration", "package": "kiwi_core"}),
+        )
+        .unwrap();
+        assert!(matches!(
+            tool,
+            KiwiTool::CargoTest {
+                filter: Some(f),
+                package: Some(p)
+            } if f == "integration" && p == "kiwi_core"
+        ));
+    }
+
+    #[test]
     fn parse_cargo_check_optional_package() {
         let tool = KiwiTool::from_tool_use("cargo.check", &json!({})).unwrap();
         assert!(matches!(tool, KiwiTool::CargoCheck { package: None }));
@@ -786,8 +836,8 @@ mod tests {
     }
 
     #[test]
-    fn registry_returns_eleven_tools() {
-        assert_eq!(ToolRegistry::all().len(), 11);
+    fn registry_returns_twelve_tools() {
+        assert_eq!(ToolRegistry::all().len(), 12);
     }
 
     #[test]
@@ -809,6 +859,7 @@ mod tests {
         assert!(ids.contains(&"git.commit"));
         assert!(ids.contains(&"git.branch"));
         assert!(ids.contains(&"cargo.check"));
+        assert!(ids.contains(&"cargo.test"));
     }
 
     #[test]
@@ -843,7 +894,7 @@ mod tests {
     #[test]
     fn openai_adapter_uses_function_type() {
         let schemas = tools_for_openai(ToolRegistry::all());
-        assert_eq!(schemas.len(), 11);
+        assert_eq!(schemas.len(), 12);
         let first = serde_json::to_value(&schemas[0]).unwrap();
         assert_eq!(first["type"], "function");
         assert_eq!(first["function"]["name"], "file_read");

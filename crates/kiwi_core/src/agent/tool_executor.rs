@@ -33,6 +33,9 @@ pub fn execute_tool(tool: &KiwiTool, repo_root: &Path) -> ExecutionResult {
             git_branch(*action, name.as_deref(), repo_root)
         }
         KiwiTool::CargoCheck { package } => cargo_check(package.as_deref(), repo_root),
+        KiwiTool::CargoTest { filter, package } => {
+            cargo_test(filter.as_deref(), package.as_deref(), repo_root)
+        }
         KiwiTool::FileSearch { query } => search_files(query, repo_root),
         KiwiTool::FileGrep { query, path } => search_content(query, path.as_deref(), repo_root),
     }
@@ -62,6 +65,7 @@ fn safe_join(repo_root: &Path, relative: &str) -> Result<PathBuf, String> {
 
 const MAX_FILE_BYTES: usize = 100_000; // 100 KB read limit
 const MAX_CARGO_OUTPUT_BYTES: usize = 10_000; // 10 KB cargo check limit
+const MAX_CARGO_TEST_OUTPUT_BYTES: usize = 20_000; // 20 KB cargo test limit
 const MAX_SEARCH_RESULTS: usize = 100;
 
 fn read_file(path: &str, repo_root: &Path) -> ExecutionResult {
@@ -449,6 +453,114 @@ fn format_cargo_check_output(raw: &str, error_count: usize, warning_count: usize
     if !warnings.is_empty() {
         content.push_str("\n\n--- warnings ---\n");
         content.push_str(&warnings.join("\n"));
+    }
+    if !other.is_empty() {
+        content.push_str("\n\n--- output ---\n");
+        content.push_str(&other.join("\n"));
+    }
+
+    content
+}
+
+fn cargo_test(filter: Option<&str>, package: Option<&str>, repo_root: &Path) -> ExecutionResult {
+    let mut cmd = Command::new("cargo");
+    cmd.arg("test");
+    if let Some(package) = package {
+        if package.trim().is_empty() {
+            return ExecutionResult::Done {
+                content: "package name must not be empty".to_string(),
+                is_error: true,
+            };
+        }
+        cmd.args(["-p", package]);
+    }
+    if let Some(filter) = filter {
+        if filter.trim().is_empty() {
+            return ExecutionResult::Done {
+                content: "filter must not be empty".to_string(),
+                is_error: true,
+            };
+        }
+        cmd.arg(filter);
+    }
+    cmd.args(["--", "--nocapture"]);
+    cmd.current_dir(repo_root);
+
+    match cmd.output() {
+        Ok(out) => {
+            let raw = format_git_output(&out.stdout, &out.stderr);
+            let mut content = format_cargo_test_output(&raw, out.status.success());
+            if content.len() > MAX_CARGO_TEST_OUTPUT_BYTES {
+                content = format!(
+                    "{}\n\n[... output truncated at {} bytes ...]",
+                    &content[..MAX_CARGO_TEST_OUTPUT_BYTES],
+                    MAX_CARGO_TEST_OUTPUT_BYTES
+                );
+            }
+            ExecutionResult::Done {
+                content,
+                is_error: !out.status.success(),
+            }
+        }
+        Err(e) => ExecutionResult::Done {
+            content: format!("cargo test failed: {e}"),
+            is_error: true,
+        },
+    }
+}
+
+fn parse_cargo_test_summary(line: &str) -> Option<(usize, usize)> {
+    let rest = line.strip_prefix("test result: ")?;
+    let passed = rest
+        .split(';')
+        .find_map(|part| {
+            let part = part.trim();
+            part.strip_suffix(" passed")?.parse().ok()
+        })
+        .unwrap_or(0);
+    let failed = rest
+        .split(';')
+        .find_map(|part| {
+            let part = part.trim();
+            part.strip_suffix(" failed")?.parse().ok()
+        })
+        .unwrap_or(0);
+    Some((passed, failed))
+}
+
+fn format_cargo_test_output(raw: &str, success: bool) -> String {
+    let summary_line = raw
+        .lines()
+        .rev()
+        .find(|line| line.starts_with("test result: "))
+        .map(str::to_owned);
+
+    let (passed, failed) = summary_line
+        .as_deref()
+        .and_then(parse_cargo_test_summary)
+        .unwrap_or((0, 0));
+
+    let status = if success { "passed" } else { "failed" };
+
+    let mut content = if let Some(ref summary) = summary_line {
+        format!("cargo test {status} ({passed} passed, {failed} failed)\nSummary: {summary}")
+    } else {
+        format!("cargo test {status} ({passed} passed, {failed} failed)")
+    };
+
+    let mut failures = Vec::new();
+    let mut other = Vec::new();
+    for line in raw.lines() {
+        if line.starts_with("test ") && line.contains(" ... FAILED") {
+            failures.push(line);
+        } else if !line.trim().is_empty() && !line.starts_with("test result: ") {
+            other.push(line);
+        }
+    }
+
+    if !failures.is_empty() {
+        content.push_str("\n\n--- failures ---\n");
+        content.push_str(&failures.join("\n"));
     }
     if !other.is_empty() {
         content.push_str("\n\n--- output ---\n");
@@ -947,6 +1059,62 @@ mod tests {
         );
         assert!(
             matches!(result, ExecutionResult::Done { ref content, is_error: true } if content.contains("--- errors ---"))
+        );
+    }
+
+    fn temp_cargo_test_project(main_rs: &str) -> tempfile::TempDir {
+        let dir = temp_cargo_project(main_rs);
+        dir
+    }
+
+    #[test]
+    fn cargo_test_passing_project_succeeds() {
+        let dir = temp_cargo_test_project(
+            "fn main() {}\n\n#[test]\nfn it_works() { assert_eq!(1, 1); }\n",
+        );
+        let result = execute_tool(
+            &KiwiTool::CargoTest {
+                filter: None,
+                package: None,
+            },
+            dir.path(),
+        );
+        assert!(
+            matches!(result, ExecutionResult::Done { ref content, is_error: false } if content.contains("cargo test passed") && content.contains("1 passed"))
+        );
+    }
+
+    #[test]
+    fn cargo_test_failing_test_reports_failure() {
+        let dir = temp_cargo_test_project(
+            "fn main() {}\n\n#[test]\nfn it_fails() { panic!(\"boom\"); }\n",
+        );
+        let result = execute_tool(
+            &KiwiTool::CargoTest {
+                filter: None,
+                package: None,
+            },
+            dir.path(),
+        );
+        assert!(
+            matches!(result, ExecutionResult::Done { ref content, is_error: true } if content.contains("cargo test failed") && content.contains("--- failures ---"))
+        );
+    }
+
+    #[test]
+    fn cargo_test_filter_runs_matching_test_only() {
+        let dir = temp_cargo_test_project(
+            "fn main() {}\n\n#[test]\nfn alpha_works() { assert!(true); }\n\n#[test]\nfn beta_works() { assert!(true); }\n",
+        );
+        let result = execute_tool(
+            &KiwiTool::CargoTest {
+                filter: Some("alpha".to_string()),
+                package: None,
+            },
+            dir.path(),
+        );
+        assert!(
+            matches!(result, ExecutionResult::Done { ref content, is_error: false } if content.contains("1 passed"))
         );
     }
 }
