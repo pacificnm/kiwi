@@ -49,6 +49,7 @@ pub fn execute_tool(tool: &KiwiTool, repo_root: &Path) -> ExecutionResult {
             github_prs(*limit, base.as_deref(), repo_root)
         }
         KiwiTool::MemorySearch { query, limit } => memory_search(query, *limit),
+        KiwiTool::ProjectContext => project_context(repo_root),
         KiwiTool::FileSearch { query } => search_files(query, repo_root),
         KiwiTool::FileGrep { query, path } => search_content(query, path.as_deref(), repo_root),
     }
@@ -939,6 +940,151 @@ fn memory_search(query: &str, limit: u32) -> ExecutionResult {
     }
 }
 
+const PROJECT_CONTEXT_KEY_FILES: &[&str] = &["Cargo.toml", "CLAUDE.md", "README.md"];
+const PROJECT_CONTEXT_FILE_PREVIEW_LINES: usize = 20;
+
+fn project_context(repo_root: &Path) -> ExecutionResult {
+    let mut out = String::from("Project context\n\n");
+
+    out.push_str("## Branch\n");
+    out.push_str(&git_current_branch(repo_root));
+    out.push('\n');
+
+    out.push_str("\n## Recent commits\n");
+    out.push_str(&git_recent_commits(repo_root));
+    out.push('\n');
+
+    out.push_str("\n## Directory structure\n");
+    match collect_directory_lines(repo_root, 2) {
+        Ok(lines) => {
+            if lines.is_empty() {
+                out.push_str("(empty directory)\n");
+            } else {
+                out.push_str(&lines.join("\n"));
+                out.push('\n');
+            }
+        }
+        Err(message) => {
+            out.push_str(&message);
+            out.push('\n');
+        }
+    }
+
+    out.push_str("\n## Key files\n");
+    for file_name in PROJECT_CONTEXT_KEY_FILES {
+        out.push_str(&format_key_file_section(repo_root, file_name));
+    }
+
+    ExecutionResult::Done {
+        content: out.trim_end().to_string(),
+        is_error: false,
+    }
+}
+
+fn git_current_branch(repo_root: &Path) -> String {
+    match Command::new("git")
+        .args(["branch", "--show-current"])
+        .current_dir(repo_root)
+        .output()
+    {
+        Ok(out) if out.status.success() => {
+            let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if branch.is_empty() {
+                "(detached HEAD)".to_string()
+            } else {
+                branch
+            }
+        }
+        Ok(out) => format!(
+            "Unable to read branch: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ),
+        Err(err) => format!("git not available: {err}"),
+    }
+}
+
+fn git_recent_commits(repo_root: &Path) -> String {
+    match Command::new("git")
+        .args(["log", "--oneline", "-10"])
+        .current_dir(repo_root)
+        .output()
+    {
+        Ok(out) if out.status.success() => {
+            let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if text.is_empty() {
+                "(no commits)".to_string()
+            } else {
+                text
+            }
+        }
+        Ok(out) => format!(
+            "Unable to read commits: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ),
+        Err(err) => format!("git not available: {err}"),
+    }
+}
+
+fn collect_directory_lines(root: &Path, depth: u8) -> Result<Vec<String>, String> {
+    if !root.is_dir() {
+        return Err(format!("Not a directory: {}", root.display()));
+    }
+
+    let mut lines = Vec::new();
+    let walker = walkdir::WalkDir::new(root)
+        .max_depth(depth as usize)
+        .sort_by_file_name()
+        .into_iter()
+        .filter_entry(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .map(|name| name != ".git" && name != "target")
+                .unwrap_or(true)
+        });
+
+    for entry in walker.flatten() {
+        if let Ok(rel) = entry.path().strip_prefix(root) {
+            if rel.as_os_str().is_empty() {
+                continue;
+            }
+            let indent = "  ".repeat(entry.depth().saturating_sub(1));
+            let name = entry.file_name().to_string_lossy();
+            let suffix = if entry.file_type().is_dir() { "/" } else { "" };
+            lines.push(format!("{indent}{name}{suffix}"));
+        }
+    }
+
+    Ok(lines)
+}
+
+fn format_key_file_section(repo_root: &Path, file_name: &str) -> String {
+    let path = repo_root.join(file_name);
+    let mut section = format!("\n### {file_name}\n");
+    if !path.is_file() {
+        section.push_str("(not present)\n");
+        return section;
+    }
+
+    match fs::read_to_string(&path) {
+        Ok(content) => {
+            let preview = first_n_lines(&content, PROJECT_CONTEXT_FILE_PREVIEW_LINES);
+            section.push_str(&preview);
+            if !preview.ends_with('\n') {
+                section.push('\n');
+            }
+        }
+        Err(err) => {
+            section.push_str(&format!("(unable to read: {err})\n"));
+        }
+    }
+    section
+}
+
+fn first_n_lines(content: &str, n: usize) -> String {
+    content.lines().take(n).collect::<Vec<_>>().join("\n")
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -1446,5 +1592,40 @@ mod tests {
         );
         assert!(content.contains("parse_error: true"));
         assert!(content.contains("{not json}"));
+    }
+
+    #[test]
+    fn project_context_in_git_repo_includes_branch_and_commits() {
+        let dir = temp_repo();
+        fs::write(dir.path().join("README.md"), "# Test repo\n").unwrap();
+        fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"demo\"\n").unwrap();
+
+        let result = execute_tool(&KiwiTool::ProjectContext, dir.path());
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                ref content,
+                is_error: false
+            } if content.contains("## Branch")
+                && content.contains("## Recent commits")
+                && content.contains("init")
+                && content.contains("## Directory structure")
+                && content.contains("README.md")
+                && content.contains("### Cargo.toml")
+                && content.contains("name = \"demo\"")
+        ));
+    }
+
+    #[test]
+    fn first_n_lines_limits_output() {
+        let text = (1..=30)
+            .map(|n| format!("line {n}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let preview = first_n_lines(&text, 20);
+        assert_eq!(preview.lines().count(), 20);
+        assert!(preview.contains("line 1"));
+        assert!(preview.contains("line 20"));
+        assert!(!preview.contains("line 21"));
     }
 }
