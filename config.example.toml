@@ -53,20 +53,21 @@ command = "agent"
 # mode = "pty"
 # command = "claude"
 
-# ── Ollama / qwen2.5-coder agent ──────────────────────────────────────────
+# ── Ollama / kiwi-ollama PTY agent ────────────────────────────────────────
 # Build and install: cargo install --path plugins/kiwi_plugin_ollama
-# Requires Ollama running locally with qwen2.5-coder and nomic-embed-text.
+# Requires Ollama running locally with gpt-oss:20b and nomic-embed-text.
 #
 # [agent]
 # mode = "pty"
 # command = "kiwi-ollama"
 # [agent.env]
 # OLLAMA_URL = "http://127.0.0.1:11434"
-# OLLAMA_MODEL = "qwen2.5-coder"
+# OLLAMA_MODEL = "gpt-oss:20b"
 # OLLAMA_EMBED_MODEL = "nomic-embed-text"
 
-# ── Ollama split setup (recommended) ─────────────────────────────────────────
-# llama3.1 handles tool calls; qwen2.5-coder synthesizes code/reviews.
+# ── Ollama native API agent (single model) ────────────────────────────────
+# Use one chat model so Ollama does not load multiple large models into RAM.
+# Requires: ollama pull gpt-oss:20b
 #
 # [agent]
 # mode = "api"
@@ -75,10 +76,20 @@ command = "agent"
 #
 # [agent.providers.ollama]
 # api_url = "http://localhost:11434"
-# model = "qwen2.5-coder:7b"          # legacy fallback when split fields omitted
-# tool_model = "llama3.1:8b"          # orchestration + tool calls
-# code_model = "qwen2.5-coder:7b"     # post-tool code review / summary
+# model = "gpt-oss:20b"
 # embedding_model = "nomic-embed-text:latest"
+
+# ── Code review agent (read-only profile) ───────────────────────────────────
+# Observes only — no file.write, git.commit, or shell tools.
+#
+# [agent]
+# mode = "api"
+# active = "claude"
+# tool_profile = "code_review"
+#
+# [agent.providers.claude]
+# model = "claude-opus-4-8"
+# api_key_env = "ANTHROPIC_API_KEY"
 
 [shell]
 command = "bash"

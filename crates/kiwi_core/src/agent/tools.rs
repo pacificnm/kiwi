@@ -444,7 +444,7 @@ const TOOL_PROFILES: &[ToolProfile] = &[
         name: "code_review",
         allowed: &[
             "file.read",
-            "file.read_range",
+            "file.list",
             "file.search",
             "file.grep",
             "git.diff",
@@ -690,6 +690,7 @@ pub fn ollama_uses_native_tool_calls(model: &str) -> bool {
     base.starts_with("llama3")
         || base.starts_with("mistral")
         || base.starts_with("mixtral")
+        || base.starts_with("gpt-oss")
 }
 
 /// True when split `tool_model` / `code_model` fields are configured.
@@ -1235,7 +1236,36 @@ mod tests {
             .map(|profile| profile.name)
             .collect();
         assert!(names.contains(&"coding"));
+        assert!(names.contains(&"code_review"));
         assert!(names.contains(&"all"));
+    }
+
+    #[test]
+    fn code_review_profile_matches_spec_tool_set() {
+        let tools = ToolRegistry::for_profile("code_review");
+        let ids: Vec<_> = tools.iter().map(|tool| tool.id).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "file.read",
+                "file.list",
+                "git.diff",
+                "cargo.check",
+                "memory.search",
+                "file.search",
+                "file.grep",
+            ]
+        );
+    }
+
+    #[test]
+    fn code_review_profile_excludes_write_tools() {
+        let tools = ToolRegistry::for_profile("code_review");
+        let ids: Vec<_> = tools.iter().map(|tool| tool.id).collect();
+        assert!(!ids.contains(&"file.write"));
+        assert!(!ids.contains(&"file.patch"));
+        assert!(!ids.contains(&"git.commit"));
+        assert!(!ids.contains(&"shell.run"));
     }
 
     #[test]
@@ -1412,6 +1442,7 @@ mod tests {
 
     #[test]
     fn ollama_supports_known_tool_models() {
+        assert!(ollama_supports_tools("gpt-oss:20b"));
         assert!(ollama_supports_tools("qwen2.5-coder:7b"));
         assert!(ollama_supports_tools("llama3.1:8b"));
         assert!(ollama_supports_tools("mistral:latest"));
@@ -1445,6 +1476,7 @@ mod tests {
 
     #[test]
     fn ollama_uses_native_tool_calls_for_llama3() {
+        assert!(ollama_uses_native_tool_calls("gpt-oss:20b"));
         assert!(ollama_uses_native_tool_calls("llama3.1:8b"));
         assert!(!ollama_uses_native_tool_calls("qwen2.5-coder:7b"));
     }
