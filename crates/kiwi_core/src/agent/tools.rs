@@ -51,6 +51,10 @@ pub enum KiwiTool {
         label: Option<String>,
         milestone: Option<String>,
     },
+    GitHubPrs {
+        limit: u32,
+        base: Option<String>,
+    },
     FileSearch { query: String },
     FileGrep { query: String, path: Option<String> },
 }
@@ -222,6 +226,23 @@ fn init_tools() -> Vec<KiwiToolDef> {
                     "milestone": {
                         "type": "string",
                         "description": "Filter by milestone title (optional)."
+                    }
+                }
+            }),
+        },
+        KiwiToolDef {
+            id: "github.prs",
+            description: "List open pull requests for the current repository using the gh CLI.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max PRs to return (default 20, max 100)."
+                    },
+                    "base": {
+                        "type": "string",
+                        "description": "Filter by base branch (optional)."
                     }
                 }
             }),
@@ -645,6 +666,10 @@ impl KiwiTool {
                 label: optional_str_field(input, "label"),
                 milestone: optional_str_field(input, "milestone"),
             }),
+            "github.prs" => Ok(Self::GitHubPrs {
+                limit: parse_github_prs_limit(input),
+                base: optional_str_field(input, "base"),
+            }),
             "file.search" => Ok(Self::FileSearch {
                 query: str_field("query")?,
             }),
@@ -673,6 +698,10 @@ fn parse_github_issues_limit(input: &Value) -> u32 {
         .as_u64()
         .unwrap_or(20)
         .clamp(1, 100) as u32
+}
+
+fn parse_github_prs_limit(input: &Value) -> u32 {
+    parse_github_issues_limit(input)
 }
 
 #[cfg(test)]
@@ -842,6 +871,31 @@ mod tests {
     }
 
     #[test]
+    fn parse_github_prs_defaults_and_clamps_limit() {
+        let tool = KiwiTool::from_tool_use("github.prs", &json!({})).unwrap();
+        assert!(matches!(
+            tool,
+            KiwiTool::GitHubPrs {
+                limit: 20,
+                base: None
+            }
+        ));
+
+        let tool = KiwiTool::from_tool_use("github.prs", &json!({"limit": 500})).unwrap();
+        assert!(matches!(tool, KiwiTool::GitHubPrs { limit: 100, .. }));
+
+        let tool =
+            KiwiTool::from_tool_use("github.prs", &json!({"limit": 10, "base": "main"})).unwrap();
+        assert!(matches!(
+            tool,
+            KiwiTool::GitHubPrs {
+                limit: 10,
+                base: Some(b)
+            } if b == "main"
+        ));
+    }
+
+    #[test]
     fn parse_cargo_check_optional_package() {
         let tool = KiwiTool::from_tool_use("cargo.check", &json!({})).unwrap();
         assert!(matches!(tool, KiwiTool::CargoCheck { package: None }));
@@ -904,8 +958,8 @@ mod tests {
     }
 
     #[test]
-    fn registry_returns_thirteen_tools() {
-        assert_eq!(ToolRegistry::all().len(), 13);
+    fn registry_returns_fourteen_tools() {
+        assert_eq!(ToolRegistry::all().len(), 14);
     }
 
     #[test]
@@ -948,7 +1002,8 @@ mod tests {
                 "git.status",
                 "git.commit",
                 "git.branch",
-                "github.issues"
+                "github.issues",
+                "github.prs"
             ]
         );
     }
@@ -970,7 +1025,7 @@ mod tests {
     #[test]
     fn openai_adapter_uses_function_type() {
         let schemas = tools_for_openai(ToolRegistry::all());
-        assert_eq!(schemas.len(), 13);
+        assert_eq!(schemas.len(), 14);
         let first = serde_json::to_value(&schemas[0]).unwrap();
         assert_eq!(first["type"], "function");
         assert_eq!(first["function"]["name"], "file_read");
