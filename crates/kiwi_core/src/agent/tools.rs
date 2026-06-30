@@ -1386,6 +1386,24 @@ mod tests {
     }
 
     #[test]
+    fn file_patch_schema_matches_spec() {
+        let def = ToolRegistry::all()
+            .iter()
+            .find(|tool| tool.id == "file.patch")
+            .expect("file.patch must be registered");
+        assert_eq!(
+            def.description,
+            "Surgical edit: replace a unique old_str with new_str in a file."
+        );
+        let schema = &def.input_schema;
+        assert_eq!(schema["type"], "object");
+        assert_eq!(schema["required"], json!(["path", "old_str", "new_str"]));
+        assert!(schema["properties"]["path"].is_object());
+        assert!(schema["properties"]["old_str"].is_object());
+        assert!(schema["properties"]["new_str"].is_object());
+    }
+
+    #[test]
     fn parse_file_patch_requires_unique_fields() {
         let tool = KiwiTool::from_tool_use(
             "file.patch",

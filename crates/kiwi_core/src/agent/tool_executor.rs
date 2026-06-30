@@ -27,9 +27,11 @@ pub fn execute_tool(tool: &KiwiTool, repo_root: &Path) -> ExecutionResult {
     match tool {
         KiwiTool::FileRead { path } => read_file(path, repo_root),
         KiwiTool::FileWrite { path, content } => write_file(path, content, repo_root),
-        KiwiTool::FilePatch { path, old_str, new_str } => {
-            patch_file(path, old_str, new_str, repo_root)
-        }
+        KiwiTool::FilePatch {
+            path,
+            old_str,
+            new_str,
+        } => patch_file(path, old_str, new_str, repo_root),
         KiwiTool::FileReadRange {
             path,
             start_line,
@@ -47,12 +49,8 @@ pub fn execute_tool(tool: &KiwiTool, repo_root: &Path) -> ExecutionResult {
         } => shell_capture(command, *timeout_secs, repo_root),
         KiwiTool::GitStatus => git_status(repo_root),
         KiwiTool::GitDiff { path } => git_diff(path.as_deref(), repo_root),
-        KiwiTool::GitCommit { message, stage_all } => {
-            git_commit(message, *stage_all, repo_root)
-        }
-        KiwiTool::GitBranch { action, name } => {
-            git_branch(*action, name.as_deref(), repo_root)
-        }
+        KiwiTool::GitCommit { message, stage_all } => git_commit(message, *stage_all, repo_root),
+        KiwiTool::GitBranch { action, name } => git_branch(*action, name.as_deref(), repo_root),
         KiwiTool::CargoCheck { package } => cargo_check(package.as_deref(), repo_root),
         KiwiTool::CargoBuild { package, release } => {
             cargo_build(package.as_deref(), *release, repo_root)
@@ -65,9 +63,7 @@ pub fn execute_tool(tool: &KiwiTool, repo_root: &Path) -> ExecutionResult {
             label,
             milestone,
         } => github_issues(*limit, label.as_deref(), milestone.as_deref(), repo_root),
-        KiwiTool::GitHubPrs { limit, base } => {
-            github_prs(*limit, base.as_deref(), repo_root)
-        }
+        KiwiTool::GitHubPrs { limit, base } => github_prs(*limit, base.as_deref(), repo_root),
         KiwiTool::MemorySearch { query, limit } => memory_search(query, *limit),
         KiwiTool::ProjectContext => project_context(repo_root),
         KiwiTool::FileSearch { query } => search_files(query, repo_root),
@@ -629,11 +625,7 @@ fn format_git_output(stdout: &[u8], stderr: &[u8]) -> String {
     }
 }
 
-fn git_branch(
-    action: GitBranchAction,
-    name: Option<&str>,
-    repo_root: &Path,
-) -> ExecutionResult {
+fn git_branch(action: GitBranchAction, name: Option<&str>, repo_root: &Path) -> ExecutionResult {
     match action {
         GitBranchAction::List => match Command::new("git")
             .args(["branch", "--list"])
@@ -672,7 +664,11 @@ fn git_branch(
 }
 
 fn run_git_checkout(repo_root: &Path, args: &[&str]) -> ExecutionResult {
-    match Command::new("git").args(args).current_dir(repo_root).output() {
+    match Command::new("git")
+        .args(args)
+        .current_dir(repo_root)
+        .output()
+    {
         Ok(out) if out.status.success() => ExecutionResult::Done {
             content: format_git_output(&out.stdout, &out.stderr),
             is_error: false,
@@ -770,9 +766,8 @@ fn format_cargo_check_output(raw: &str, error_count: usize, warning_count: usize
         "passed"
     };
 
-    let mut content = format!(
-        "cargo check {status} ({error_count} error(s), {warning_count} warning(s))"
-    );
+    let mut content =
+        format!("cargo check {status} ({error_count} error(s), {warning_count} warning(s))");
 
     if !errors.is_empty() {
         content.push_str("\n\n--- errors ---\n");
@@ -1169,7 +1164,11 @@ fn format_github_issues_list(issues: &[GhIssueRow]) -> String {
 
     let mut out = format!("GitHub issues ({}):\n", issues.len());
     for (index, issue) in issues.iter().enumerate() {
-        let labels: Vec<_> = issue.labels.iter().map(|label| label.name.as_str()).collect();
+        let labels: Vec<_> = issue
+            .labels
+            .iter()
+            .map(|label| label.name.as_str())
+            .collect();
         let labels_part = if labels.is_empty() {
             String::new()
         } else {
@@ -1668,7 +1667,10 @@ mod tests {
         );
 
         match result {
-            ExecutionResult::Done { content, is_error: false } => {
+            ExecutionResult::Done {
+                content,
+                is_error: false,
+            } => {
                 assert!(content.contains("commit:"));
             }
             other => panic!("expected successful commit, got {other:?}"),
@@ -1687,10 +1689,7 @@ mod tests {
         );
         assert!(matches!(
             result,
-            ExecutionResult::Done {
-                is_error: true,
-                ..
-            }
+            ExecutionResult::Done { is_error: true, .. }
         ));
     }
 
@@ -1717,9 +1716,7 @@ mod tests {
             .current_dir(dir.path())
             .output()
             .expect("git branch --show-current");
-        let initial_branch = String::from_utf8_lossy(&initial.stdout)
-            .trim()
-            .to_string();
+        let initial_branch = String::from_utf8_lossy(&initial.stdout).trim().to_string();
 
         let create = execute_tool(
             &KiwiTool::GitBranch {
@@ -1788,10 +1785,7 @@ mod tests {
     #[test]
     fn cargo_check_clean_project_succeeds() {
         let dir = temp_cargo_project("fn main() {}\n");
-        let result = execute_tool(
-            &KiwiTool::CargoCheck { package: None },
-            dir.path(),
-        );
+        let result = execute_tool(&KiwiTool::CargoCheck { package: None }, dir.path());
         assert!(
             matches!(result, ExecutionResult::Done { ref content, is_error: false } if content.contains("cargo check passed"))
         );
@@ -1800,10 +1794,7 @@ mod tests {
     #[test]
     fn cargo_check_reports_compile_errors() {
         let dir = temp_cargo_project("fn main() { broken }\n");
-        let result = execute_tool(
-            &KiwiTool::CargoCheck { package: None },
-            dir.path(),
-        );
+        let result = execute_tool(&KiwiTool::CargoCheck { package: None }, dir.path());
         assert!(
             matches!(result, ExecutionResult::Done { ref content, is_error: true } if content.contains("--- errors ---"))
         );
@@ -1904,9 +1895,8 @@ mod tests {
         let issues: Result<Vec<GhIssueRow>, _> = serde_json::from_slice(b"{not json}");
         let err = issues.expect_err("invalid json");
         let raw = "{not json}".to_string();
-        let content = format!(
-            "parse_error: true\nInvalid gh issue JSON: {err}\n\nRaw output:\n{raw}"
-        );
+        let content =
+            format!("parse_error: true\nInvalid gh issue JSON: {err}\n\nRaw output:\n{raw}");
         assert!(content.contains("parse_error: true"));
         assert!(content.contains("{not json}"));
     }
@@ -1946,9 +1936,7 @@ mod tests {
         let prs: Result<Vec<GhPrRow>, _> = serde_json::from_slice(b"{not json}");
         let err = prs.expect_err("invalid json");
         let raw = "{not json}".to_string();
-        let content = format!(
-            "parse_error: true\nInvalid gh pr JSON: {err}\n\nRaw output:\n{raw}"
-        );
+        let content = format!("parse_error: true\nInvalid gh pr JSON: {err}\n\nRaw output:\n{raw}");
         assert!(content.contains("parse_error: true"));
         assert!(content.contains("{not json}"));
     }
@@ -1957,7 +1945,11 @@ mod tests {
     fn project_context_in_git_repo_includes_branch_and_commits() {
         let dir = temp_repo();
         fs::write(dir.path().join("README.md"), "# Test repo\n").unwrap();
-        fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"demo\"\n").unwrap();
+        fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"demo\"\n",
+        )
+        .unwrap();
 
         let result = execute_tool(&KiwiTool::ProjectContext, dir.path());
         assert!(matches!(
@@ -2031,9 +2023,61 @@ mod tests {
             result,
             ExecutionResult::Done {
                 is_error: true,
-                ..
-            }
+                ref content,
+            } if content.contains("2 times") && content.contains("surrounding context")
         ));
+    }
+
+    #[test]
+    fn patch_file_errors_when_old_str_not_found() {
+        let dir = temp_repo();
+        fs::write(dir.path().join("miss.rs"), "fn main() {}\n").unwrap();
+
+        let result = execute_tool(
+            &KiwiTool::FilePatch {
+                path: "miss.rs".to_string(),
+                old_str: "missing_text".to_string(),
+                new_str: "replacement".to_string(),
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                is_error: true,
+                ref content,
+            } if content.contains("old_str not found") && content.contains("Re-read the file")
+        ));
+        assert_eq!(
+            fs::read_to_string(dir.path().join("miss.rs")).unwrap(),
+            "fn main() {}\n"
+        );
+    }
+
+    #[test]
+    fn patch_file_blocks_path_traversal() {
+        let dir = temp_repo();
+        fs::write(dir.path().join("safe.rs"), "keep\n").unwrap();
+
+        let result = execute_tool(
+            &KiwiTool::FilePatch {
+                path: "../safe.rs".to_string(),
+                old_str: "keep".to_string(),
+                new_str: "gone".to_string(),
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                is_error: true,
+                ref content,
+            } if content.contains("path traversal")
+        ));
+        assert_eq!(
+            fs::read_to_string(dir.path().join("safe.rs")).unwrap(),
+            "keep\n"
+        );
     }
 
     #[test]
