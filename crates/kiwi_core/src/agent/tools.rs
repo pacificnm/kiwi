@@ -490,6 +490,7 @@ const TOOL_PROFILES: &[ToolProfile] = &[
             "memory.search",
             "file.search",
             "file.grep",
+            "file.read",
         ],
     },
 ];
@@ -1249,7 +1250,36 @@ mod tests {
         assert!(names.contains(&"coding"));
         assert!(names.contains(&"code_review"));
         assert!(names.contains(&"github"));
+        assert!(names.contains(&"planner"));
         assert!(names.contains(&"all"));
+    }
+
+    #[test]
+    fn planner_profile_matches_spec_tool_set() {
+        let tools = ToolRegistry::for_profile("planner");
+        let ids: Vec<_> = tools.iter().map(|tool| tool.id).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "file.read",
+                "memory.search",
+                "project.context",
+                "file.search",
+                "file.grep",
+            ]
+        );
+    }
+
+    #[test]
+    fn planner_profile_excludes_write_shell_and_git_tools() {
+        let tools = ToolRegistry::for_profile("planner");
+        let ids: Vec<_> = tools.iter().map(|tool| tool.id).collect();
+        assert!(!ids.contains(&"file.write"));
+        assert!(!ids.contains(&"file.patch"));
+        assert!(!ids.contains(&"shell.run"));
+        assert!(!ids.contains(&"git.commit"));
+        assert!(!ids.contains(&"git.status"));
+        assert!(!ids.contains(&"cargo.check"));
     }
 
     #[test]
@@ -1346,9 +1376,13 @@ mod tests {
     }
 
     #[test]
-    fn planner_profile_includes_project_context() {
+    fn planner_profile_includes_read_and_search_tools() {
         let tools = ToolRegistry::for_profile("planner");
-        assert!(tools.iter().any(|tool| tool.id == "project.context"));
+        let ids: Vec<_> = tools.iter().map(|tool| tool.id).collect();
+        assert!(ids.contains(&"project.context"));
+        assert!(ids.contains(&"file.read"));
+        assert!(ids.contains(&"file.search"));
+        assert!(ids.contains(&"file.grep"));
     }
 
     #[test]
