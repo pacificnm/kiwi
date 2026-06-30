@@ -2280,6 +2280,87 @@ mod tests {
     }
 
     #[test]
+    fn delete_file_removes_file_with_confirmation() {
+        let dir = temp_repo();
+        fs::write(dir.path().join("obsolete.rs"), "fn old() {}\n").unwrap();
+
+        let result = execute_tool(
+            &KiwiTool::FileDelete {
+                path: "obsolete.rs".to_string(),
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                is_error: false,
+                ref content,
+            } if content == "Deleted 'obsolete.rs'."
+        ));
+        assert!(!dir.path().join("obsolete.rs").exists());
+    }
+
+    #[test]
+    fn delete_file_blocks_path_traversal() {
+        let dir = temp_repo();
+        fs::write(dir.path().join("keep.txt"), "stay\n").unwrap();
+
+        let result = execute_tool(
+            &KiwiTool::FileDelete {
+                path: "../keep.txt".to_string(),
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                is_error: true,
+                ref content,
+            } if content.contains("path traversal")
+        ));
+        assert!(dir.path().join("keep.txt").is_file());
+    }
+
+    #[test]
+    fn delete_file_rejects_directory() {
+        let dir = temp_repo();
+        fs::create_dir(dir.path().join("src")).unwrap();
+
+        let result = execute_tool(
+            &KiwiTool::FileDelete {
+                path: "src".to_string(),
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                is_error: true,
+                ref content,
+            } if content.contains("is a directory")
+        ));
+    }
+
+    #[test]
+    fn delete_file_errors_when_not_found() {
+        let dir = temp_repo();
+
+        let result = execute_tool(
+            &KiwiTool::FileDelete {
+                path: "missing.txt".to_string(),
+            },
+            dir.path(),
+        );
+        assert!(matches!(
+            result,
+            ExecutionResult::Done {
+                is_error: true,
+                ref content,
+            } if content.contains("File not found")
+        ));
+    }
+
+    #[test]
     fn move_and_delete_file_work() {
         let dir = temp_repo();
         fs::write(dir.path().join("old.txt"), "data").unwrap();
