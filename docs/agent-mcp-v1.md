@@ -48,12 +48,21 @@ Kiwi workbench / CLI
 
 | Phase | Scope | Status |
 | --- | --- | --- |
-| 0 | Ollama tool-calling spike | Pending |
+| 0 | Ollama tool-calling spike | **Done** |
 | 1 | `nest-mcp` stdio client | **Done (v0.1)** |
 | 2 | `nest-ai` tool types + Ollama tools API | **Done (v0.1)** |
 | 3 | `nest-agent` loop | **Done (v0.1)** |
 | 4 | Kiwi CLI `kiwi agent` → GUI tool UI | **Done (v0.1)** |
-| 5 | Hardening | Pending |
+| 5 | Hardening | **Done (v1)** |
+
+## Phase 5 (v1)
+
+- Agent replies **stream** via Ollama `stream_complete`
+- **Parallel** MCP tool calls when the model returns multiple tools
+- MCP **reconnect** on server crash / stdout close
+- Agent sidebar: **enable/disable** MCP servers (`disabled_mcp_servers`)
+- Optional **`save_context_memory`** auto-run (`allow_save_context`)
+- Attached-file summarize; markdown fenced tool-call parsing
 
 ## Phase 1 deliverable
 

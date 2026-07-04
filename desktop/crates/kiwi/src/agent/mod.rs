@@ -7,6 +7,7 @@ use std::path::Path;
 
 use nest_ai_ollama::{AiSection, OllamaConfig, OllamaSharedConfig};
 use nest_config::ConfigService;
+use nest_core::AppContext;
 use nest_error::{NestError, NestResult};
 use toml::Value;
 
@@ -31,6 +32,10 @@ pub struct AgentSettings {
     pub mcp_status: Option<String>,
     /// Tool count from the last MCP hub probe.
     pub mcp_tool_count: Option<usize>,
+    /// MCP server ids disabled in the Agent sidebar.
+    pub disabled_mcp_servers: Vec<String>,
+    /// When true, `save_context_memory` may auto-run in agent mode.
+    pub allow_save_context: bool,
 }
 
 impl Default for AgentSettings {
@@ -48,16 +53,20 @@ impl Default for AgentSettings {
             status: None,
             mcp_status: None,
             mcp_tool_count: None,
+            disabled_mcp_servers: Vec::new(),
+            allow_save_context: false,
         }
     }
 }
 
 impl AgentSettings {
-    /// Loads agent settings from `[ai]` config, falling back to defaults.
+    /// Loads agent settings from `[ai]` and `[agent]` config, falling back to defaults.
     pub fn from_config_service(service: &ConfigService) -> NestResult<Self> {
         let Ok(section) = service.section::<AiSection>("ai") else {
             return Ok(Self::default());
         };
+
+        let agent_section = service.section::<loop_config::AgentSection>("agent").ok();
 
         let (host, port) = if let Some(host) = section.host.filter(|h| !h.trim().is_empty()) {
             (host, section.port.to_string())
@@ -72,15 +81,29 @@ impl AgentSettings {
             section.models
         };
 
+        let model = agent_section
+            .as_ref()
+            .and_then(|agent| agent.model.clone())
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or(section.model);
+
         Ok(Self {
             host,
             port,
-            model: section.model,
+            model,
             models,
             new_model: String::new(),
             status: None,
             mcp_status: None,
             mcp_tool_count: None,
+            disabled_mcp_servers: agent_section
+                .as_ref()
+                .map(|agent| agent.disabled_mcp_servers.clone())
+                .unwrap_or_default(),
+            allow_save_context: agent_section
+                .as_ref()
+                .map(|agent| agent.allow_save_context)
+                .unwrap_or(false),
         })
     }
 
@@ -127,7 +150,11 @@ impl AgentSettings {
     }
 
     /// Persists agent settings to the config file, preserving other sections.
-    pub fn save_to_config_path(&self, path: &Path) -> NestResult<()> {
+    pub fn save_to_config_path(
+        &self,
+        path: &Path,
+        agent_mode: bool,
+    ) -> NestResult<()> {
         let content = fs::read_to_string(path).map_err(|error| {
             NestError::io(format!("failed to read {}: {error}", path.display()))
         })?;
@@ -172,6 +199,30 @@ impl AgentSettings {
             ),
         );
 
+        let agent = table
+            .entry("agent")
+            .or_insert_with(|| Value::Table(toml::map::Map::new()));
+
+        let agent_table = agent
+            .as_table_mut()
+            .ok_or_else(|| NestError::config("[agent] must be a table"))?;
+
+        agent_table.insert("model".into(), Value::String(self.model.clone()));
+        agent_table.insert("agent_mode".into(), Value::Boolean(agent_mode));
+        agent_table.insert(
+            "disabled_mcp_servers".into(),
+            Value::Array(
+                self.disabled_mcp_servers
+                    .iter()
+                    .map(|name| Value::String(name.clone()))
+                    .collect(),
+            ),
+        );
+        agent_table.insert(
+            "allow_save_context".into(),
+            Value::Boolean(self.allow_save_context),
+        );
+
         let serialized = toml::to_string_pretty(&root).map_err(|error| {
             NestError::config(format!("failed to serialize config: {error}"))
         })?;
@@ -180,4 +231,18 @@ impl AgentSettings {
         })?;
         Ok(())
     }
+}
+
+/// Saves agent settings to disk when the config file path is available.
+pub fn try_persist_preferences(
+    agent: &AgentSettings,
+    agent_mode: bool,
+    app_ctx: &AppContext,
+) -> Result<String, NestError> {
+    let config = app_ctx.service::<ConfigService>()?;
+    let path = config
+        .path()
+        .ok_or_else(|| NestError::config("No config file path — use --config"))?;
+    agent.save_to_config_path(path, agent_mode)?;
+    Ok(path.display().to_string())
 }

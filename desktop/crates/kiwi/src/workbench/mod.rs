@@ -13,7 +13,7 @@ mod watcher;
 
 use std::sync::mpsc::{Receiver, TryRecvError};
 
-use egui::{Align, CentralPanel, ComboBox, Frame, Layout, RichText, ScrollArea, Separator, SidePanel, TextEdit, TopBottomPanel, Ui, UiBuilder};
+use egui::{Align, CentralPanel, ComboBox, Frame, Layout, RichText, ScrollArea, SidePanel, TextEdit, TopBottomPanel, Ui, UiBuilder};
 use nest_agent::AgentEvent;
 use nest_ai::{AiService, ChatMessage, ChatRole};
 use nest_config::ConfigService;
@@ -23,13 +23,15 @@ use nest_gui::{ActionButton, ButtonSize, StatusBarService, WorkbenchView};
 use nest_icon::{font, Icon};
 
 pub use editor_files::{FileLoadEvent, FileSaveEvent};
-pub use state::{ChatEntry, WorkbenchState};
+pub use state::{ChatEntry, ToolActivityStatus, WorkbenchState};
 
 use crate::agent::AgentLoopConfig;
 use crate::agent::AgentSettings;
+use crate::agent::try_persist_preferences;
 use crate::chat::{self, AgentRunEvent, ChatStreamEvent};
 use crate::project::ProjectConfig;
 use crate::theme::PALETTE;
+use crate::workbench::bottom_panel::BottomTab;
 use crate::workbench::editor_files::{apply_file_load, apply_file_save, begin_file_save, spawn_save_file};
 use crate::workbench::watcher::ProjectWatcher;
 use nest_ai_ollama::{OllamaConfig, OllamaSharedConfig};
@@ -41,7 +43,6 @@ pub type FileLoadPending = Receiver<FileLoadEvent>;
 pub type FileSavePending = Receiver<FileSaveEvent>;
 
 use activity::{activity_bar, ACTIVITY_BAR_WIDTH};
-use bottom_panel::bottom_panel;
 use editor::{editor_panel, EditorTabDragPayload};
 use sidebar::{section_heading, sidebar};
 
@@ -50,7 +51,6 @@ use prompt::PROMPT_INPUT_HEIGHT;
 const TITLE_BAR_HEIGHT: f32 = 36.0;
 const SIDEBAR_WIDTH: f32 = 260.0;
 const AI_PANEL_WIDTH: f32 = 360.0;
-const BOTTOM_PANEL_HEIGHT: f32 = 200.0;
 /// Chat header row (title + agent toggle).
 const AI_CHAT_HEADER_HEIGHT: f32 = 36.0;
 /// Prompt input, model selector, buttons, and token stats row.
@@ -177,6 +177,8 @@ impl WorkbenchView for KiwiWorkbench {
                 );
             });
 
+        bottom_panel::show_panel(ctx, &mut self.state);
+
         CentralPanel::default()
             .frame(
                 Frame::new()
@@ -192,6 +194,11 @@ impl WorkbenchView for KiwiWorkbench {
         self.poll_file_load(ctx);
         self.poll_file_save(ctx);
         self.poll_project_watcher(ctx, app_ctx);
+        if self.state.bottom_tab == BottomTab::Terminal
+            && (self.state.terminal.poll() || self.state.terminal.is_active())
+        {
+            ctx.request_repaint_after(std::time::Duration::from_millis(32));
+        }
         if self.chat_pending.is_some()
             || self.agent_pending.is_some()
             || self.file_pending.is_some()
@@ -224,6 +231,9 @@ impl KiwiWorkbench {
         if let Ok(loop_cfg) = AgentLoopConfig::from_config_service(&config) {
             self.state.agent_mcp_path = loop_cfg.mcp_config_path.display().to_string();
             self.state.agent_mcp_servers = loop_cfg.mcp_servers;
+            self.state.agent.disabled_mcp_servers = loop_cfg.disabled_mcp_servers;
+            self.state.agent.allow_save_context = loop_cfg.allow_save_context;
+            self.state.agent_mode = loop_cfg.agent_mode;
             if !loop_cfg.model.is_empty() {
                 self.state.agent.mcp_status = Some(format!(
                     "Agent model: {} | MCP: {}",
@@ -255,6 +265,13 @@ impl KiwiWorkbench {
             );
             self.project_watcher = ProjectWatcher::new(&project.root).ok();
             self.project_loaded = true;
+            self.state.terminal.set_cwd(project.root.clone());
+            tracing::info!(
+                target: "kiwi",
+                root = %project.root.display(),
+                name = %project.name,
+                "Project loaded"
+            );
         }
     }
 
@@ -348,7 +365,7 @@ impl KiwiWorkbench {
                             self.state.chat_messages.pop();
                         }
                     }
-                    self.state.chat_error = Some(error.to_string());
+                    self.state.chat_error = Some(chat::format_ai_error_message(&error.to_string()));
                     self.state.chat_metrics = None;
                     self.state.chat_busy = false;
                     self.chat_pending = None;
@@ -409,6 +426,7 @@ impl KiwiWorkbench {
         if events.iter().any(|event| matches!(event, AgentEvent::Failed(_))) {
             self.state.chat_busy = false;
             self.agent_pending = None;
+            self.state.agent_step = None;
             ctx.request_repaint();
             return;
         }
@@ -420,17 +438,20 @@ impl KiwiWorkbench {
                 }) {
                     self.state.chat_messages.pop();
                 }
-                self.state.chat_error = Some(error.to_string());
+                self.state.chat_error =
+                    Some(chat::format_ai_error_message(&error.to_string()));
             } else {
                 self.state.chat_error = None;
             }
             self.state.chat_busy = false;
             self.agent_pending = None;
+            self.state.agent_step = None;
             ctx.request_repaint();
         } else if disconnected {
             self.state.chat_error = Some("Agent run interrupted".into());
             self.state.chat_busy = false;
             self.agent_pending = None;
+            self.state.agent_step = None;
             ctx.request_repaint();
         }
     }
@@ -438,38 +459,55 @@ impl KiwiWorkbench {
     fn handle_agent_event(&mut self, event: &AgentEvent) {
         match event {
             AgentEvent::TextDelta(text) => {
-                if let Some(last) = self.state.chat_messages.last_mut() {
-                    if last.role == ChatRole::Assistant {
-                        last.content.push_str(text);
-                    }
+                ensure_assistant_message(&mut self.state.chat_messages)
+                    .content
+                    .push_str(text);
+            }
+            AgentEvent::StepStarted { step } => {
+                self.state.agent_step = Some(*step);
+                if *step > 1 {
+                    ensure_assistant_message(&mut self.state.chat_messages);
                 }
             }
             AgentEvent::ToolCallStarted { tool, arguments } => {
                 self.state.chat_messages.push(ChatEntry {
                     role: ChatRole::Tool,
-                    content: format!("{tool}({arguments})"),
+                    content: bottom_panel::tool_activity::format_tool_call_summary(
+                        &tool, &arguments,
+                    ),
                 });
-                self.state.tool_activity.push(crate::workbench::state::ToolActivityEntry {
-                    tool: tool.clone(),
-                    detail: arguments.to_string(),
-                    running: true,
-                });
+                self.state.tool_activity.push(
+                    bottom_panel::tool_activity::new_running_entry(
+                        tool.clone(),
+                        &arguments,
+                        self.state.agent_step,
+                    ),
+                );
                 self.state.bottom_tab = bottom_panel::BottomTab::ToolActivity;
             }
-            AgentEvent::ToolCallFinished { tool, result, .. } => {
+            AgentEvent::ToolCallFinished {
+                tool,
+                result,
+                duration,
+                ..
+            } => {
                 if let Some(entry) = self
                     .state
                     .tool_activity
                     .iter_mut()
                     .rev()
-                    .find(|entry| entry.tool == *tool && entry.running)
+                    .find(|entry| entry.tool == *tool && entry.status == ToolActivityStatus::Running)
                 {
-                    entry.detail = result.clone();
-                    entry.running = false;
+                    entry.result = Some(result.clone());
+                    entry.status = ToolActivityStatus::Success;
+                    entry.duration_ms =
+                        Some(bottom_panel::tool_activity::duration_to_ms(*duration));
                 }
                 if let Some(last) = self.state.chat_messages.last_mut() {
                     if last.role == ChatRole::Tool {
-                        last.content.push_str(&format!("\n↳ {result}"));
+                        let preview =
+                            bottom_panel::tool_activity::format_tool_result_chat_preview(result);
+                        last.content.push_str(&format!("\n↳ {preview}"));
                     }
                 }
                 self.state.agent.mcp_tool_count = Some(self.state.tool_activity.len());
@@ -480,25 +518,24 @@ impl KiwiWorkbench {
                     .tool_activity
                     .iter_mut()
                     .rev()
-                    .find(|entry| entry.tool == *tool && entry.running)
+                    .find(|entry| entry.tool == *tool && entry.status == ToolActivityStatus::Running)
                 {
-                    entry.detail = error.clone();
-                    entry.running = false;
+                    entry.error = Some(error.clone());
+                    entry.status = ToolActivityStatus::Failed;
                 }
-                self.state.chat_error = Some(format!("Tool {tool} failed: {error}"));
             }
             AgentEvent::Finished { content, metrics, .. } => {
-                if let Some(last) = self.state.chat_messages.last_mut() {
-                    if last.role == ChatRole::Assistant && last.content.is_empty() {
-                        last.content = content.clone();
-                    }
+                let assistant = ensure_assistant_message(&mut self.state.chat_messages);
+                if assistant.content.is_empty() {
+                    assistant.content = content.clone();
                 }
                 self.state.chat_metrics = metrics.clone();
+                self.state.agent_step = None;
             }
             AgentEvent::Failed(error) => {
-                self.state.chat_error = Some(error.clone());
+                self.state.chat_error = Some(chat::format_ai_error_message(error));
+                self.state.agent_step = None;
             }
-            AgentEvent::StepStarted { .. } => {}
         }
     }
 
@@ -576,47 +613,25 @@ fn central_panel(
     file_save_pending: &mut Option<FileSavePending>,
 ) {
     ui.spacing_mut().item_spacing.y = 0.0;
+    ui.set_min_height(ui.available_height());
 
-    let height = ui.available_height();
-    let bottom_height = BOTTOM_PANEL_HEIGHT.min(height * 0.45).max(80.0);
-    let editor_height = (height - bottom_height).max(100.0);
-
-    ui.allocate_ui_with_layout(
-        egui::vec2(ui.available_width(), editor_height),
-        Layout::top_down(Align::LEFT),
-        |ui| {
-            ui.set_height(editor_height);
-            if let Some(tab_index) = editor_panel(ui, ctx, &mut state.editor) {
-                if file_save_pending.is_none() {
-                    if let Some((rel_path, content)) = begin_file_save(&mut state.editor, tab_index)
-                    {
-                        if let Ok(files) = app_ctx.service::<nest_file::FileService>() {
-                            *file_save_pending = Some(spawn_save_file(
-                                files.clone(),
-                                rel_path,
-                                content,
-                                tab_index,
-                            ));
-                        } else if let Some(tab) = state.editor.tabs.get_mut(tab_index) {
-                            tab.saving = false;
-                            tab.save_error = Some("File service unavailable".into());
-                        }
-                    }
+    if let Some(tab_index) = editor_panel(ui, ctx, &mut state.editor) {
+        if file_save_pending.is_none() {
+            if let Some((rel_path, content)) = begin_file_save(&mut state.editor, tab_index) {
+                if let Ok(files) = app_ctx.service::<nest_file::FileService>() {
+                    *file_save_pending = Some(spawn_save_file(
+                        files.clone(),
+                        rel_path,
+                        content,
+                        tab_index,
+                    ));
+                } else if let Some(tab) = state.editor.tabs.get_mut(tab_index) {
+                    tab.saving = false;
+                    tab.save_error = Some("File service unavailable".into());
                 }
             }
-        },
-    );
-
-    ui.add(Separator::default().spacing(1.0));
-
-    ui.allocate_ui_with_layout(
-        egui::vec2(ui.available_width(), bottom_height),
-        Layout::top_down(Align::LEFT),
-        |ui| {
-            ui.set_height(bottom_height);
-            bottom_panel(ui, state);
-        },
-    );
+        }
+    }
 }
 
 fn ai_panel(
@@ -675,7 +690,14 @@ fn ai_panel_contents(
                 ui.horizontal(|ui| {
                     section_heading(ui, "Chat");
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.checkbox(&mut state.agent_mode, "Agent");
+                        let response = ui.checkbox(&mut state.agent_mode, "Agent");
+                        if response.changed() {
+                            let _ = try_persist_preferences(
+                                &state.agent,
+                                state.agent_mode,
+                                app_ctx,
+                            );
+                        }
                     });
                 });
             });
@@ -692,72 +714,7 @@ fn ai_panel_contents(
                     .auto_shrink([false; 2])
                     .stick_to_bottom(state.chat_busy || pending)
                     .show(ui, |ui| {
-                        if state.chat_messages.is_empty() {
-                            ui.label(
-                                RichText::new(
-                                    "Ask questions about your project, generate plans, \
-                                     or apply code changes. Drag an editor tab here to \
-                                     attach file contents for the agent.",
-                                )
-                                .weak()
-                                .size(13.0),
-                            );
-                        } else {
-                            for (index, entry) in state.chat_messages.iter().enumerate() {
-                                let is_streaming = state.chat_busy
-                                    && pending
-                                    && index + 1 == state.chat_messages.len()
-                                    && entry.role == ChatRole::Assistant;
-
-                                match entry.role {
-                                    ChatRole::User => {
-                                        user_message_bubble(ui, &entry.content);
-                                    }
-                                    ChatRole::Tool => {
-                                        tool_call_block(ui, &entry.content);
-                                    }
-                                    ChatRole::Assistant | ChatRole::System => {
-                                        let (label, color) = match entry.role {
-                                            ChatRole::Assistant => {
-                                                ("Kiwi", ui.visuals().text_color())
-                                            }
-                                            ChatRole::System => {
-                                                ("System", ui.visuals().weak_text_color())
-                                            }
-                                            ChatRole::User | ChatRole::Tool => unreachable!(),
-                                        };
-                                        ui.label(
-                                            RichText::new(label).strong().size(11.0).color(color),
-                                        );
-
-                                        if is_streaming && entry.content.is_empty() {
-                                            ui.label(
-                                                RichText::new("Generating…")
-                                                    .weak()
-                                                    .italics()
-                                                    .size(13.0),
-                                            );
-                                        } else {
-                                            let mut display = entry.content.clone();
-                                            if is_streaming {
-                                                display.push('▍');
-                                            }
-                                            ui.label(RichText::new(display).size(13.0));
-                                        }
-                                    }
-                                }
-                                ui.add_space(10.0);
-                            }
-                        }
-
-                        if let Some(error) = &state.chat_error {
-                            ui.add_space(4.0);
-                            ui.label(
-                                RichText::new(error)
-                                    .color(ui.visuals().error_fg_color)
-                                    .size(12.0),
-                            );
-                        }
+                        ai_conversation(ui, state, pending);
                     });
             });
     });
@@ -765,6 +722,70 @@ fn ai_panel_contents(
     ui.scope_builder(UiBuilder::new().max_rect(prompt_rect), |ui| {
         ai_prompt_section(ui, state, app_ctx, chat_pending, agent_pending);
     });
+}
+
+fn ai_conversation(ui: &mut Ui, state: &mut WorkbenchState, pending: bool) {
+    if state.chat_messages.is_empty() {
+        ui.label(
+            RichText::new(
+                "Ask questions about your project, generate plans, \
+                 or apply code changes. Drag an editor tab here to \
+                 attach file contents for the agent.",
+            )
+            .weak()
+            .size(13.0),
+        );
+        return;
+    }
+
+    for (index, entry) in state.chat_messages.iter().enumerate() {
+        let is_streaming = state.chat_busy
+            && pending
+            && entry.role == ChatRole::Assistant
+            && state
+                .chat_messages
+                .iter()
+                .rposition(|message| message.role == ChatRole::Assistant)
+                == Some(index);
+
+        match entry.role {
+            ChatRole::User => user_message_bubble(ui, &entry.content),
+            ChatRole::Tool => tool_call_block(ui, &entry.content),
+            ChatRole::Assistant | ChatRole::System => {
+                let (label, color) = match entry.role {
+                    ChatRole::Assistant => ("Kiwi", ui.visuals().text_color()),
+                    ChatRole::System => ("System", ui.visuals().weak_text_color()),
+                    ChatRole::User | ChatRole::Tool => unreachable!(),
+                };
+                ui.label(RichText::new(label).strong().size(11.0).color(color));
+
+                if is_streaming && entry.content.is_empty() {
+                    ui.label(
+                        RichText::new("Generating…")
+                            .weak()
+                            .italics()
+                            .size(13.0),
+                    );
+                } else {
+                    let mut display = entry.content.clone();
+                    if is_streaming {
+                        display.push('▍');
+                    }
+                    ui.label(RichText::new(display).size(13.0));
+                }
+            }
+        }
+        ui.add_space(10.0);
+    }
+
+    if let Some(error) = &state.chat_error {
+        ui.add_space(4.0);
+        ui.label(
+            RichText::new(error)
+                .color(ui.visuals().error_fg_color)
+                .size(12.0),
+        );
+    }
 }
 
 fn ai_prompt_section(
@@ -778,7 +799,6 @@ fn ai_prompt_section(
         .fill(PALETTE.background_editor)
         .inner_margin(egui::Margin::symmetric(8, 8))
         .show(ui, |ui| {
-            ui.label(RichText::new("Prompt Input").weak().size(11.0));
             Frame::new()
                 .fill(PALETTE.background_panel)
                 .corner_radius(egui::CornerRadius::same(8))
@@ -800,7 +820,7 @@ fn ai_prompt_section(
                 ui.spacing_mut().item_spacing.x = 8.0;
                 ui.set_min_height(CHAT_CONTROL_HEIGHT);
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                    chat_model_selector(ui, state);
+                    chat_model_selector(ui, state, app_ctx);
                     if ui
                         .add(
                             ActionButton::new(Icon::PAPERCLIP, "Attach")
@@ -875,7 +895,7 @@ fn user_message_bubble(ui: &mut Ui, content: &str) {
     });
 }
 
-fn chat_model_selector(ui: &mut Ui, state: &mut WorkbenchState) {
+fn chat_model_selector(ui: &mut Ui, state: &mut WorkbenchState, app_ctx: &AppContext) {
     let models = if state.agent.models.is_empty() {
         vec![state.agent.model.clone()]
     } else {
@@ -913,6 +933,10 @@ fn chat_model_selector(ui: &mut Ui, state: &mut WorkbenchState) {
 
     if changed {
         state.sync_model_from_agent();
+        if let Ok(shared) = app_ctx.service::<nest_ai_ollama::OllamaSharedConfig>() {
+            state.agent.apply_runtime(&shared);
+        }
+        let _ = try_persist_preferences(&state.agent, state.agent_mode, app_ctx);
     }
 }
 
@@ -1023,17 +1047,34 @@ fn send_agent_message(
         })
         .collect();
 
-    state.chat_messages.push(ChatEntry {
-        role: ChatRole::Assistant,
-        content: String::new(),
-    });
+    let mcp_path = agent_cfg.mcp_config_path.clone();
+    let mcp_servers = agent_cfg.enabled_mcp_servers();
+    let agent_config = agent_cfg.agent_config();
+    let model = agent_cfg.model;
 
     *agent_pending = Some(chat::spawn_agent_run(
         ai.clone(),
         history,
-        Some(agent_cfg.model),
-        agent_cfg.mcp_config_path,
-        agent_cfg.mcp_servers,
-        agent_cfg.max_steps,
+        Some(model),
+        mcp_path,
+        mcp_servers,
+        agent_config,
     ));
+}
+
+/// Ensures the chat transcript ends with an assistant entry for agent streaming.
+fn ensure_assistant_message(messages: &mut Vec<ChatEntry>) -> &mut ChatEntry {
+    if messages
+        .last()
+        .is_some_and(|entry| entry.role == ChatRole::Assistant)
+    {
+        let index = messages.len() - 1;
+        return &mut messages[index];
+    }
+    messages.push(ChatEntry {
+        role: ChatRole::Assistant,
+        content: String::new(),
+    });
+    let index = messages.len() - 1;
+    &mut messages[index]
 }

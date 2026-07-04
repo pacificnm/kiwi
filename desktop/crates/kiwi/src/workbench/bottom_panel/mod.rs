@@ -1,18 +1,27 @@
-//! Bottom panel — tab selection and content dispatch.
+//! Bottom panel — tab selection, resize, and content dispatch.
 
 mod debug;
 mod git;
 mod logs;
 mod output;
 mod problems;
-mod terminal;
-mod tool_activity;
+pub mod terminal;
+pub mod tool_activity;
 
-use egui::{pos2, Align, Button, Frame, Layout, Rect, RichText, ScrollArea, Stroke, Ui};
+use egui::containers::panel::PanelState;
+use egui::{pos2, Align, Button, Context, Frame, Id, Layout, Rect, RichText, ScrollArea, Stroke, TopBottomPanel, Ui};
+
+use nest_icon::{Icon, IconButton};
 
 use crate::theme::PALETTE;
 use crate::workbench::state::WorkbenchState;
 
+/// egui panel id for the resizable bottom dock.
+pub const PANEL_ID: &str = "kiwi-bottom-panel";
+/// Default bottom panel height in points.
+pub const DEFAULT_HEIGHT: f32 = 200.0;
+const MIN_HEIGHT: f32 = 80.0;
+const MIN_EDITOR_HEIGHT: f32 = 120.0;
 const BOTTOM_TAB_BAR_HEIGHT: f32 = 32.0;
 const BOTTOM_TAB_LABEL_SIZE: f32 = 12.0;
 
@@ -60,14 +69,116 @@ impl BottomTab {
             Self::Git => "Git",
         }
     }
+
+    /// Tab label including live badges (tool call counts, etc.).
+    pub fn label_with_state(self, state: &WorkbenchState) -> String {
+        match self {
+            Self::ToolActivity => {
+                let total = state.tool_activity.len();
+                if total == 0 {
+                    return self.label().to_string();
+                }
+                let running = state
+                    .tool_activity
+                    .iter()
+                    .any(|entry| entry.status == crate::workbench::state::ToolActivityStatus::Running);
+                if running {
+                    format!("Tool Activity ({total}…)")
+                } else {
+                    format!("Tool Activity ({total})")
+                }
+            }
+            _ => self.label().to_string(),
+        }
+    }
+}
+
+/// Returns the persisted egui id for the bottom panel.
+pub fn panel_id() -> Id {
+    Id::new(PANEL_ID)
+}
+
+/// Maximum height the bottom panel may occupy above the editor.
+pub fn max_height(ctx: &Context) -> f32 {
+    let available = ctx.available_rect();
+    (available.height() - MIN_EDITOR_HEIGHT).max(MIN_HEIGHT)
+}
+
+/// Shows the resizable bottom dock. Call before [`egui::CentralPanel`].
+pub fn show_panel(ctx: &Context, state: &mut WorkbenchState) {
+    let max_h = max_height(ctx);
+
+    if state.bottom_panel_toggle_requested {
+        state.bottom_panel_toggle_requested = false;
+        apply_panel_toggle(ctx, state, max_h);
+    }
+
+    TopBottomPanel::bottom(PANEL_ID)
+        .resizable(true)
+        .default_height(DEFAULT_HEIGHT)
+        .min_height(MIN_HEIGHT)
+        .max_height(max_h)
+        .show_separator_line(true)
+        .frame(
+            Frame::new()
+                .fill(PALETTE.background_panel)
+                .inner_margin(egui::Margin::ZERO),
+        )
+        .show(ctx, |ui| bottom_panel(ui, state));
+
+    sync_maximized_state(ctx, state, max_h);
+}
+
+fn apply_panel_toggle(ctx: &Context, state: &mut WorkbenchState, max_h: f32) {
+    if state.bottom_panel_maximized {
+        set_panel_height(ctx, state.bottom_panel_restored_height);
+        state.bottom_panel_maximized = false;
+    } else {
+        state.bottom_panel_restored_height = current_panel_height(ctx).unwrap_or(DEFAULT_HEIGHT);
+        set_panel_height(ctx, max_h);
+        state.bottom_panel_maximized = true;
+    }
+}
+
+fn sync_maximized_state(ctx: &Context, state: &mut WorkbenchState, max_h: f32) {
+    let Some(height) = current_panel_height(ctx) else {
+        return;
+    };
+
+    if state.bottom_panel_maximized && height < max_h - 2.0 {
+        state.bottom_panel_maximized = false;
+        state.bottom_panel_restored_height = height;
+    }
+}
+
+fn current_panel_height(ctx: &Context) -> Option<f32> {
+    PanelState::load(ctx, panel_id()).map(|panel| panel.rect.height())
+}
+
+fn set_panel_height(ctx: &Context, height: f32) {
+    let id = panel_id();
+    let height = height.max(MIN_HEIGHT);
+
+    let mut rect = if let Some(panel) = PanelState::load(ctx, id) {
+        panel.rect
+    } else {
+        let available = ctx.available_rect();
+        Rect::from_min_max(
+            pos2(available.min.x, available.max.y - height),
+            pos2(available.max.x, available.max.y),
+        )
+    };
+
+    rect.min.y = rect.max.y - height;
+    ctx.data_mut(|data| data.insert_persisted(id, PanelState { rect }));
 }
 
 /// Renders the bottom panel tab bar and active content.
-pub fn bottom_panel(ui: &mut Ui, state: &mut WorkbenchState) {
+fn bottom_panel(ui: &mut Ui, state: &mut WorkbenchState) {
     ui.spacing_mut().item_spacing.y = 0.0;
     ui.set_min_height(ui.available_height());
 
-    tab_bar(ui, &mut state.bottom_tab);
+    tab_bar(ui, state);
 
     Frame::new()
         .fill(PALETTE.background_panel)
@@ -80,26 +191,31 @@ pub fn bottom_panel(ui: &mut Ui, state: &mut WorkbenchState) {
         .inner_margin(egui::Margin::symmetric(8, 8))
         .show(ui, |ui| {
             let content_height = ui.available_height().max(0.0);
-            ui.set_min_height(content_height);
-            ScrollArea::vertical()
-                .id_salt("kiwi-bottom-panel")
-                .max_height(content_height)
-                .auto_shrink([false; 2])
-                .show(ui, |ui| {
-                    match state.bottom_tab {
-                        BottomTab::Terminal => terminal::show(ui),
-                        BottomTab::Problems => problems::show(ui),
-                        BottomTab::Output => output::show(ui),
-                        BottomTab::Logs => logs::show(ui),
-                        BottomTab::ToolActivity => tool_activity::show(ui, state),
-                        BottomTab::Debug => debug::show(ui),
-                        BottomTab::Git => git::show(ui),
-                    }
-                });
+            match state.bottom_tab {
+                BottomTab::Terminal => {
+                    terminal::show(ui, state);
+                }
+                active => {
+                    ui.set_max_height(content_height);
+                    ScrollArea::vertical()
+                        .id_salt("kiwi-bottom-panel")
+                        .max_height(content_height)
+                        .auto_shrink([false; 2])
+                        .show(ui, |ui| match active {
+                            BottomTab::Problems => problems::show(ui),
+                            BottomTab::Output => output::show(ui),
+                            BottomTab::Logs => logs::show(ui),
+                            BottomTab::ToolActivity => tool_activity::show(ui, state),
+                            BottomTab::Debug => debug::show(ui),
+                            BottomTab::Git => git::show(ui),
+                            BottomTab::Terminal => unreachable!(),
+                        });
+                }
+            }
         });
 }
 
-fn tab_bar(ui: &mut Ui, active: &mut BottomTab) {
+fn tab_bar(ui: &mut Ui, state: &mut WorkbenchState) {
     let border = tab_border_stroke();
 
     ui.allocate_ui_with_layout(
@@ -118,8 +234,9 @@ fn tab_bar(ui: &mut Ui, active: &mut BottomTab) {
                 ui.set_min_height(BOTTOM_TAB_BAR_HEIGHT);
 
                 for tab in BottomTab::ALL {
-                    let selected = *active == tab;
-                    let (clicked, tab_rect) = tab_item(ui, tab.label(), selected);
+                    let selected = state.bottom_tab == tab;
+                    let tab_label = tab.label_with_state(state);
+                    let (clicked, tab_rect) = tab_item(ui, &tab_label, selected);
                     if clicked {
                         select_tab = Some(tab);
                     }
@@ -127,6 +244,27 @@ fn tab_bar(ui: &mut Ui, active: &mut BottomTab) {
                         active_tab_rect = Some(tab_rect);
                     }
                 }
+
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.set_width(ui.available_width());
+                    let (icon, tooltip) = if state.bottom_panel_maximized {
+                        (Icon::CHEVRON_DOWN, "Restore bottom panel height")
+                    } else {
+                        (Icon::CHEVRON_UP, "Expand bottom panel")
+                    };
+                    if ui
+                        .add(
+                            IconButton::new(icon)
+                                .size(12.0)
+                                .min_size(egui::vec2(28.0, BOTTOM_TAB_BAR_HEIGHT - 4.0))
+                                .tooltip(tooltip),
+                        )
+                        .clicked()
+                    {
+                        state.bottom_panel_toggle_requested = true;
+                        ui.ctx().request_repaint();
+                    }
+                });
             });
 
             let strip_rect = ui.max_rect();
@@ -141,7 +279,7 @@ fn tab_bar(ui: &mut Ui, active: &mut BottomTab) {
             }
 
             if let Some(tab) = select_tab {
-                *active = tab;
+                state.bottom_tab = tab;
             }
         },
     );
@@ -204,4 +342,14 @@ fn paint_active_tab_chrome(ui: &Ui, tab_rect: Rect, strip_rect: Rect, border: St
 
 fn tab_border_stroke() -> Stroke {
     Stroke::new(1.0, PALETTE.border_default)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_height_is_reasonable() {
+        assert!(DEFAULT_HEIGHT >= MIN_HEIGHT);
+    }
 }

@@ -47,7 +47,7 @@ pub fn sidebar(
                 Activity::SourceControl => source_control::show(ui),
                 Activity::Issues => issues::show(ui),
                 Activity::Tasks => tasks::show(ui),
-                Activity::Agent => agent::show(ui, &mut state.agent, app_ctx),
+                Activity::Agent => agent::show(ui, state, app_ctx),
                 Activity::Tools => tools::show(ui),
                 Activity::Extensions => extensions::show(ui),
             }

@@ -8,7 +8,6 @@ use futures_util::StreamExt;
 use nest_agent::{AgentEvent, AgentLoop, CancelToken};
 use nest_ai::{AiService, ChatMessage, CompletionRequest};
 use nest_error::NestError;
-use nest_mcp::McpHub;
 use tokio::sync::mpsc as tokio_mpsc;
 
 /// Maps [`nest_ai::AiError`] into a [`NestError`].
@@ -17,6 +16,33 @@ pub fn ai_to_nest(error: nest_ai::AiError) -> NestError {
         .with_code(error.nest_code())
         .with_module("nest-ai")
         .with_source(error)
+}
+
+/// Formats AI/network errors for display in the chat panel.
+pub fn format_ai_error_message(message: &str) -> String {
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("not found") && lower.contains("model") {
+        return format!(
+            "{message}\n\nThat model is not installed on the Ollama host. \
+             Run `ollama pull <model>` there, or pick a model from `ollama list`. \
+             (You already have `qwen2.5:7b` if you want a 7B tool-capable model.)"
+        );
+    }
+    if lower.contains("error sending request")
+        || lower.contains("connection refused")
+        || lower.contains("timed out")
+        || lower.contains("timeout")
+        || lower.contains("404")
+    {
+        format!(
+            "{message}\n\nOllama may still be loading the model into memory (7B models can take \
+             30–60s on first use). Wait and try again.\n\nAlso verify the Agent sidebar host is \
+             192.168.88.10:11434 and the selected model matches `ollama list` exactly \
+             (e.g. qwen2.5-coder:7b)."
+        )
+    } else {
+        message.to_string()
+    }
 }
 
 /// Incremental chat events delivered to the GUI thread.
@@ -130,25 +156,28 @@ pub fn spawn_agent_run(
     model: Option<String>,
     mcp_config_path: PathBuf,
     mcp_servers: Vec<String>,
-    max_steps: u32,
+    agent_config: nest_agent::AgentConfig,
 ) -> mpsc::Receiver<AgentRunEvent> {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
         runtime.block_on(async {
             let result = async {
-                let mut hub = McpHub::from_config_file(&mcp_config_path, Some(&mcp_servers))
-                    .await
-                    .map_err(|error| {
-                        NestError::network(format!(
-                            "failed to load MCP config {}: {error}",
-                            mcp_config_path.display()
-                        ))
-                        .with_module("nest-mcp")
-                    })?;
+                let mut hub = nest_agent::SharedMcpHub::from_config_file(
+                    &mcp_config_path,
+                    Some(&mcp_servers),
+                )
+                .await
+                .map_err(|error| {
+                    NestError::network(format!(
+                        "failed to load MCP config {}: {error}",
+                        mcp_config_path.display()
+                    ))
+                    .with_module("nest-mcp")
+                })?;
 
                 let (event_tx, mut event_rx) = tokio_mpsc::channel(32);
-                let loop_ = AgentLoop::new(ai, nest_agent::AgentConfig::default().with_max_steps(max_steps));
+                let loop_ = AgentLoop::new(ai, agent_config);
                 let cancel = CancelToken::new();
 
                 let run_handle = tokio::spawn(async move {

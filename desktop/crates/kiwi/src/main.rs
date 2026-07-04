@@ -14,13 +14,16 @@ use std::env;
 use nest_cli::CliApp;
 use nest_gui::{GuiApp, GuiStartupOptions, StatusBarModule, ToastModule};
 use nest_icon::IconModule;
-use nest_logging::LoggingConfig;
+use nest_logging::{LogBuffer, LoggingConfig};
 
 use crate::cli::{AgentCommand, ChatCommand};
 use crate::modules::{with_cli_modules, with_gui_modules};
 use crate::project::{project_root_from_args, ProjectConfig};
 use crate::theme::KiwiThemeModule;
 use crate::workbench::KiwiWorkbench;
+
+/// Retains recent log lines for the bottom-panel Logs tab.
+const UI_LOG_BUFFER_CAPACITY: usize = 2_000;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -46,6 +49,10 @@ fn main() {
         with_gui_modules(
             GuiApp::new("kiwi")
                 .with_task_runtime(true)
+                .with_logging(
+                    LoggingConfig::for_gui("kiwi")
+                        .with_ui_buffer(LogBuffer::new(UI_LOG_BUFFER_CAPACITY)),
+                )
                 .module(KiwiThemeModule)
                 .module(IconModule::new())
                 .module(ToastModule::new())

@@ -28,9 +28,18 @@ pub struct AgentSection {
     /// MCP server ids to connect (must exist in `mcp_config`).
     #[serde(default = "default_mcp_servers")]
     pub mcp_servers: Vec<String>,
+    /// MCP servers disabled in the Agent sidebar (subset of `mcp_servers`).
+    #[serde(default)]
+    pub disabled_mcp_servers: Vec<String>,
     /// Maximum model ↔ tool iterations.
     #[serde(default = "default_max_steps")]
     pub max_steps: u32,
+    /// When true, chat Send uses the MCP agent loop by default.
+    #[serde(default)]
+    pub agent_mode: bool,
+    /// When true, `save_context_memory` may auto-run without per-call approval.
+    #[serde(default)]
+    pub allow_save_context: bool,
 }
 
 impl Default for AgentSection {
@@ -39,7 +48,10 @@ impl Default for AgentSection {
             model: None,
             mcp_config: default_mcp_config(),
             mcp_servers: default_mcp_servers(),
+            disabled_mcp_servers: Vec::new(),
             max_steps: default_max_steps(),
+            agent_mode: false,
+            allow_save_context: false,
         }
     }
 }
@@ -66,10 +78,16 @@ pub struct AgentLoopConfig {
     pub model: String,
     /// Resolved absolute or cwd-relative MCP config path.
     pub mcp_config_path: PathBuf,
-    /// MCP server ids to connect.
+    /// MCP server ids configured in `[agent].mcp_servers`.
     pub mcp_servers: Vec<String>,
+    /// MCP servers disabled in the Agent sidebar.
+    pub disabled_mcp_servers: Vec<String>,
     /// Maximum loop steps.
     pub max_steps: u32,
+    /// Default Agent checkbox state in the chat panel.
+    pub agent_mode: bool,
+    /// Whether `save_context_memory` may auto-run.
+    pub allow_save_context: bool,
 }
 
 impl AgentLoopConfig {
@@ -95,13 +113,27 @@ impl AgentLoopConfig {
             model,
             mcp_config_path,
             mcp_servers: section.mcp_servers,
+            disabled_mcp_servers: section.disabled_mcp_servers,
             max_steps: section.max_steps,
+            agent_mode: section.agent_mode,
+            allow_save_context: section.allow_save_context,
         })
+    }
+
+    /// MCP servers enabled for agent runs.
+    pub fn enabled_mcp_servers(&self) -> Vec<String> {
+        self.mcp_servers
+            .iter()
+            .filter(|name| !self.disabled_mcp_servers.iter().any(|disabled| disabled == *name))
+            .cloned()
+            .collect()
     }
 
     /// Builds [`AgentConfig`] for [`nest_agent::AgentLoop`].
     pub fn agent_config(&self) -> AgentConfig {
-        AgentConfig::default().with_max_steps(self.max_steps)
+        AgentConfig::default()
+            .with_max_steps(self.max_steps)
+            .with_allow_save_context(self.allow_save_context)
     }
 }
 

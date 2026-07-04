@@ -1,29 +1,38 @@
-[gui]
-title = "Kiwi"
-width = 1600
-height = 900
-vsync = true
+[agent]
+agent_mode = true
+allow_save_context = false
+disabled_mcp_servers = []
+max_steps = 10
+mcp_config = "../../../.cursor/mcp.json"
+mcp_servers = [
+    "nest-memory",
+    "nest-knowledge",
+    "nest-context-memory",
+]
+model = "qwen2.5:3b"
 
 [ai]
-enabled = true
-provider = "ollama"
-host = "192.168.88.10"
-port = 11434
 base_url = "http://192.168.88.10:11434"
-model = "qwen2.5-coder:3b"
+enabled = true
+host = "192.168.88.10"
+model = "qwen2.5:3b"
 models = [
     "nomic-embed-text:latest",
     "llama3.2:3b",
     "qwen2.5-coder:3b",
+    "qwen2.5-coder:7b",
+    "qwen2.5:7b",
+    "qwen2.5:3b",
 ]
+port = 11434
+provider = "ollama"
 
-[agent]
-model = "qwen2.5-coder:3b"
-mcp_config = "../../../.cursor/mcp.json"
-mcp_servers = ["nest-memory", "nest-knowledge", "nest-context-memory"]
-max_steps = 10
+[gui]
+height = 900
+title = "Kiwi"
+vsync = true
+width = 1600
 
 [project]
-root = "../../.."
 name = "nest"
-# ignore = ["vendor", ".cursor"]
+root = "../../.."

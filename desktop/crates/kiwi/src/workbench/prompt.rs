@@ -60,14 +60,31 @@ impl PromptDraft {
     }
 
     /// Resolves placeholders into the message sent to the model.
+    ///
+    /// Attachments whose `[Pasted item]` placeholder was removed from the visible
+    /// draft are appended at the end so drag-and-drop files are never dropped silently.
     pub fn resolve(&self) -> String {
         let mut out = self.visible.clone();
+        let mut used = vec![false; self.pastes.len()];
+
         for (index, paste) in self.pastes.iter().enumerate() {
             let token = paste_token(index, self.pastes.len());
             if out.contains(&token) {
                 out = out.replace(&token, paste);
+                used[index] = true;
             }
         }
+
+        for (index, paste) in self.pastes.iter().enumerate() {
+            if used[index] {
+                continue;
+            }
+            if !out.trim().is_empty() {
+                out.push_str("\n\n");
+            }
+            out.push_str(paste);
+        }
+
         out.trim().to_string()
     }
 
@@ -137,12 +154,23 @@ mod tests {
     }
 
     #[test]
-    fn removed_placeholder_drops_paste() {
+    fn removed_placeholder_still_sends_paste() {
         let mut draft = PromptDraft::default();
         draft.add_paste("secret".into());
         draft.visible.clear();
         draft.visible.push_str("just typing");
-        assert_eq!(draft.resolve(), "just typing");
+        assert_eq!(draft.resolve(), "just typing\n\nsecret");
+    }
+
+    #[test]
+    fn attach_file_survives_prompt_rewrite() {
+        let mut draft = PromptDraft::default();
+        draft.attach_file("README.md", "# Hello");
+        draft.visible = "read and summarize the readme".into();
+        let resolved = draft.resolve();
+        assert!(resolved.starts_with("read and summarize the readme"));
+        assert!(resolved.contains("<file path=\"README.md\">"));
+        assert!(resolved.contains("# Hello"));
     }
 
     #[test]

@@ -10,6 +10,7 @@ use super::explorer::ExplorerState;
 use super::prompt::PromptDraft;
 use crate::agent::AgentSettings;
 use crate::project::{merged_ignore, ProjectConfig};
+use crate::workbench::bottom_panel::terminal::TerminalState;
 
 /// One message in the AI chat panel.
 #[derive(Debug, Clone)]
@@ -20,15 +21,34 @@ pub struct ChatEntry {
     pub content: String,
 }
 
+/// Outcome of an MCP tool invocation in the activity panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolActivityStatus {
+    /// Tool call in progress.
+    Running,
+    /// Tool returned successfully.
+    Success,
+    /// Tool failed or was rejected.
+    Failed,
+}
+
 /// One tool invocation in the Tool Activity panel.
 #[derive(Debug, Clone)]
 pub struct ToolActivityEntry {
     /// Model-visible tool name.
     pub tool: String,
-    /// Arguments, result preview, or error text.
-    pub detail: String,
-    /// Whether the tool is still running.
-    pub running: bool,
+    /// Formatted argument summary.
+    pub arguments: String,
+    /// Tool output when successful.
+    pub result: Option<String>,
+    /// Error message when failed.
+    pub error: Option<String>,
+    /// Invocation status.
+    pub status: ToolActivityStatus,
+    /// Wall time for the MCP call in milliseconds.
+    pub duration_ms: Option<u64>,
+    /// Agent loop step when the tool was invoked.
+    pub step: Option<u32>,
 }
 
 /// Workbench UI state (layout MVP placeholders).
@@ -64,10 +84,20 @@ pub struct WorkbenchState {
     pub agent_mode: bool,
     /// Recent MCP tool invocations for the bottom panel.
     pub tool_activity: Vec<ToolActivityEntry>,
+    /// Current agent loop step (1-based), if a run is active.
+    pub agent_step: Option<u32>,
     /// Resolved MCP config path for display.
     pub agent_mcp_path: String,
     /// MCP server ids from config.
     pub agent_mcp_servers: Vec<String>,
+    /// Whether the bottom panel is expanded to maximum height.
+    pub bottom_panel_maximized: bool,
+    /// Bottom panel height before the last maximize action.
+    pub bottom_panel_restored_height: f32,
+    /// Apply expand/restore on the next frame (before egui lays out the panel).
+    pub bottom_panel_toggle_requested: bool,
+    /// Integrated terminal emulator state.
+    pub terminal: TerminalState,
 }
 
 impl Default for WorkbenchState {
@@ -84,6 +114,7 @@ impl WorkbenchState {
             name: "kiwi".into(),
             ignore: merged_ignore(None),
         };
+        let project_root = project.root.clone();
         Self {
             activity: Activity::Explorer,
             bottom_tab: BottomTab::Terminal,
@@ -100,8 +131,13 @@ impl WorkbenchState {
             agent: AgentSettings::default(),
             agent_mode: false,
             tool_activity: Vec::new(),
+            agent_step: None,
             agent_mcp_path: String::new(),
             agent_mcp_servers: Vec::new(),
+            bottom_panel_maximized: false,
+            bottom_panel_restored_height: super::bottom_panel::DEFAULT_HEIGHT,
+            bottom_panel_toggle_requested: false,
+            terminal: TerminalState::new(project_root),
         }
     }
 
