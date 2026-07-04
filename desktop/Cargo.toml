@@ -23,7 +23,10 @@ nest-logging = { git = "https://github.com/pacificnm/nest", branch = "main" }
 nest-theme = { git = "https://github.com/pacificnm/nest", branch = "main" }
 nest-agent = { git = "https://github.com/pacificnm/nest", branch = "main" }
 nest-mcp = { git = "https://github.com/pacificnm/nest", branch = "main" }
+nest-file = { git = "https://github.com/pacificnm/nest", branch = "main" }
+notify = "7"
 egui = "0.31"
+egui_extras = { version = "0.31", default-features = false, features = ["syntect"] }
 eframe = { version = "0.31", default-features = true }
 tracing = "0.1"
 
@@ -42,3 +45,4 @@ nest-logging = { path = "../../../core/crates/nest-logging" }
 nest-theme = { path = "../../../core/crates/nest-theme" }
 nest-agent = { path = "../../../core/crates/nest-agent" }
 nest-mcp = { path = "../../../core/crates/nest-mcp" }
+nest-file = { path = "../../../core/crates/nest-file" }

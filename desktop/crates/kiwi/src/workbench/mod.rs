@@ -3,13 +3,17 @@
 mod activity;
 mod bottom_panel;
 mod editor;
+mod editor_files;
+mod editor_syntax;
+mod explorer;
 mod prompt;
 mod sidebar;
 mod state;
+mod watcher;
 
 use std::sync::mpsc::{Receiver, TryRecvError};
 
-use egui::{Align, CentralPanel, ComboBox, Frame, Layout, RichText, ScrollArea, Separator, SidePanel, TextEdit, TopBottomPanel, Ui};
+use egui::{Align, CentralPanel, ComboBox, Frame, Layout, RichText, ScrollArea, Separator, SidePanel, TextEdit, TopBottomPanel, Ui, UiBuilder};
 use nest_agent::AgentEvent;
 use nest_ai::{AiService, ChatMessage, ChatRole};
 use nest_config::ConfigService;
@@ -18,17 +22,27 @@ use nest_error::NestResult;
 use nest_gui::{ActionButton, ButtonSize, StatusBarService, WorkbenchView};
 use nest_icon::{font, Icon};
 
+pub use editor_files::{FileLoadEvent, FileSaveEvent};
 pub use state::{ChatEntry, WorkbenchState};
 
 use crate::agent::AgentLoopConfig;
 use crate::agent::AgentSettings;
 use crate::chat::{self, AgentRunEvent, ChatStreamEvent};
+use crate::project::ProjectConfig;
 use crate::theme::PALETTE;
+use crate::workbench::editor_files::{apply_file_load, apply_file_save, begin_file_save, spawn_save_file};
+use crate::workbench::watcher::ProjectWatcher;
 use nest_ai_ollama::{OllamaConfig, OllamaSharedConfig};
+
+/// Background file read channel for editor tabs.
+pub type FileLoadPending = Receiver<FileLoadEvent>;
+
+/// Background file write channel for editor tabs.
+pub type FileSavePending = Receiver<FileSaveEvent>;
 
 use activity::{activity_bar, ACTIVITY_BAR_WIDTH};
 use bottom_panel::bottom_panel;
-use editor::editor_panel;
+use editor::{editor_panel, EditorTabDragPayload};
 use sidebar::{section_heading, sidebar};
 
 use prompt::PROMPT_INPUT_HEIGHT;
@@ -37,7 +51,10 @@ const TITLE_BAR_HEIGHT: f32 = 36.0;
 const SIDEBAR_WIDTH: f32 = 260.0;
 const AI_PANEL_WIDTH: f32 = 360.0;
 const BOTTOM_PANEL_HEIGHT: f32 = 200.0;
-const PROMPT_SECTION_HEIGHT: f32 = 168.0;
+/// Chat header row (title + agent toggle).
+const AI_CHAT_HEADER_HEIGHT: f32 = 36.0;
+/// Prompt input, model selector, buttons, and token stats row.
+const AI_PROMPT_SECTION_HEIGHT: f32 = 192.0;
 /// Matches [`ButtonSize::Small`] action buttons in the chat toolbar.
 const CHAT_CONTROL_HEIGHT: f32 = 28.0;
 const CHAT_MODEL_WIDTH: f32 = 148.0;
@@ -48,8 +65,12 @@ pub struct KiwiWorkbench {
     fonts_installed: bool,
     theme_applied: bool,
     ai_config_loaded: bool,
+    project_loaded: bool,
     chat_pending: Option<Receiver<ChatStreamEvent>>,
     agent_pending: Option<Receiver<AgentRunEvent>>,
+    file_pending: Option<FileLoadPending>,
+    file_save_pending: Option<FileSavePending>,
+    project_watcher: Option<ProjectWatcher>,
 }
 
 impl Default for KiwiWorkbench {
@@ -59,8 +80,12 @@ impl Default for KiwiWorkbench {
             fonts_installed: false,
             theme_applied: false,
             ai_config_loaded: false,
+            project_loaded: false,
             chat_pending: None,
             agent_pending: None,
+            file_pending: None,
+            file_save_pending: None,
+            project_watcher: None,
         }
     }
 }
@@ -77,9 +102,16 @@ impl WorkbenchView for KiwiWorkbench {
             self.theme_applied = true;
         }
         self.sync_ai_config(app_ctx);
+        self.sync_project_config(app_ctx);
         self.poll_chat(ctx);
         self.poll_agent(ctx);
-        if self.chat_pending.is_some() || self.agent_pending.is_some() {
+        self.poll_file_load(ctx);
+        self.poll_file_save(ctx);
+        if self.chat_pending.is_some()
+            || self.agent_pending.is_some()
+            || self.file_pending.is_some()
+            || self.file_save_pending.is_some()
+        {
             ctx.request_repaint_after(std::time::Duration::from_millis(32));
         }
         self.sync_status(app_ctx);
@@ -137,7 +169,12 @@ impl WorkbenchView for KiwiWorkbench {
             .resizable(true)
             .frame(sidebar_frame)
             .show(ctx, |ui| {
-                sidebar(ui, &mut self.state, app_ctx);
+                sidebar(
+                    ui,
+                    &mut self.state,
+                    app_ctx,
+                    &mut self.file_pending,
+                );
             });
 
         CentralPanel::default()
@@ -147,12 +184,20 @@ impl WorkbenchView for KiwiWorkbench {
                     .inner_margin(egui::Margin::ZERO),
             )
             .show(ctx, |ui| {
-                central_panel(ui, &mut self.state);
+                central_panel(ui, ctx, &mut self.state, app_ctx, &mut self.file_save_pending);
             });
 
         self.poll_chat(ctx);
         self.poll_agent(ctx);
-        if self.chat_pending.is_some() || self.agent_pending.is_some() {
+        self.poll_file_load(ctx);
+        self.poll_file_save(ctx);
+        self.poll_project_watcher(ctx, app_ctx);
+        if self.chat_pending.is_some()
+            || self.agent_pending.is_some()
+            || self.file_pending.is_some()
+            || self.file_save_pending.is_some()
+            || self.project_watcher.as_ref().is_some_and(|w| w.has_pending())
+        {
             ctx.request_repaint_after(std::time::Duration::from_millis(32));
         }
 
@@ -192,6 +237,77 @@ impl KiwiWorkbench {
             self.state.agent.apply_runtime(&shared);
         }
         self.ai_config_loaded = true;
+    }
+
+    fn sync_project_config(&mut self, app_ctx: &AppContext) {
+        if self.project_loaded {
+            return;
+        }
+        let Ok(config) = app_ctx.service::<ConfigService>() else {
+            return;
+        };
+        if let Ok(project) = ProjectConfig::from_config_service(&config) {
+            self.state.project = project.clone();
+            self.state.explorer = crate::workbench::explorer::ExplorerState::new(
+                &project.root,
+                &project.name,
+                project.ignore.clone(),
+            );
+            self.project_watcher = ProjectWatcher::new(&project.root).ok();
+            self.project_loaded = true;
+        }
+    }
+
+    fn poll_file_save(&mut self, ctx: &egui::Context) {
+        let Some(rx) = self.file_save_pending.as_ref() else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(event) => {
+                apply_file_save(&mut self.state.editor, event);
+                self.file_save_pending = None;
+                ctx.request_repaint();
+            }
+            Err(TryRecvError::Empty) => {}
+            Err(TryRecvError::Disconnected) => {
+                self.file_save_pending = None;
+                ctx.request_repaint();
+            }
+        }
+    }
+
+    fn poll_project_watcher(&mut self, ctx: &egui::Context, app_ctx: &AppContext) {
+        let Some(watcher) = self.project_watcher.as_mut() else {
+            return;
+        };
+        if !watcher.poll() {
+            return;
+        }
+        let Ok(files) = app_ctx.service::<nest_file::FileService>() else {
+            return;
+        };
+        if let Err(error) = self.state.explorer.refresh(&files) {
+            self.state.explorer.error = Some(error.to_string());
+        }
+        ctx.request_repaint();
+    }
+
+    fn poll_file_load(&mut self, ctx: &egui::Context) {
+        let Some(rx) = self.file_pending.as_ref() else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(event) => {
+                apply_file_load(&mut self.state.editor, event);
+                self.file_pending = None;
+                ctx.request_repaint();
+            }
+            Err(TryRecvError::Empty) => {}
+            Err(TryRecvError::Disconnected) => {
+                self.file_pending = None;
+                ctx.request_repaint();
+            }
+        }
     }
 
     fn poll_chat(&mut self, ctx: &egui::Context) {
@@ -433,10 +549,11 @@ fn title_bar(ui: &mut Ui, state: &WorkbenchState) {
         ui.add_space(12.0);
         ui.label(RichText::new("Kiwi").strong().size(14.0));
         ui.label(
-            RichText::new(format!("Project: {}", state.project))
+            RichText::new(format!("Project: {}", state.project.name))
                 .size(12.0)
                 .color(weak),
-        );
+        )
+        .on_hover_text(state.project.root.display().to_string());
         ui.label(
             RichText::new(format!("Model: {}", state.model))
                 .size(12.0)
@@ -451,7 +568,13 @@ fn title_bar(ui: &mut Ui, state: &WorkbenchState) {
     });
 }
 
-fn central_panel(ui: &mut Ui, state: &mut WorkbenchState) {
+fn central_panel(
+    ui: &mut Ui,
+    ctx: &egui::Context,
+    state: &mut WorkbenchState,
+    app_ctx: &AppContext,
+    file_save_pending: &mut Option<FileSavePending>,
+) {
     ui.spacing_mut().item_spacing.y = 0.0;
 
     let height = ui.available_height();
@@ -463,7 +586,24 @@ fn central_panel(ui: &mut Ui, state: &mut WorkbenchState) {
         Layout::top_down(Align::LEFT),
         |ui| {
             ui.set_height(editor_height);
-            editor_panel(ui, &mut state.editor);
+            if let Some(tab_index) = editor_panel(ui, ctx, &mut state.editor) {
+                if file_save_pending.is_none() {
+                    if let Some((rel_path, content)) = begin_file_save(&mut state.editor, tab_index)
+                    {
+                        if let Ok(files) = app_ctx.service::<nest_file::FileService>() {
+                            *file_save_pending = Some(spawn_save_file(
+                                files.clone(),
+                                rel_path,
+                                content,
+                                tab_index,
+                            ));
+                        } else if let Some(tab) = state.editor.tabs.get_mut(tab_index) {
+                            tab.saving = false;
+                            tab.save_error = Some("File service unavailable".into());
+                        }
+                    }
+                }
+            }
         },
     );
 
@@ -486,104 +626,154 @@ fn ai_panel(
     chat_pending: &mut Option<Receiver<ChatStreamEvent>>,
     agent_pending: &mut Option<Receiver<AgentRunEvent>>,
 ) {
+    let (_, dropped) = ui.dnd_drop_zone::<EditorTabDragPayload, _>(
+        Frame::new()
+            .fill(PALETTE.background_editor)
+            .inner_margin(egui::Margin::ZERO),
+        |ui| {
+            ai_panel_contents(ui, state, app_ctx, chat_pending, agent_pending);
+        },
+    );
+
+    if let Some(payload) = dropped {
+        let file = payload.as_ref();
+        state.prompt.attach_file(&file.rel_path, &file.content);
+        state.agent_mode = true;
+    }
+}
+
+fn ai_panel_contents(
+    ui: &mut Ui,
+    state: &mut WorkbenchState,
+    app_ctx: &AppContext,
+    chat_pending: &mut Option<Receiver<ChatStreamEvent>>,
+    agent_pending: &mut Option<Receiver<AgentRunEvent>>,
+) {
     ui.spacing_mut().item_spacing.y = 0.0;
-    ui.set_min_height(ui.available_height());
 
-    Frame::new()
-        .fill(PALETTE.background_editor)
-        .inner_margin(egui::Margin::symmetric(8, 6))
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                section_heading(ui, "Chat");
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.checkbox(&mut state.agent_mode, "Agent");
-                });
-            });
-        });
-
+    let panel = ui.available_rect_before_wrap();
     let pending = chat_pending.is_some() || agent_pending.is_some();
 
-    let conversation_height =
-        (ui.available_height() - PROMPT_SECTION_HEIGHT - 36.0).max(80.0);
+    let header_rect = egui::Rect::from_min_max(
+        panel.min,
+        egui::pos2(panel.max.x, panel.min.y + AI_CHAT_HEADER_HEIGHT),
+    );
+    let prompt_rect = egui::Rect::from_min_max(
+        egui::pos2(panel.min.x, panel.max.y - AI_PROMPT_SECTION_HEIGHT),
+        panel.max,
+    );
+    let conversation_rect = egui::Rect::from_min_max(
+        egui::pos2(panel.min.x, header_rect.max.y),
+        egui::pos2(panel.max.x, prompt_rect.min.y),
+    );
 
-    Frame::new()
-        .fill(PALETTE.background_editor)
-        .inner_margin(egui::Margin::symmetric(8, 8))
-        .show(ui, |ui| {
-            ScrollArea::vertical()
-                .id_salt("kiwi-ai-conversation")
-                .max_height(conversation_height)
-                .auto_shrink([false; 2])
-                .stick_to_bottom(state.chat_busy || pending)
-                .show(ui, |ui| {
-                    if state.chat_messages.is_empty() {
-                        ui.label(
-                            RichText::new(
-                                "Ask questions about your project, generate plans, \
-                                 or apply code changes.",
-                            )
-                            .weak()
-                            .size(13.0),
-                        );
-                    } else {
-                        for (index, entry) in state.chat_messages.iter().enumerate() {
-                            let is_streaming = state.chat_busy
-                                && pending
-                                && index + 1 == state.chat_messages.len()
-                                && entry.role == ChatRole::Assistant;
+    ui.scope_builder(UiBuilder::new().max_rect(header_rect), |ui| {
+        Frame::new()
+            .fill(PALETTE.background_editor)
+            .inner_margin(egui::Margin::symmetric(8, 6))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    section_heading(ui, "Chat");
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.checkbox(&mut state.agent_mode, "Agent");
+                    });
+                });
+            });
+    });
 
-                            match entry.role {
-                                ChatRole::User => {
-                                    user_message_bubble(ui, &entry.content);
-                                }
-                                ChatRole::Tool => {
-                                    tool_call_block(ui, &entry.content);
-                                }
-                                ChatRole::Assistant | ChatRole::System => {
-                                    let (label, color) = match entry.role {
-                                        ChatRole::Assistant => {
-                                            ("Kiwi", ui.visuals().text_color())
-                                        }
-                                        ChatRole::System => {
-                                            ("System", ui.visuals().weak_text_color())
-                                        }
-                                        ChatRole::User | ChatRole::Tool => unreachable!(),
-                                    };
-                                    ui.label(
-                                        RichText::new(label).strong().size(11.0).color(color),
-                                    );
+    ui.scope_builder(UiBuilder::new().max_rect(conversation_rect), |ui| {
+        Frame::new()
+            .fill(PALETTE.background_editor)
+            .inner_margin(egui::Margin::symmetric(8, 8))
+            .show(ui, |ui| {
+                ScrollArea::vertical()
+                    .id_salt("kiwi-ai-conversation")
+                    .max_height(ui.available_height())
+                    .auto_shrink([false; 2])
+                    .stick_to_bottom(state.chat_busy || pending)
+                    .show(ui, |ui| {
+                        if state.chat_messages.is_empty() {
+                            ui.label(
+                                RichText::new(
+                                    "Ask questions about your project, generate plans, \
+                                     or apply code changes. Drag an editor tab here to \
+                                     attach file contents for the agent.",
+                                )
+                                .weak()
+                                .size(13.0),
+                            );
+                        } else {
+                            for (index, entry) in state.chat_messages.iter().enumerate() {
+                                let is_streaming = state.chat_busy
+                                    && pending
+                                    && index + 1 == state.chat_messages.len()
+                                    && entry.role == ChatRole::Assistant;
 
-                                    if is_streaming && entry.content.is_empty() {
+                                match entry.role {
+                                    ChatRole::User => {
+                                        user_message_bubble(ui, &entry.content);
+                                    }
+                                    ChatRole::Tool => {
+                                        tool_call_block(ui, &entry.content);
+                                    }
+                                    ChatRole::Assistant | ChatRole::System => {
+                                        let (label, color) = match entry.role {
+                                            ChatRole::Assistant => {
+                                                ("Kiwi", ui.visuals().text_color())
+                                            }
+                                            ChatRole::System => {
+                                                ("System", ui.visuals().weak_text_color())
+                                            }
+                                            ChatRole::User | ChatRole::Tool => unreachable!(),
+                                        };
                                         ui.label(
-                                            RichText::new("Generating…")
-                                                .weak()
-                                                .italics()
-                                                .size(13.0),
+                                            RichText::new(label).strong().size(11.0).color(color),
                                         );
-                                    } else {
-                                        let mut display = entry.content.clone();
-                                        if is_streaming {
-                                            display.push('▍');
+
+                                        if is_streaming && entry.content.is_empty() {
+                                            ui.label(
+                                                RichText::new("Generating…")
+                                                    .weak()
+                                                    .italics()
+                                                    .size(13.0),
+                                            );
+                                        } else {
+                                            let mut display = entry.content.clone();
+                                            if is_streaming {
+                                                display.push('▍');
+                                            }
+                                            ui.label(RichText::new(display).size(13.0));
                                         }
-                                        ui.label(RichText::new(display).size(13.0));
                                     }
                                 }
+                                ui.add_space(10.0);
                             }
-                            ui.add_space(10.0);
                         }
-                    }
 
-                    if let Some(error) = &state.chat_error {
-                        ui.add_space(4.0);
-                        ui.label(
-                            RichText::new(error)
-                                .color(ui.visuals().error_fg_color)
-                                .size(12.0),
-                        );
-                    }
-                });
-        });
+                        if let Some(error) = &state.chat_error {
+                            ui.add_space(4.0);
+                            ui.label(
+                                RichText::new(error)
+                                    .color(ui.visuals().error_fg_color)
+                                    .size(12.0),
+                            );
+                        }
+                    });
+            });
+    });
 
+    ui.scope_builder(UiBuilder::new().max_rect(prompt_rect), |ui| {
+        ai_prompt_section(ui, state, app_ctx, chat_pending, agent_pending);
+    });
+}
+
+fn ai_prompt_section(
+    ui: &mut Ui,
+    state: &mut WorkbenchState,
+    app_ctx: &AppContext,
+    chat_pending: &mut Option<Receiver<ChatStreamEvent>>,
+    agent_pending: &mut Option<Receiver<AgentRunEvent>>,
+) {
     Frame::new()
         .fill(PALETTE.background_editor)
         .inner_margin(egui::Margin::symmetric(8, 8))
@@ -626,10 +816,10 @@ fn ai_panel(
                                 .fill(PALETTE.accent_primary)
                                 .text_color(egui::Color32::WHITE)
                                 .tooltip(if state.agent_mode {
-                            "Run agent (MCP tools)"
-                        } else {
-                            "Send message"
-                        }),
+                                    "Run agent (MCP tools)"
+                                } else {
+                                    "Send message"
+                                }),
                         )
                         .clicked()
                     {
@@ -641,8 +831,9 @@ fn ai_panel(
                     }
                 });
             });
+            ui.add_space(6.0);
+            ui.set_min_height(14.0);
             if let Some(metrics) = &state.chat_metrics {
-                ui.add_space(6.0);
                 ui.label(
                     RichText::new(metrics.detail_label())
                         .weak()

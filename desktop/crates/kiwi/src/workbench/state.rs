@@ -6,8 +6,10 @@ use nest_ai::CompletionMetrics;
 use super::activity::Activity;
 use super::bottom_panel::BottomTab;
 use super::editor::EditorState;
+use super::explorer::ExplorerState;
 use super::prompt::PromptDraft;
 use crate::agent::AgentSettings;
+use crate::project::{merged_ignore, ProjectConfig};
 
 /// One message in the AI chat panel.
 #[derive(Debug, Clone)]
@@ -38,12 +40,14 @@ pub struct WorkbenchState {
     pub bottom_tab: BottomTab,
     /// Editor tabs and active file.
     pub editor: EditorState,
+    /// Project file tree.
+    pub explorer: ExplorerState,
     /// AI prompt draft.
     pub prompt: PromptDraft,
     /// Active LLM model label.
     pub model: String,
-    /// Open project name.
-    pub project: String,
+    /// Open project configuration.
+    pub project: ProjectConfig,
     /// Sidebar search query (Search activity).
     pub search_query: String,
     /// Conversation history for the AI panel.
@@ -75,13 +79,19 @@ impl Default for WorkbenchState {
 impl WorkbenchState {
     /// Demo state for the layout shell.
     pub fn demo() -> Self {
+        let project = ProjectConfig {
+            root: std::path::PathBuf::from("."),
+            name: "kiwi".into(),
+            ignore: merged_ignore(None),
+        };
         Self {
             activity: Activity::Explorer,
             bottom_tab: BottomTab::Terminal,
-            editor: EditorState::demo(),
+            editor: EditorState::empty(),
+            explorer: ExplorerState::new(&project.root, &project.name, project.ignore.clone()),
             prompt: PromptDraft::default(),
             model: "smollm2:360m".into(),
-            project: "kiwi".into(),
+            project,
             search_query: String::new(),
             chat_messages: Vec::new(),
             chat_busy: false,

@@ -15,12 +15,18 @@ use nest_core::AppContext;
 
 use crate::workbench::activity::Activity;
 use crate::workbench::state::WorkbenchState;
+use crate::workbench::FileLoadPending;
 
 /// Inner width for sidebar scroll content (panel default minus frame padding).
 pub(crate) const SIDEBAR_INNER_WIDTH: f32 = 236.0;
 
 /// Renders the sidebar for the current activity.
-pub fn sidebar(ui: &mut Ui, state: &mut WorkbenchState, app_ctx: &AppContext) {
+pub fn sidebar(
+    ui: &mut Ui,
+    state: &mut WorkbenchState,
+    app_ctx: &AppContext,
+    file_pending: &mut Option<FileLoadPending>,
+) {
     section_heading(ui, state.activity.tooltip());
 
     ScrollArea::vertical()
@@ -29,7 +35,14 @@ pub fn sidebar(ui: &mut Ui, state: &mut WorkbenchState, app_ctx: &AppContext) {
         .show(ui, |ui| {
             ui.set_width(SIDEBAR_INNER_WIDTH);
             match state.activity {
-                Activity::Explorer => explorer::show(ui),
+                Activity::Explorer => explorer::show(
+                    ui,
+                    &mut state.explorer,
+                    &state.project,
+                    &mut state.editor,
+                    file_pending,
+                    app_ctx,
+                ),
                 Activity::Search => search::show(ui, &mut state.search_query),
                 Activity::SourceControl => source_control::show(ui),
                 Activity::Issues => issues::show(ui),

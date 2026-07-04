@@ -5,18 +5,20 @@ mod chat;
 mod cli;
 mod fonts;
 mod modules;
+mod project;
 mod theme;
 mod workbench;
 
 use std::env;
 
 use nest_cli::CliApp;
-use nest_gui::{GuiApp, StatusBarModule, ToastModule};
+use nest_gui::{GuiApp, GuiStartupOptions, StatusBarModule, ToastModule};
 use nest_icon::IconModule;
 use nest_logging::LoggingConfig;
 
 use crate::cli::{AgentCommand, ChatCommand};
 use crate::modules::{with_cli_modules, with_gui_modules};
+use crate::project::{project_root_from_args, ProjectConfig};
 use crate::theme::KiwiThemeModule;
 use crate::workbench::KiwiWorkbench;
 
@@ -33,6 +35,14 @@ fn main() {
         )
         .run();
     } else {
+        let startup = GuiStartupOptions::from_args_iter(&args).ok();
+        let config_path = startup.as_ref().and_then(|options| options.config_path.as_deref());
+        let project = ProjectConfig::resolve(project_root_from_args(&args), config_path)
+            .unwrap_or_else(|error| {
+                eprintln!("kiwi: failed to resolve project root: {error}");
+                std::process::exit(1);
+            });
+
         with_gui_modules(
             GuiApp::new("kiwi")
                 .with_task_runtime(true)
@@ -41,6 +51,7 @@ fn main() {
                 .module(ToastModule::new())
                 .module(StatusBarModule::new())
                 .workbench(KiwiWorkbench::default()),
+            &project,
         )
         .run();
     }

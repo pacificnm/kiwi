@@ -1,6 +1,15 @@
 # Kiwi Explorer v1 Implementation Plan
 
-## Status: Planned
+## Status: Complete (Phases 0–5)
+
+| Phase | Scope | Status |
+| --- | --- | --- |
+| 0 | Project root resolution | **Done (v0.1)** |
+| 1 | `nest-file` wiring | **Done (v0.1)** |
+| 2 | Explorer tree model | **Done (v0.1)** |
+| 3 | Explorer UI | **Done (v0.1)** |
+| 4 | Editor integration | **Done (v0.1)** |
+| 5 | Polish | **Done (v0.1)** |
 
 Enable the **Explorer** sidebar to show the real filesystem tree for the open project
 folder, and open files in the editor when clicked.

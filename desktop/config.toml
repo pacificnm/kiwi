@@ -22,3 +22,8 @@ model = "qwen2.5-coder:3b"
 mcp_config = "../../../.cursor/mcp.json"
 mcp_servers = ["nest-memory", "nest-knowledge", "nest-context-memory"]
 max_steps = 10
+
+[project]
+root = "../../.."
+name = "nest"
+# ignore = ["vendor", ".cursor"]

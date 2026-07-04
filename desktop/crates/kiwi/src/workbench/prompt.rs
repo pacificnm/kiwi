@@ -71,6 +71,25 @@ impl PromptDraft {
         out.trim().to_string()
     }
 
+    /// Attaches an editor file for the agent/chat (large bodies collapse to a placeholder).
+    pub fn attach_file(&mut self, rel_path: &str, content: &str) {
+        let body = if content.is_empty() {
+            format!("<file path=\"{rel_path}\">\n(empty file)\n</file>")
+        } else {
+            format!("<file path=\"{rel_path}\">\n{content}\n</file>")
+        };
+        self.pastes.push(body);
+        let token = paste_token(self.pastes.len() - 1, self.pastes.len());
+        if self.visible.trim().is_empty() {
+            self.visible = format!("Questions about `{rel_path}`?\n{token}");
+        } else if !self.visible.ends_with('\n') {
+            self.visible.push('\n');
+            self.visible.push_str(&token);
+        } else {
+            self.visible.push_str(&token);
+        }
+    }
+
     fn add_paste(&mut self, content: String) {
         self.pastes.push(content);
         let token = paste_token(self.pastes.len() - 1, self.pastes.len());
@@ -124,5 +143,13 @@ mod tests {
         draft.visible.clear();
         draft.visible.push_str("just typing");
         assert_eq!(draft.resolve(), "just typing");
+    }
+
+    #[test]
+    fn attach_file_seeds_prompt_when_empty() {
+        let mut draft = PromptDraft::default();
+        draft.attach_file("src/main.rs", "fn main() {}");
+        assert!(draft.visible.contains("src/main.rs"));
+        assert!(draft.resolve().contains("fn main() {}"));
     }
 }
