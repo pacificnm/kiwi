@@ -1,9 +1,0 @@
-name = "hello"
-version = "0.1.0"
-min_kiwi_version = "0.1.0"
-
-[install]
-kind = "cargo"
-package = "kiwi_plugin_hello"
-library = "kiwi_plugin_hello"
-profile = "release"

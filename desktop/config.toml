@@ -1,0 +1,24 @@
+[gui]
+title = "Kiwi"
+width = 1600
+height = 900
+vsync = true
+
+[ai]
+enabled = true
+provider = "ollama"
+host = "192.168.88.10"
+port = 11434
+base_url = "http://192.168.88.10:11434"
+model = "qwen2.5-coder:3b"
+models = [
+    "nomic-embed-text:latest",
+    "llama3.2:3b",
+    "qwen2.5-coder:3b",
+]
+
+[agent]
+model = "qwen2.5-coder:3b"
+mcp_config = "../../../.cursor/mcp.json"
+mcp_servers = ["nest-memory", "nest-knowledge", "nest-context-memory"]
+max_steps = 10

@@ -1,0 +1,37 @@
+[package]
+name = "kiwi"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Kiwi IDE — AI-native Rust workspace (Nest GUI host)"
+
+[[bin]]
+name = "kiwi"
+path = "src/main.rs"
+
+[dependencies]
+async-trait = "0.1"
+clap = { version = "4", features = ["derive"] }
+egui = { workspace = true }
+nest-ai = { workspace = true, features = ["async"] }
+nest-ai-ollama = { workspace = true }
+nest-agent = { workspace = true }
+nest-cli = { workspace = true, features = ["async"] }
+nest-config = { workspace = true }
+nest-core = { workspace = true }
+nest-design = { workspace = true }
+nest-error = { workspace = true }
+nest-gui = { workspace = true, features = ["icons", "async"] }
+nest-http-client = { workspace = true }
+nest-icon = { workspace = true }
+nest-logging = { workspace = true }
+nest-mcp = { workspace = true }
+nest-theme = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+toml = "0.8"
+tracing = { workspace = true }

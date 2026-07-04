@@ -1,3 +1,0 @@
-openai
-psycopg[binary]
-mcp[cli]

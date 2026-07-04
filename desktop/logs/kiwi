@@ -1,0 +1,372 @@
+  2026-07-03T17:35:06.804673Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T17:36:16.192780Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T17:38:51.914200Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T17:40:02.892143Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T17:44:38.656040Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T17:47:16.995180Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T17:48:05.220121Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T17:49:46.441260Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T17:51:10.378239Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T17:53:13.535122Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T17:53:16.580718Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T17:53:36.372963Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T17:53:42.441279Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T17:55:11.969109Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T17:55:18.665819Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T17:55:26.793939Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T18:32:31.873077Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T18:32:39.518963Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T18:36:39.774131Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T18:44:47.541341Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T18:44:53.544908Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T19:01:15.857202Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T19:01:22.348785Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T19:01:30.424437Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T19:03:29.298172Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T19:27:38.273190Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T19:27:43.282645Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T19:29:34.649049Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T19:29:39.541707Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T19:30:46.505711Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T19:30:51.450001Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T19:31:58.980775Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T19:32:03.855743Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T19:33:01.545105Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T19:33:06.246761Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T19:35:01.945821Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T19:35:06.806979Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T19:36:12.661857Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T19:36:46.997424Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T19:38:42.639253Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T19:38:47.285382Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T19:40:44.306554Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T19:40:49.006803Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T19:42:43.228497Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T19:42:49.312529Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T19:44:08.297364Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T19:44:14.413106Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T19:46:35.940113Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T19:46:42.435665Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T19:47:28.018255Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T19:47:31.421485Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T19:51:31.567840Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T19:51:35.935791Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T20:49:38.799609Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T20:49:48.148264Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T20:53:01.598743Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T20:53:05.860183Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T21:00:14.988345Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T21:00:23.749830Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T21:00:39.976768Z  INFO nest_http_client::service: HTTP request started, method: POST, url: http://127.0.0.1:11434/api/chat, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:118
+
+  2026-07-03T21:00:40.095321Z  WARN nest_http_client::service: HTTP request returned error status, method: POST, url: http://127.0.0.1:11434/api/chat, status: 404, duration_ms: 118, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:144
+
+  2026-07-03T21:00:40.095438Z  WARN nest_ai_ollama::provider: ollama completion failed, error: HTTP 404
+    at /data/projects/nest/modules/crates/nest-ai-ollama/src/provider.rs:70
+
+  2026-07-03T21:04:27.916061Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T21:06:00.941788Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T21:08:18.405776Z  INFO nest_http_client::service: HTTP request started, method: POST, url: http://192.168.88.10:11434/api/chat, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:118
+
+  2026-07-03T21:08:27.295252Z  INFO nest_http_client::service: HTTP request completed, method: POST, url: http://192.168.88.10:11434/api/chat, status: 200, duration_ms: 8889, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:135
+
+  2026-07-03T21:08:55.101856Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T21:09:04.422160Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T21:10:09.948735Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T21:11:26.317437Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T21:11:33.796054Z  INFO nest_http_client::service: HTTP request started, method: POST, url: http://192.168.88.10:11434/api/chat, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:118
+
+  2026-07-03T21:11:40.204449Z  INFO nest_http_client::service: HTTP request completed, method: POST, url: http://192.168.88.10:11434/api/chat, status: 200, duration_ms: 6408, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:135
+
+  2026-07-03T21:13:19.661002Z  INFO nest_http_client::service: HTTP request started, method: POST, url: http://192.168.88.10:11434/api/chat, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:118
+
+  2026-07-03T21:13:23.406305Z  INFO nest_http_client::service: HTTP request completed, method: POST, url: http://192.168.88.10:11434/api/chat, status: 200, duration_ms: 3745, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:135
+
+  2026-07-03T21:14:21.530075Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T21:14:30.529488Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T21:16:08.159701Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T21:16:12.181400Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T21:16:42.690250Z  INFO nest_http_client::service: HTTP request started, method: POST, url: http://192.168.88.10:11434/api/chat, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:118
+
+  2026-07-03T21:16:52.159387Z  INFO nest_http_client::service: HTTP request completed, method: POST, url: http://192.168.88.10:11434/api/chat, status: 200, duration_ms: 9469, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:135
+
+  2026-07-03T21:18:35.521112Z  INFO nest_http_client::service: HTTP request started, method: POST, url: http://192.168.88.10:11434/api/chat, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:118
+
+  2026-07-03T21:18:49.997056Z  INFO nest_http_client::service: HTTP request completed, method: POST, url: http://192.168.88.10:11434/api/chat, status: 200, duration_ms: 14475, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:135
+
+  2026-07-03T21:20:35.911354Z  INFO nest_http_client::service: HTTP request started, method: POST, url: http://192.168.88.10:11434/api/chat, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:118
+
+  2026-07-03T21:20:46.807725Z  INFO nest_http_client::service: HTTP request completed, method: POST, url: http://192.168.88.10:11434/api/chat, status: 200, duration_ms: 10896, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:135
+
+  2026-07-03T21:21:02.931662Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T21:21:09.161187Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T21:24:39.856277Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T21:24:45.292628Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T21:27:28.655921Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T21:27:32.647133Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T22:47:28.057989Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T22:47:33.115188Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-03T23:27:06.134859Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-03T23:55:10.718618Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-04T00:18:33.226150Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-04T00:18:38.384335Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-04T00:23:19.752402Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-04T00:23:26.537660Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-04T00:24:40.514169Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-04T00:24:42.460106Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-04T00:24:55.790808Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-04T01:15:37.754789Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-04T01:16:16.155502Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-04T13:12:07.792242Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-04T13:16:08.303949Z  INFO nest_app::lifecycle: app shutdown, app.name: kiwi
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:43
+
+  2026-07-04T13:16:28.878762Z  INFO nest_app::lifecycle: app startup, app.name: kiwi, app.version: "", app.environment: "development"
+    at /data/projects/nest/core/crates/nest-app/src/lifecycle.rs:23
+
+  2026-07-04T13:19:47.075080Z  INFO nest_http_client::service: HTTP request started, method: POST, url: http://192.168.88.10:11434/api/chat, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:193
+
+  2026-07-04T13:19:51.699495Z  INFO nest_http_client::service: HTTP request completed, method: POST, url: http://192.168.88.10:11434/api/chat, status: 200, duration_ms: 4624, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:210
+
+  2026-07-04T13:20:05.236233Z  INFO nest_http_client::service: HTTP request started, method: POST, url: http://192.168.88.10:11434/api/chat, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:193
+
+  2026-07-04T13:20:09.903448Z  INFO nest_http_client::service: HTTP request completed, method: POST, url: http://192.168.88.10:11434/api/chat, status: 200, duration_ms: 4667, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:210
+
+  2026-07-04T13:20:27.663039Z  INFO nest_http_client::service: HTTP request started, method: POST, url: http://192.168.88.10:11434/api/chat, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:193
+
+  2026-07-04T13:20:30.874603Z  INFO nest_http_client::service: HTTP request completed, method: POST, url: http://192.168.88.10:11434/api/chat, status: 200, duration_ms: 3211, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:210
+
+  2026-07-04T13:23:38.688360Z  INFO nest_http_client::service: HTTP request started, method: POST, url: http://192.168.88.10:11434/api/chat, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:193
+
+  2026-07-04T13:23:42.361089Z  INFO nest_http_client::service: HTTP request completed, method: POST, url: http://192.168.88.10:11434/api/chat, status: 200, duration_ms: 3672, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:210
+
+  2026-07-04T13:23:57.369385Z  INFO nest_http_client::service: HTTP request started, method: POST, url: http://192.168.88.10:11434/api/chat, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:193
+
+  2026-07-04T13:24:07.436220Z  INFO nest_http_client::service: HTTP request completed, method: POST, url: http://192.168.88.10:11434/api/chat, status: 200, duration_ms: 10066, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:210
+
+  2026-07-04T13:26:00.494396Z  INFO nest_http_client::service: HTTP request started, method: POST, url: http://192.168.88.10:11434/api/chat, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:193
+
+  2026-07-04T13:26:04.639895Z  INFO nest_http_client::service: HTTP request completed, method: POST, url: http://192.168.88.10:11434/api/chat, status: 200, duration_ms: 4145, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:210
+
+  2026-07-04T13:26:27.384443Z  INFO nest_http_client::service: HTTP request started, method: POST, url: http://192.168.88.10:11434/api/chat, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:193
+
+  2026-07-04T13:26:32.493727Z  INFO nest_http_client::service: HTTP request completed, method: POST, url: http://192.168.88.10:11434/api/chat, status: 200, duration_ms: 5109, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:210
+
+  2026-07-04T13:27:19.355155Z  INFO nest_http_client::service: HTTP request started, method: POST, url: http://192.168.88.10:11434/api/chat, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:193
+
+  2026-07-04T13:27:42.283897Z  INFO nest_http_client::service: HTTP request completed, method: POST, url: http://192.168.88.10:11434/api/chat, status: 200, duration_ms: 22928, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:210
+
+  2026-07-04T13:28:07.913287Z  INFO nest_http_client::service: HTTP request started, method: POST, url: http://192.168.88.10:11434/api/chat, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:193
+
+  2026-07-04T13:28:14.631724Z  INFO nest_http_client::service: HTTP request completed, method: POST, url: http://192.168.88.10:11434/api/chat, status: 200, duration_ms: 6718, request_id: "-"
+    at /data/projects/nest/core/crates/nest-http-client/src/service.rs:210
+
