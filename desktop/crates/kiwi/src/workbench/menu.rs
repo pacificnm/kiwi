@@ -15,7 +15,7 @@ pub struct MenuState {
     pub open_recent_path: Option<PathBuf>,
 }
 
-/// Renders the **File** menu at the start of the title bar.
+/// Renders the **File** menu in the title bar.
 pub fn file_menu(ui: &mut Ui, recent: &RecentProjects, menu: &mut MenuState) {
     ui.menu_button(RichText::new("File").size(13.0), |ui| {
         if ui.button("Open Folder…").clicked() {

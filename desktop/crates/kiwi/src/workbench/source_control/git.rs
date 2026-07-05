@@ -89,6 +89,12 @@ pub struct GitStatus {
     pub branch: String,
     /// All changed paths.
     pub changes: Vec<GitChange>,
+    /// Commits on this branch not on the upstream remote, when tracked.
+    pub ahead: u32,
+    /// Commits on upstream not on this branch, when tracked.
+    pub behind: u32,
+    /// Whether `HEAD` has an upstream tracking branch.
+    pub has_upstream: bool,
 }
 
 impl GitStatus {
@@ -119,10 +125,45 @@ pub enum GitStatusEvent {
 pub enum GitActionEvent {
     /// Command succeeded.
     Succeeded {
+        /// Command line label.
+        command: String,
         /// Short log summary.
         summary: String,
+        /// Combined stdout/stderr.
+        output: String,
     },
     /// Command failed.
+    Failed {
+        /// Command line label.
+        command: String,
+        /// Short error summary.
+        summary: String,
+        /// Combined stdout/stderr or error detail.
+        output: String,
+    },
+}
+
+/// One commit in the history list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitCommitEntry {
+    /// Full commit hash.
+    pub hash: String,
+    /// Short hash for display.
+    pub short_hash: String,
+    /// Author name.
+    pub author: String,
+    /// Commit date (`YYYY-MM-DD`).
+    pub date: String,
+    /// First line of the commit message.
+    pub subject: String,
+}
+
+/// Result of a background commit history load.
+#[derive(Debug)]
+pub enum GitLogEvent {
+    /// Parsed recent commits.
+    Ready(Vec<GitCommitEntry>),
+    /// Failed to read history.
     Failed(String),
 }
 
@@ -184,22 +225,28 @@ pub fn spawn_git_status(root: PathBuf) -> mpsc::Receiver<GitStatusEvent> {
 
 /// Stages paths on a background thread.
 pub fn spawn_git_add(root: PathBuf, paths: Vec<String>) -> mpsc::Receiver<GitActionEvent> {
-    spawn_action(root, move |root| {
-        let mut command = git_command(root);
-        command.arg("add");
+    let command = if paths.len() == 1 && paths[0] == "." {
+        "git add .".into()
+    } else {
+        format!("git add {}", paths.join(" "))
+    };
+    spawn_action(root, command, move |root| {
+        let mut cmd = git_command(root);
+        cmd.arg("add");
         for path in &paths {
-            command.arg(path);
+            cmd.arg(path);
         }
-        run_git(command, "stage changes")
+        run_git(cmd, "stage changes")
     })
 }
 
 /// Unstages a path on a background thread.
 pub fn spawn_git_restore_staged(root: PathBuf, path: String) -> mpsc::Receiver<GitActionEvent> {
-    spawn_action(root, move |root| {
-        let mut command = git_command(root);
-        command.arg("restore").arg("--staged").arg(&path);
-        run_git(command, &format!("unstage {path}"))
+    let command = format!("git restore --staged {path}");
+    spawn_action(root, command, move |root| {
+        let mut cmd = git_command(root);
+        cmd.arg("restore").arg("--staged").arg(&path);
+        run_git(cmd, &format!("unstage {path}"))
     })
 }
 
@@ -255,26 +302,81 @@ pub enum GitDiffEvent {
 
 /// Creates a commit on a background thread.
 pub fn spawn_git_commit(root: PathBuf, message: String) -> mpsc::Receiver<GitActionEvent> {
-    spawn_action(root, move |root| {
-        let mut command = git_command(root);
-        command.arg("commit").arg("-m").arg(&message);
-        run_git(command, "create commit")
+    let preview = message.lines().next().unwrap_or(&message);
+    let preview = if preview.len() > 48 {
+        format!("{}…", &preview[..48])
+    } else {
+        preview.to_string()
+    };
+    let command = format!("git commit -m \"{preview}\"");
+    spawn_action(root, command, move |root| {
+        let mut cmd = git_command(root);
+        cmd.arg("commit").arg("-m").arg(&message);
+        run_git(cmd, "create commit")
     })
 }
 
-fn spawn_action(
+/// Pushes the current branch on a background thread.
+pub fn spawn_git_push(
     root: PathBuf,
-    action: impl FnOnce(&PathBuf) -> NestResult<String> + Send + 'static,
+    branch: String,
+    has_upstream: bool,
 ) -> mpsc::Receiver<GitActionEvent> {
+    let command = if has_upstream {
+        "git push".into()
+    } else {
+        format!("git push -u origin {branch}")
+    };
+    spawn_action(root, command, move |root| {
+        let mut cmd = git_command(root);
+        cmd.arg("push");
+        if !has_upstream {
+            cmd.arg("-u").arg("origin").arg(&branch);
+        }
+        run_git(cmd, "push")
+    })
+}
+
+/// Reads recent commits on a background thread.
+pub fn spawn_git_log(root: PathBuf) -> mpsc::Receiver<GitLogEvent> {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let event = match action(&root) {
-            Ok(summary) => GitActionEvent::Succeeded { summary },
-            Err(error) => GitActionEvent::Failed(error.to_string()),
+        let event = match read_log(&root) {
+            Ok(commits) => GitLogEvent::Ready(commits),
+            Err(error) => GitLogEvent::Failed(error.to_string()),
         };
         let _ = tx.send(event);
     });
     rx
+}
+
+fn spawn_action(
+    root: PathBuf,
+    command: String,
+    action: impl FnOnce(&PathBuf) -> NestResult<GitCommandResult> + Send + 'static,
+) -> mpsc::Receiver<GitActionEvent> {
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let event = match action(&root) {
+            Ok(result) => GitActionEvent::Succeeded {
+                command,
+                summary: result.summary,
+                output: result.output,
+            },
+            Err(error) => GitActionEvent::Failed {
+                command,
+                summary: error.to_string(),
+                output: error.to_string(),
+            },
+        };
+        let _ = tx.send(event);
+    });
+    rx
+}
+
+struct GitCommandResult {
+    summary: String,
+    output: String,
 }
 
 fn read_status(root: &PathBuf) -> NestResult<GitStatus> {
@@ -283,6 +385,7 @@ fn read_status(root: &PathBuf) -> NestResult<GitStatus> {
     }
 
     let branch = read_branch(root)?;
+    let (ahead, behind, has_upstream) = read_upstream_counts(root)?;
     let output = git_command(root)
         .arg("status")
         .arg("--porcelain=1")
@@ -306,7 +409,38 @@ fn read_status(root: &PathBuf) -> NestResult<GitStatus> {
         changes.push(parse_porcelain_line(line)?);
     }
 
-    Ok(GitStatus { branch, changes })
+    Ok(GitStatus {
+        branch,
+        changes,
+        ahead,
+        behind,
+        has_upstream,
+    })
+}
+
+fn read_upstream_counts(root: &PathBuf) -> NestResult<(u32, u32, bool)> {
+    let output = git_command(root)
+        .arg("rev-list")
+        .arg("--left-right")
+        .arg("--count")
+        .arg("HEAD...@{upstream}")
+        .output()
+        .map_err(|error| NestError::io(format!("git rev-list failed: {error}")))?;
+
+    if !output.status.success() {
+        return Ok((0, 0, false));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let (ahead, behind) = parse_upstream_counts(&stdout).unwrap_or((0, 0));
+    Ok((ahead, behind, true))
+}
+
+fn parse_upstream_counts(stdout: &str) -> Option<(u32, u32)> {
+    let mut parts = stdout.split_whitespace();
+    let ahead = parts.next()?.parse().ok()?;
+    let behind = parts.next()?.parse().ok()?;
+    Some((ahead, behind))
 }
 
 fn read_branch(root: &PathBuf) -> NestResult<String> {
@@ -392,19 +526,87 @@ fn run_git_diff(mut command: Command, path: &str) -> NestResult<String> {
     }
 }
 
-fn run_git(mut command: Command, action: &str) -> NestResult<String> {
+fn run_git(mut command: Command, action: &str) -> NestResult<GitCommandResult> {
     let output = command
         .output()
         .map_err(|error| NestError::io(format!("failed to {action}: {error}")))?;
 
+    let combined = format_command_output(&output.stdout, &output.stderr);
+
     if output.status.success() {
-        Ok(format!("Git: {action}"))
+        Ok(GitCommandResult {
+            summary: format!("Git: {action}"),
+            output: combined,
+        })
     } else {
         Err(NestError::io(format!(
             "git {action} failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
+            combined.trim()
         )))
     }
+}
+
+fn format_command_output(stdout: &[u8], stderr: &[u8]) -> String {
+    let stdout = String::from_utf8_lossy(stdout);
+    let stderr = String::from_utf8_lossy(stderr);
+    let mut combined = String::new();
+    if !stdout.trim().is_empty() {
+        combined.push_str(stdout.trim_end());
+    }
+    if !stderr.trim().is_empty() {
+        if !combined.is_empty() {
+            combined.push('\n');
+        }
+        combined.push_str(stderr.trim_end());
+    }
+    if combined.is_empty() {
+        "(no output)".into()
+    } else {
+        combined
+    }
+}
+
+fn read_log(root: &PathBuf) -> NestResult<Vec<GitCommitEntry>> {
+    if !inside_work_tree(root)? {
+        return Err(NestError::validation("not a git repository"));
+    }
+
+    let output = git_command(root)
+        .arg("log")
+        .arg("-50")
+        .arg("--pretty=format:%H%x09%h%x09%an%x09%ad%x09%s")
+        .arg("--date=short")
+        .output()
+        .map_err(|error| NestError::io(format!("git log failed: {error}")))?;
+
+    if !output.status.success() {
+        return Err(NestError::io(format!(
+            "git log failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(stdout
+        .lines()
+        .filter_map(parse_log_line)
+        .collect())
+}
+
+fn parse_log_line(line: &str) -> Option<GitCommitEntry> {
+    let mut parts = line.splitn(5, '\t');
+    let hash = parts.next()?.to_string();
+    let short_hash = parts.next()?.to_string();
+    let author = parts.next()?.to_string();
+    let date = parts.next()?.to_string();
+    let subject = parts.next()?.to_string();
+    Some(GitCommitEntry {
+        hash,
+        short_hash,
+        author,
+        date,
+        subject,
+    })
 }
 
 fn is_not_repo_error(error: &NestError) -> bool {
@@ -425,5 +627,23 @@ mod tests {
         let rename = parse_porcelain_line("R  old.rs -> new.rs").unwrap();
         assert_eq!(rename.path, "new.rs");
         assert_eq!(rename.kind, ChangeKind::Renamed);
+    }
+
+    #[test]
+    fn parses_upstream_ahead_behind_counts() {
+        assert_eq!(parse_upstream_counts("2\t0\n"), Some((2, 0)));
+        assert_eq!(parse_upstream_counts("0 3"), Some((0, 3)));
+        assert_eq!(parse_upstream_counts("bad"), None);
+    }
+
+    #[test]
+    fn parses_log_line_fields() {
+        let entry = parse_log_line(
+            "abcd1234ef567890abcd1234ef567890abcd1234\tabcd123\tJane Doe\t2026-07-04\tFix title bar",
+        )
+        .unwrap();
+        assert_eq!(entry.short_hash, "abcd123");
+        assert_eq!(entry.author, "Jane Doe");
+        assert_eq!(entry.subject, "Fix title bar");
     }
 }

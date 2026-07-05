@@ -1,11 +1,14 @@
 //! Git status and commands for the Source Control sidebar.
 
 mod git;
+mod panel;
 
 pub use git::{
-    spawn_git_add, spawn_git_commit, spawn_git_diff, spawn_git_restore_staged, spawn_git_status,
-    ChangeKind, DiffSide, GitActionEvent, GitChange, GitDiffEvent, GitStatus, GitStatusEvent,
+    spawn_git_add, spawn_git_commit, spawn_git_diff, spawn_git_log, spawn_git_push,
+    spawn_git_restore_staged, spawn_git_status, ChangeKind, DiffSide, GitActionEvent,
+    GitChange, GitCommitEntry, GitDiffEvent, GitLogEvent, GitStatus, GitStatusEvent,
 };
+pub use panel::{GitOutputEntry, GitOutputLog, GitPanelView};
 
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
@@ -23,12 +26,30 @@ pub struct SourceControlState {
     pub not_repo: bool,
     /// Draft commit message.
     pub commit_message: String,
+    /// Git command output for the bottom panel.
+    pub git_output: GitOutputLog,
+    /// Bottom Git panel sub-view.
+    pub git_panel_view: GitPanelView,
+    /// Recent commits for the history view.
+    pub git_commits: Vec<GitCommitEntry>,
+    /// Whether commit history is loading.
+    pub git_commits_loading: bool,
+    /// Last commit history error.
+    pub git_commits_error: Option<String>,
+    /// Expanded commit row in history view.
+    pub git_selected_commit: Option<usize>,
+    /// Switch to the bottom Git tab on the next frame.
+    pub focus_git_panel: bool,
     /// Background status refresh channel.
     status_pending: Option<Receiver<GitStatusEvent>>,
     /// Background mutating git command channel.
     action_pending: Option<Receiver<GitActionEvent>>,
+    /// Background commit history channel.
+    history_pending: Option<Receiver<GitLogEvent>>,
     /// Set when UI should re-request status after an action completes.
     refresh_after_action: bool,
+    /// Set when commit history should reload after an action completes.
+    refresh_history_after_action: bool,
 }
 
 impl Default for SourceControlState {
@@ -47,15 +68,26 @@ impl SourceControlState {
             loading: false,
             not_repo: false,
             commit_message: String::new(),
+            git_output: GitOutputLog::default(),
+            git_panel_view: GitPanelView::default(),
+            git_commits: Vec::new(),
+            git_commits_loading: false,
+            git_commits_error: None,
+            git_selected_commit: None,
+            focus_git_panel: false,
             status_pending: None,
             action_pending: None,
+            history_pending: None,
             refresh_after_action: false,
+            refresh_history_after_action: false,
         }
     }
 
     /// Returns true when a background git command is in flight.
     pub fn has_pending_io(&self) -> bool {
-        self.status_pending.is_some() || self.action_pending.is_some()
+        self.status_pending.is_some()
+            || self.action_pending.is_some()
+            || self.history_pending.is_some()
     }
 
     /// Returns true when any git operation is in flight.
@@ -75,6 +107,21 @@ impl SourceControlState {
         }
         self.error = None;
         self.status_pending = Some(spawn_git_status(root.clone()));
+    }
+
+    /// Loads recent commits for the bottom panel history view.
+    pub fn request_commit_history(&mut self, root: &PathBuf) {
+        if self.history_pending.is_some() || self.not_repo {
+            return;
+        }
+        self.git_commits_loading = true;
+        self.git_commits_error = None;
+        self.history_pending = Some(spawn_git_log(root.clone()));
+    }
+
+    /// Takes the focus-git-panel flag for the workbench shell.
+    pub fn take_focus_git_panel(&mut self) -> bool {
+        std::mem::take(&mut self.focus_git_panel)
     }
 
     /// Polls background channels; returns true when UI should repaint.
@@ -117,25 +164,64 @@ impl SourceControlState {
 
         if let Some(rx) = self.action_pending.as_ref() {
             match rx.try_recv() {
-                Ok(GitActionEvent::Succeeded { summary }) => {
+                Ok(GitActionEvent::Succeeded {
+                    command,
+                    summary,
+                    output,
+                }) => {
                     self.error = None;
                     self.action_pending = None;
                     self.refresh_after_action = true;
+                    self.refresh_history_after_action = true;
+                    self.git_output.push(command, true, output);
                     if summary.contains("create commit") {
                         self.commit_message.clear();
                     }
                     tracing::info!(target: "kiwi::git", "{summary}");
                     repaint = true;
                 }
-                Ok(GitActionEvent::Failed(message)) => {
-                    self.error = Some(message);
+                Ok(GitActionEvent::Failed {
+                    command,
+                    summary,
+                    output,
+                }) => {
+                    self.error = Some(summary.clone());
                     self.action_pending = None;
+                    self.git_output.push(command, false, output);
+                    self.focus_git_panel = true;
+                    tracing::warn!(target: "kiwi::git", "{summary}");
                     repaint = true;
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {}
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     self.error = Some("Git command interrupted".into());
                     self.action_pending = None;
+                    self.focus_git_panel = true;
+                    repaint = true;
+                }
+            }
+        }
+
+        if let Some(rx) = self.history_pending.as_ref() {
+            match rx.try_recv() {
+                Ok(GitLogEvent::Ready(commits)) => {
+                    self.git_commits = commits;
+                    self.git_commits_loading = false;
+                    self.git_commits_error = None;
+                    self.history_pending = None;
+                    repaint = true;
+                }
+                Ok(GitLogEvent::Failed(message)) => {
+                    self.git_commits_loading = false;
+                    self.git_commits_error = Some(message);
+                    self.history_pending = None;
+                    repaint = true;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.git_commits_loading = false;
+                    self.git_commits_error = Some("Commit history load interrupted".into());
+                    self.history_pending = None;
                     repaint = true;
                 }
             }
@@ -145,6 +231,14 @@ impl SourceControlState {
         {
             self.refresh_after_action = false;
             self.request_refresh(root);
+        }
+
+        if self.refresh_history_after_action
+            && self.action_pending.is_none()
+            && self.history_pending.is_none()
+        {
+            self.refresh_history_after_action = false;
+            self.request_commit_history(root);
         }
 
         repaint
@@ -183,6 +277,24 @@ impl SourceControlState {
         let message = message.to_string();
         self.action_pending = Some(spawn_git_commit(root.clone(), message));
     }
+
+    /// Pushes the current branch to its upstream remote.
+    pub fn push(&mut self, root: &PathBuf) {
+        if self.action_pending.is_some() {
+            return;
+        }
+        let Some(status) = self.status.as_ref() else {
+            return;
+        };
+        if status.branch == "HEAD" {
+            return;
+        }
+        self.action_pending = Some(spawn_git_push(
+            root.clone(),
+            status.branch.clone(),
+            status.has_upstream,
+        ));
+    }
 }
 
 impl Clone for SourceControlState {
@@ -193,9 +305,18 @@ impl Clone for SourceControlState {
             loading: false,
             not_repo: self.not_repo,
             commit_message: self.commit_message.clone(),
+            git_output: self.git_output.clone(),
+            git_panel_view: self.git_panel_view,
+            git_commits: self.git_commits.clone(),
+            git_commits_loading: false,
+            git_commits_error: self.git_commits_error.clone(),
+            git_selected_commit: self.git_selected_commit,
+            focus_git_panel: false,
             status_pending: None,
             action_pending: None,
+            history_pending: None,
             refresh_after_action: false,
+            refresh_history_after_action: false,
         }
     }
 }

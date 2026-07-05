@@ -12,7 +12,7 @@ use crate::workbench::editor::EditorState;
 use crate::workbench::editor_files::{
     abs_path_for_rel, open_diff_tab, spawn_git_diff_load, validate_rel_path,
 };
-use crate::workbench::source_control::{ChangeKind, DiffSide, GitChange, SourceControlState};
+use crate::workbench::source_control::{ChangeKind, DiffSide, GitChange, GitStatus, SourceControlState};
 use crate::workbench::FileLoadPending;
 
 const CONTROL_HEIGHT: f32 = 28.0;
@@ -74,7 +74,7 @@ fn toolbar(ui: &mut Ui, source: &mut SourceControlState, project: &ProjectConfig
     full_width_row(ui, CONTROL_HEIGHT, |ui, _width| {
         if let Some(status) = &source.status {
             ui.label(
-                RichText::new(format!("{} {}", branch_glyph(), status.branch))
+                RichText::new(branch_label(status))
                     .strong()
                     .size(12.0),
             );
@@ -123,6 +123,10 @@ fn commit_section(ui: &mut Ui, source: &mut SourceControlState, project: &Projec
     let can_commit = has_staged
         && !source.commit_message.trim().is_empty()
         && !source.busy();
+    let can_push = source
+        .status
+        .as_ref()
+        .is_some_and(|status| status.branch != "HEAD" && status.ahead > 0 && !source.busy());
 
     full_width_row(ui, CONTROL_HEIGHT, |ui, _width| {
         ui.spacing_mut().item_spacing.x = 8.0;
@@ -150,6 +154,28 @@ fn commit_section(ui: &mut Ui, source: &mut SourceControlState, project: &Projec
             .clicked()
         {
             source.commit(&project.root);
+        }
+
+        if ui
+            .add(
+                ActionButton::new(Icon::solid(icons::solid::UPLOAD), "Push")
+                    .size(ButtonSize::Small)
+                    .enabled(can_push)
+                    .tooltip(push_tooltip(source.status.as_ref()))
+                    .fill(if can_push {
+                        PALETTE.accent_primary
+                    } else {
+                        egui::Color32::TRANSPARENT
+                    })
+                    .text_color(if can_push {
+                        egui::Color32::WHITE
+                    } else {
+                        ui.visuals().text_color()
+                    }),
+            )
+            .clicked()
+        {
+            source.push(&project.root);
         }
     });
 }
@@ -346,6 +372,28 @@ fn status_color(kind: ChangeKind) -> egui::Color32 {
 
 fn branch_glyph() -> &'static str {
     "⎇"
+}
+
+fn branch_label(status: &GitStatus) -> String {
+    let mut label = format!("{} {}", branch_glyph(), status.branch);
+    if status.ahead > 0 {
+        label.push_str(&format!(" ↑{}", status.ahead));
+    }
+    if status.behind > 0 {
+        label.push_str(&format!(" ↓{}", status.behind));
+    }
+    label
+}
+
+fn push_tooltip(status: Option<&GitStatus>) -> &'static str {
+    match status {
+        Some(status) if status.branch == "HEAD" => "Cannot push from detached HEAD",
+        Some(status) if status.ahead == 0 => "No commits to push",
+        Some(status) if !status.has_upstream => {
+            "Push and set upstream on origin"
+        }
+        _ => "Push to remote",
+    }
 }
 
 #[cfg(test)]

@@ -446,6 +446,10 @@ impl KiwiWorkbench {
         if self.state.source_control.poll(&root) {
             ctx.request_repaint();
         }
+        if self.state.source_control.take_focus_git_panel() {
+            self.state.bottom_tab = BottomTab::Git;
+            ctx.request_repaint();
+        }
     }
 
     fn poll_file_load(&mut self, ctx: &egui::Context) {
@@ -729,17 +733,18 @@ fn title_bar(
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 12.0;
         ui.add_space(8.0);
+        ui.label(RichText::new("Kiwi").strong().size(14.0));
+        ui.separator();
         menu::file_menu(ui, recent, menu);
         ui.separator();
-        ui.label(RichText::new("Kiwi").strong().size(14.0));
         ui.label(
-            RichText::new(format!("Project: {}", state.project.name))
+            RichText::new(&state.project.name)
                 .size(12.0)
                 .color(weak),
         )
         .on_hover_text(state.project.root.display().to_string());
         ui.label(
-            RichText::new(format!("Model: {}", state.model))
+            RichText::new(&state.model)
                 .size(12.0)
                 .color(weak),
         );

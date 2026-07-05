@@ -207,7 +207,7 @@ fn bottom_panel(ui: &mut Ui, state: &mut WorkbenchState) {
                             BottomTab::Logs => logs::show(ui),
                             BottomTab::ToolActivity => tool_activity::show(ui, state),
                             BottomTab::Debug => debug::show(ui),
-                            BottomTab::Git => git::show(ui),
+                            BottomTab::Git => git::show(ui, state),
                             BottomTab::Terminal => unreachable!(),
                         });
                 }
