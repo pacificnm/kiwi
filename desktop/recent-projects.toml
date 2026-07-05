@@ -1,0 +1,6 @@
+roots = [
+    "/data/projects/nest/apps/kiwi",
+    "/data/projects/nest",
+    "/data/projects/nest/apps/kiwi/desktop",
+    "/data/projects/nest/apps/loon",
+]

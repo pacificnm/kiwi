@@ -1,0 +1,13 @@
+[patch."https://github.com/pacificnm/nest"]
+nest-ai = { path = "../../../core/crates/nest-ai" }
+nest-ai-ollama = { path = "../../../modules/crates/nest-ai-ollama" }
+nest-cli = { path = "../../../core/crates/nest-cli" }
+nest-config = { path = "../../../core/crates/nest-config" }
+nest-core = { path = "../../../core/crates/nest-core" }
+nest-design = { path = "../../../core/crates/nest-design" }
+nest-error = { path = "../../../core/crates/nest-error" }
+nest-gui = { path = "../../../core/crates/nest-gui" }
+nest-http-client = { path = "../../../core/crates/nest-http-client" }
+nest-icon = { path = "../../../core/crates/nest-icon" }
+nest-logging = { path = "../../../core/crates/nest-logging" }
+nest-theme = { path = "../../../core/crates/nest-theme" }

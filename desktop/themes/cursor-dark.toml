@@ -1,0 +1,56 @@
+id = "cursor-dark"
+mode = "dark"
+
+[colors]
+background = "#1B1F23"
+foreground = "#CCCCCC"
+primary = "#4F8EF7"
+secondary = "#9DA5B4"
+border = "#313842"
+surface = "#252B32"
+accent = "#4F8EF7"
+muted = "#6E7681"
+
+[spacing]
+xs = 4.0
+sm = 8.0
+md = 16.0
+lg = 24.0
+xl = 32.0
+xxl = 48.0
+
+[radius]
+sm = 4.0
+md = 6.0
+lg = 8.0
+full = 9999.0
+
+[typography.body]
+font_family = "Inter"
+size = 13.0
+line_height = 18.0
+weight = 400
+
+[typography.heading]
+font_family = "Inter"
+size = 18.0
+line_height = 24.0
+weight = 500
+
+[typography.caption]
+font_family = "Inter"
+size = 11.0
+line_height = 14.0
+weight = 400
+
+[typography.mono]
+font_family = "JetBrains Mono"
+size = 13.0
+line_height = 18.0
+weight = 400
+
+[status]
+success = "#3FB950"
+warning = "#D29922"
+error = "#F85149"
+info = "#58A6FF"
