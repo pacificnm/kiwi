@@ -167,6 +167,15 @@ pub enum GitLogEvent {
     Failed(String),
 }
 
+/// Result of a background branch list load.
+#[derive(Debug)]
+pub enum GitBranchesEvent {
+    /// Local branch names sorted by ref name.
+    Ready(Vec<String>),
+    /// Failed to list branches.
+    Failed(String),
+}
+
 /// Parses one line of `git status --porcelain=1` output.
 pub fn parse_porcelain_line(line: &str) -> NestResult<GitChange> {
     let line = line.trim_end();
@@ -350,6 +359,55 @@ pub fn spawn_git_log(root: PathBuf) -> mpsc::Receiver<GitLogEvent> {
     rx
 }
 
+/// Lists local branches on a background thread.
+pub fn spawn_git_branch_list(root: PathBuf) -> mpsc::Receiver<GitBranchesEvent> {
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let event = match read_branch_list(&root) {
+            Ok(branches) => GitBranchesEvent::Ready(branches),
+            Err(error) => GitBranchesEvent::Failed(error.to_string()),
+        };
+        let _ = tx.send(event);
+    });
+    rx
+}
+
+/// Checks out a branch on a background thread.
+pub fn spawn_git_checkout(root: PathBuf, branch: String) -> mpsc::Receiver<GitActionEvent> {
+    let command = format!("git switch {branch}");
+    spawn_action(root, command, move |root| checkout_branch(root, &branch))
+}
+
+/// Creates and checks out a new branch on a background thread.
+pub fn spawn_git_branch_create(
+    root: PathBuf,
+    name: String,
+    start_point: Option<String>,
+) -> mpsc::Receiver<GitActionEvent> {
+    let command = match &start_point {
+        Some(start) => format!("git switch -c {name} {start}"),
+        None => format!("git switch -c {name}"),
+    };
+    spawn_action(root, command, move |root| {
+        let mut cmd = git_command(root);
+        cmd.arg("switch").arg("-c").arg(&name);
+        if let Some(start) = &start_point {
+            cmd.arg(start);
+        }
+        match run_git(cmd, &format!("create branch {name}")) {
+            Ok(result) => Ok(result),
+            Err(_) => {
+                let mut cmd = git_command(root);
+                cmd.arg("checkout").arg("-b").arg(&name);
+                if let Some(start) = start_point {
+                    cmd.arg(start);
+                }
+                run_git(cmd, &format!("create branch {name}"))
+            }
+        }
+    })
+}
+
 fn spawn_action(
     root: PathBuf,
     command: String,
@@ -463,6 +521,47 @@ fn read_branch(root: &PathBuf) -> NestResult<String> {
         Ok("HEAD".into())
     } else {
         Ok(branch)
+    }
+}
+
+fn read_branch_list(root: &PathBuf) -> NestResult<Vec<String>> {
+    if !inside_work_tree(root)? {
+        return Err(NestError::validation("not a git repository"));
+    }
+
+    let output = git_command(root)
+        .arg("for-each-ref")
+        .arg("--format=%(refname:short)")
+        .arg("refs/heads/")
+        .arg("--sort=refname")
+        .output()
+        .map_err(|error| NestError::io(format!("git for-each-ref failed: {error}")))?;
+
+    if !output.status.success() {
+        return Err(NestError::io(format!(
+            "git for-each-ref failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_string)
+        .collect())
+}
+
+fn checkout_branch(root: &PathBuf, branch: &str) -> NestResult<GitCommandResult> {
+    let mut cmd = git_command(root);
+    cmd.arg("switch").arg(branch);
+    match run_git(cmd, &format!("switch to {branch}")) {
+        Ok(result) => Ok(result),
+        Err(_) => {
+            let mut cmd = git_command(root);
+            cmd.arg("checkout").arg(branch);
+            run_git(cmd, &format!("checkout {branch}"))
+        }
     }
 }
 

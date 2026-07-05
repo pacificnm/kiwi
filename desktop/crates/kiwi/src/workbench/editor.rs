@@ -38,6 +38,11 @@ pub enum EditorTabView {
         /// GitHub issue number.
         number: u64,
     },
+    /// Read-only GitHub pull request.
+    PullRequest {
+        /// GitHub pull request number.
+        number: u64,
+    },
     /// Compose a new GitHub issue.
     NewIssue,
 }
@@ -49,6 +54,10 @@ pub enum EditorPanelRequest {
     SaveFile(usize),
     /// Create a GitHub issue from the new-issue tab at this index.
     CreateIssue(usize),
+    /// Edit labels and milestone for the issue tab at this index.
+    EditIssueMetadata(usize),
+    /// Merge the pull request tab at this index.
+    MergePullRequest(usize),
 }
 
 /// Returns the GitHub issue number for the active editor tab, if any.
@@ -231,11 +240,31 @@ pub fn editor_panel(
                         });
                 }
                 EditorTabView::Issue { number } => {
-                    issue_toolbar(ui, tab, number);
+                    issue_toolbar(ui, tab, number, active, &mut panel_request);
                     ui.add_space(EDITOR_TOOLBAR_GAP);
 
                     ScrollArea::vertical()
                         .id_salt(("kiwi-editor-issue", &tab.rel_path, number))
+                        .max_height(
+                            (content_height - EDITOR_TOOLBAR_HEIGHT - EDITOR_TOOLBAR_GAP).max(40.0),
+                        )
+                        .auto_shrink([false; 2])
+                        .show(ui, |ui| {
+                            ui.add(
+                                TextEdit::multiline(&mut editor.tabs[active].content)
+                                    .font(egui::TextStyle::Monospace)
+                                    .desired_width(f32::INFINITY)
+                                    .interactive(false)
+                                    .frame(false),
+                            );
+                        });
+                }
+                EditorTabView::PullRequest { number } => {
+                    pr_toolbar(ui, tab, number, active, &mut panel_request);
+                    ui.add_space(EDITOR_TOOLBAR_GAP);
+
+                    ScrollArea::vertical()
+                        .id_salt(("kiwi-editor-pr", &tab.rel_path, number))
                         .max_height(
                             (content_height - EDITOR_TOOLBAR_HEIGHT - EDITOR_TOOLBAR_GAP).max(40.0),
                         )
@@ -278,6 +307,12 @@ pub fn editor_panel(
             tab.view == EditorTabView::NewIssue
                 && !tab.issue_title.trim().is_empty()
                 && !tab.saving
+        }),
+        EditorPanelRequest::EditIssueMetadata(index) => editor.tabs.get(*index).is_some_and(|tab| {
+            matches!(tab.view, EditorTabView::Issue { number: _ }) && !tab.loading
+        }),
+        EditorPanelRequest::MergePullRequest(index) => editor.tabs.get(*index).is_some_and(|tab| {
+            matches!(tab.view, EditorTabView::PullRequest { number: _ }) && !tab.loading
         }),
     })
 }
@@ -376,17 +411,72 @@ fn new_issue_toolbar(
     );
 }
 
-fn issue_toolbar(ui: &mut Ui, tab: &EditorTab, number: u64) {
+fn issue_toolbar(
+    ui: &mut Ui,
+    tab: &EditorTab,
+    number: u64,
+    tab_index: usize,
+    panel_request: &mut Option<EditorPanelRequest>,
+) {
     ui.allocate_ui_with_layout(
         egui::vec2(ui.available_width(), EDITOR_TOOLBAR_HEIGHT),
         Layout::left_to_right(Align::Center),
         |ui| {
+            ui.spacing_mut().item_spacing.x = 10.0;
+
             ui.label(
                 RichText::new(format!("GitHub issue #{number}"))
                     .strong()
                     .size(12.0)
                     .color(PALETTE.text_secondary),
             );
+
+            let labels_button = ActionButton::new(Icon::solid(solid::PEN_TO_SQUARE), "Labels & Milestone")
+                .size(ButtonSize::Small)
+                .tooltip("Edit labels and milestone");
+
+            if ui.add(labels_button).clicked() {
+                *panel_request = Some(EditorPanelRequest::EditIssueMetadata(tab_index));
+            }
+
+            ui.label(
+                RichText::new(tab.abs_path.display().to_string())
+                    .size(12.0)
+                    .color(PALETTE.info),
+            )
+            .on_hover_text("Open in browser");
+        },
+    );
+}
+
+fn pr_toolbar(
+    ui: &mut Ui,
+    tab: &EditorTab,
+    number: u64,
+    tab_index: usize,
+    panel_request: &mut Option<EditorPanelRequest>,
+) {
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), EDITOR_TOOLBAR_HEIGHT),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = 10.0;
+
+            ui.label(
+                RichText::new(format!("GitHub pull request #{number}"))
+                    .strong()
+                    .size(12.0)
+                    .color(PALETTE.text_secondary),
+            );
+
+            let merge_button = ActionButton::new(Icon::solid(solid::CHECK), "Merge…")
+                .size(ButtonSize::Small)
+                .tooltip("Merge this pull request into its base branch");
+
+            if ui.add(merge_button).clicked() {
+                *panel_request = Some(EditorPanelRequest::MergePullRequest(tab_index));
+            }
+
             ui.label(
                 RichText::new(tab.abs_path.display().to_string())
                     .size(12.0)
@@ -551,6 +641,7 @@ fn tab_label(tab: &EditorTab) -> String {
         }
         EditorTabView::Diff { .. } => format!("{} (diff)", tab_file_name(&tab.rel_path)),
         EditorTabView::Issue { number } => format!("#{number}"),
+        EditorTabView::PullRequest { number } => format!("PR #{number}"),
         EditorTabView::NewIssue => "New Issue".into(),
     }
 }

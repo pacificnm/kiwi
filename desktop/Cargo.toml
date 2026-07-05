@@ -17,6 +17,7 @@ nest-core = { git = "https://github.com/pacificnm/nest", branch = "main" }
 nest-design = { git = "https://github.com/pacificnm/nest", branch = "main" }
 nest-error = { git = "https://github.com/pacificnm/nest", branch = "main" }
 nest-gui = { git = "https://github.com/pacificnm/nest", branch = "main", features = ["icons", "async"] }
+nest-http = { git = "https://github.com/pacificnm/nest", branch = "main" }
 nest-http-client = { git = "https://github.com/pacificnm/nest", branch = "main" }
 nest-icon = { git = "https://github.com/pacificnm/nest", branch = "main" }
 nest-logging = { git = "https://github.com/pacificnm/nest", branch = "main" }
@@ -39,6 +40,7 @@ nest-core = { path = "../../../core/crates/nest-core" }
 nest-design = { path = "../../../core/crates/nest-design" }
 nest-error = { path = "../../../core/crates/nest-error" }
 nest-gui = { path = "../../../core/crates/nest-gui" }
+nest-http = { path = "../../../core/crates/nest-http" }
 nest-http-client = { path = "../../../core/crates/nest-http-client" }
 nest-icon = { path = "../../../core/crates/nest-icon" }
 nest-logging = { path = "../../../core/crates/nest-logging" }

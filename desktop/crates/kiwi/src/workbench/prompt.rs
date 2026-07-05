@@ -95,10 +95,25 @@ impl PromptDraft {
         } else {
             format!("<file path=\"{rel_path}\">\n{content}\n</file>")
         };
+        self.attach_context(body, &format!("Questions about `{rel_path}`?"));
+    }
+
+    /// Attaches a GitHub issue for the agent/chat.
+    pub fn attach_issue(&mut self, number: u64, title: &str, content: &str) {
+        let body = format!(
+            "<github-issue number=\"{number}\" title=\"{title}\">\n{content}\n</github-issue>"
+        );
+        self.attach_context(
+            body,
+            &format!("Help me with GitHub issue #{number}: {title}"),
+        );
+    }
+
+    fn attach_context(&mut self, body: String, seed_prompt: &str) {
         self.pastes.push(body);
         let token = paste_token(self.pastes.len() - 1, self.pastes.len());
         if self.visible.trim().is_empty() {
-            self.visible = format!("Questions about `{rel_path}`?\n{token}");
+            self.visible = format!("{seed_prompt}\n{token}");
         } else if !self.visible.ends_with('\n') {
             self.visible.push('\n');
             self.visible.push_str(&token);
@@ -179,5 +194,15 @@ mod tests {
         draft.attach_file("src/main.rs", "fn main() {}");
         assert!(draft.visible.contains("src/main.rs"));
         assert!(draft.resolve().contains("fn main() {}"));
+    }
+
+    #[test]
+    fn attach_issue_seeds_prompt_with_issue_context() {
+        let mut draft = PromptDraft::default();
+        draft.attach_issue(42, "Fix bug", "# Fix bug\n\nDetails here.");
+        assert!(draft.visible.contains("issue #42"));
+        let resolved = draft.resolve();
+        assert!(resolved.contains("<github-issue"));
+        assert!(resolved.contains("Details here."));
     }
 }

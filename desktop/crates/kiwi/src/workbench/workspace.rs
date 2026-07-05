@@ -60,6 +60,7 @@ pub fn switch_workspace(
     state.terminal.set_cwd(project.root.clone());
     state.source_control = SourceControlState::new(project.root.clone());
     state.source_control.request_refresh(&project.root);
+    state.source_control.request_branch_list(&project.root);
     state.issues = crate::workbench::issues::IssuesState::new();
 
     *project_watcher = ProjectWatcher::new(&project.root, project.ignore.clone()).ok();

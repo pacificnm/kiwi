@@ -1,12 +1,17 @@
 //! Git status and commands for the Source Control sidebar.
 
+mod branch_modal;
 mod git;
 mod panel;
 
+pub use branch_modal::{
+    show_window as show_branch_create_modal, BranchCreateModalAction, BranchCreateModalState,
+};
 pub use git::{
-    spawn_git_add, spawn_git_commit, spawn_git_diff, spawn_git_log, spawn_git_push,
-    spawn_git_restore_staged, spawn_git_status, ChangeKind, DiffSide, GitActionEvent,
-    GitChange, GitCommitEntry, GitDiffEvent, GitLogEvent, GitStatus, GitStatusEvent,
+    spawn_git_add, spawn_git_branch_create, spawn_git_branch_list, spawn_git_checkout,
+    spawn_git_commit, spawn_git_diff, spawn_git_log, spawn_git_push, spawn_git_restore_staged,
+    spawn_git_status, ChangeKind, DiffSide, GitActionEvent, GitBranchesEvent, GitChange,
+    GitCommitEntry, GitDiffEvent, GitLogEvent, GitStatus, GitStatusEvent,
 };
 pub use panel::{GitOutputEntry, GitOutputLog, GitPanelView};
 
@@ -40,16 +45,28 @@ pub struct SourceControlState {
     pub git_selected_commit: Option<usize>,
     /// Switch to the bottom Git tab on the next frame.
     pub focus_git_panel: bool,
+    /// Local branch names for the branch picker.
+    pub branches: Vec<String>,
+    /// Whether the branch list is loading.
+    pub branches_loading: bool,
+    /// Last branch list error.
+    pub branches_error: Option<String>,
+    /// Create-branch modal state.
+    pub branch_create_modal: BranchCreateModalState,
     /// Background status refresh channel.
     status_pending: Option<Receiver<GitStatusEvent>>,
     /// Background mutating git command channel.
     action_pending: Option<Receiver<GitActionEvent>>,
     /// Background commit history channel.
     history_pending: Option<Receiver<GitLogEvent>>,
+    /// Background branch list channel.
+    branches_pending: Option<Receiver<GitBranchesEvent>>,
     /// Set when UI should re-request status after an action completes.
     refresh_after_action: bool,
     /// Set when commit history should reload after an action completes.
     refresh_history_after_action: bool,
+    /// Set when branch list should reload after an action completes.
+    refresh_branches_after_action: bool,
 }
 
 impl Default for SourceControlState {
@@ -75,11 +92,17 @@ impl SourceControlState {
             git_commits_error: None,
             git_selected_commit: None,
             focus_git_panel: false,
+            branches: Vec::new(),
+            branches_loading: false,
+            branches_error: None,
+            branch_create_modal: BranchCreateModalState::default(),
             status_pending: None,
             action_pending: None,
             history_pending: None,
+            branches_pending: None,
             refresh_after_action: false,
             refresh_history_after_action: false,
+            refresh_branches_after_action: false,
         }
     }
 
@@ -88,6 +111,7 @@ impl SourceControlState {
         self.status_pending.is_some()
             || self.action_pending.is_some()
             || self.history_pending.is_some()
+            || self.branches_pending.is_some()
     }
 
     /// Returns true when any git operation is in flight.
@@ -117,6 +141,65 @@ impl SourceControlState {
         self.git_commits_loading = true;
         self.git_commits_error = None;
         self.history_pending = Some(spawn_git_log(root.clone()));
+    }
+
+    /// Loads local branch names for the branch picker.
+    pub fn request_branch_list(&mut self, root: &PathBuf) {
+        if self.branches_pending.is_some() || self.not_repo {
+            return;
+        }
+        self.branches_loading = true;
+        self.branches_error = None;
+        self.branches_pending = Some(spawn_git_branch_list(root.clone()));
+    }
+
+    /// Opens the create-branch modal.
+    pub fn open_create_branch(&mut self) {
+        let current = self
+            .status
+            .as_ref()
+            .map(|status| status.branch.as_str())
+            .unwrap_or("HEAD");
+        self.branch_create_modal
+            .open_with_branches(&self.branches, current);
+    }
+
+    /// Opens the create-branch modal with a name suggested from a GitHub issue.
+    pub fn open_create_branch_from_issue(&mut self, issue_number: u64, issue_title: &str) {
+        let current = self
+            .status
+            .as_ref()
+            .map(|status| status.branch.as_str())
+            .unwrap_or("HEAD");
+        self.branch_create_modal.open_for_issue(
+            &self.branches,
+            current,
+            issue_number,
+            issue_title,
+        );
+    }
+
+    /// Checks out an existing local branch.
+    pub fn checkout_branch(&mut self, root: &PathBuf, branch: String) {
+        if self.action_pending.is_some() {
+            return;
+        }
+        self.action_pending = Some(spawn_git_checkout(root.clone(), branch));
+    }
+
+    /// Creates a new branch and checks it out.
+    pub fn create_branch(
+        &mut self,
+        root: &PathBuf,
+        name: String,
+        start_branch: Option<String>,
+    ) {
+        if self.action_pending.is_some() {
+            return;
+        }
+        self.branch_create_modal.submitting = true;
+        self.branch_create_modal.error = None;
+        self.action_pending = Some(spawn_git_branch_create(root.clone(), name, start_branch));
     }
 
     /// Takes the focus-git-panel flag for the workbench shell.
@@ -173,6 +256,9 @@ impl SourceControlState {
                     self.action_pending = None;
                     self.refresh_after_action = true;
                     self.refresh_history_after_action = true;
+                    self.refresh_branches_after_action = true;
+                    self.branch_create_modal.submitting = false;
+                    self.branch_create_modal.close();
                     self.git_output.push(command, true, output);
                     if summary.contains("create commit") {
                         self.commit_message.clear();
@@ -187,6 +273,10 @@ impl SourceControlState {
                 }) => {
                     self.error = Some(summary.clone());
                     self.action_pending = None;
+                    self.branch_create_modal.submitting = false;
+                    if self.branch_create_modal.open {
+                        self.branch_create_modal.fail(summary.clone());
+                    }
                     self.git_output.push(command, false, output);
                     self.focus_git_panel = true;
                     tracing::warn!(target: "kiwi::git", "{summary}");
@@ -196,7 +286,33 @@ impl SourceControlState {
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     self.error = Some("Git command interrupted".into());
                     self.action_pending = None;
+                    self.branch_create_modal.submitting = false;
                     self.focus_git_panel = true;
+                    repaint = true;
+                }
+            }
+        }
+
+        if let Some(rx) = self.branches_pending.as_ref() {
+            match rx.try_recv() {
+                Ok(GitBranchesEvent::Ready(branches)) => {
+                    self.branches = branches;
+                    self.branches_loading = false;
+                    self.branches_error = None;
+                    self.branches_pending = None;
+                    repaint = true;
+                }
+                Ok(GitBranchesEvent::Failed(message)) => {
+                    self.branches_loading = false;
+                    self.branches_error = Some(message);
+                    self.branches_pending = None;
+                    repaint = true;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.branches_loading = false;
+                    self.branches_error = Some("Branch list load interrupted".into());
+                    self.branches_pending = None;
                     repaint = true;
                 }
             }
@@ -239,6 +355,14 @@ impl SourceControlState {
         {
             self.refresh_history_after_action = false;
             self.request_commit_history(root);
+        }
+
+        if self.refresh_branches_after_action
+            && self.action_pending.is_none()
+            && self.branches_pending.is_none()
+        {
+            self.refresh_branches_after_action = false;
+            self.request_branch_list(root);
         }
 
         repaint
@@ -312,11 +436,17 @@ impl Clone for SourceControlState {
             git_commits_error: self.git_commits_error.clone(),
             git_selected_commit: self.git_selected_commit,
             focus_git_panel: false,
+            branches: self.branches.clone(),
+            branches_loading: false,
+            branches_error: self.branches_error.clone(),
+            branch_create_modal: self.branch_create_modal.clone(),
             status_pending: None,
             action_pending: None,
             history_pending: None,
+            branches_pending: None,
             refresh_after_action: false,
             refresh_history_after_action: false,
+            refresh_branches_after_action: false,
         }
     }
 }

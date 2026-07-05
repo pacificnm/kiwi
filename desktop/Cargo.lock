@@ -2085,6 +2085,7 @@ dependencies = [
  "nest-error",
  "nest-file",
  "nest-gui",
+ "nest-http",
  "nest-http-client",
  "nest-icon",
  "nest-logging",
@@ -2099,6 +2100,7 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
+ "urlencoding",
  "vt100",
 ]
 

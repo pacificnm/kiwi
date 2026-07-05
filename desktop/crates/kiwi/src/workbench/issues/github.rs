@@ -13,7 +13,7 @@ use serde::Serialize;
 use super::{IssueListItem, IssuesListEvent};
 use crate::workbench::editor_files::FileLoadEvent;
 
-const GITHUB_API: &str = "https://api.github.com";
+pub(crate) const GITHUB_API: &str = "https://api.github.com";
 
 /// Result of creating a GitHub issue from the editor compose tab.
 #[derive(Debug)]
@@ -64,6 +64,25 @@ pub enum IssueCommentCreateEvent {
         html_url: String,
     },
     /// Failed to post the comment.
+    Failed {
+        /// Error message.
+        error: String,
+    },
+}
+
+/// Result of loading an issue for the agent prompt.
+#[derive(Debug)]
+pub enum IssueSendToAgentEvent {
+    /// Issue body loaded for the agent.
+    Ready {
+        /// Issue number.
+        number: u64,
+        /// Issue title.
+        title: String,
+        /// Formatted issue body for the prompt.
+        content: String,
+    },
+    /// Failed to load the issue.
     Failed {
         /// Error message.
         error: String,
@@ -241,6 +260,41 @@ pub fn spawn_issue_load(
                 Ok(content) => FileLoadEvent::Loaded { tab_index, content },
                 Err(error) => FileLoadEvent::Failed {
                     tab_index,
+                    error: error.to_string(),
+                },
+            }
+        });
+        let _ = tx.send(event);
+    });
+    rx
+}
+
+/// Loads a GitHub issue body for the agent prompt on a background thread.
+pub fn spawn_issue_for_agent(
+    http: HttpClientService,
+    owner: String,
+    repo: String,
+    number: u64,
+    token: Option<String>,
+) -> mpsc::Receiver<IssueSendToAgentEvent> {
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
+        let event = runtime.block_on(async {
+            let url = format!("{GITHUB_API}/repos/{owner}/{repo}/issues/{number}");
+            match github_get_json::<GithubIssueDetail>(
+                &http,
+                &url,
+                token.as_deref(),
+            )
+            .await
+            {
+                Ok(issue) => IssueSendToAgentEvent::Ready {
+                    number: issue.number,
+                    title: issue.title.clone(),
+                    content: format_issue(&issue),
+                },
+                Err(error) => IssueSendToAgentEvent::Failed {
                     error: error.to_string(),
                 },
             }
@@ -435,7 +489,7 @@ pub fn format_issue(issue: &GithubIssueDetail) -> String {
     )
 }
 
-fn map_github_api_error(status_code: u16, body: &[u8]) -> NestError {
+pub(crate) fn map_github_api_error(status_code: u16, body: &[u8]) -> NestError {
     if status_code == 401 {
         return NestError::validation(
             "GitHub authentication required. Run `gh auth login` in a terminal, then retry.",

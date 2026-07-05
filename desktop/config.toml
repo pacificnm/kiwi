@@ -1,6 +1,6 @@
 [agent]
 agent_mode = true
-allow_save_context = false
+allow_save_context = true
 disabled_mcp_servers = []
 max_steps = 10
 mcp_config = "../../../.cursor/mcp.json"

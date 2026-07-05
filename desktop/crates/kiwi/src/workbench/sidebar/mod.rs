@@ -49,6 +49,7 @@ pub fn sidebar(
         issues::show(
             ui,
             &mut state.issues,
+            &mut state.source_control,
             &state.project,
             app_ctx,
             &mut state.editor,

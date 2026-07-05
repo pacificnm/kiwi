@@ -1,6 +1,6 @@
 //! Source control sidebar — git status, stage, and commit.
 
-use egui::{Align, Label, Layout, RichText, ScrollArea, Sense, TextEdit, Ui};
+use egui::{Align, ComboBox, Label, Layout, RichText, ScrollArea, Sense, TextEdit, Ui};
 
 use nest_gui::{ActionButton, ButtonSize};
 use nest_icon::{Icon, icons};
@@ -71,34 +71,88 @@ pub fn show(
 }
 
 fn toolbar(ui: &mut Ui, source: &mut SourceControlState, project: &ProjectConfig) {
-    full_width_row(ui, CONTROL_HEIGHT, |ui, _width| {
-        if let Some(status) = &source.status {
-            ui.label(
-                RichText::new(branch_label(status))
-                    .strong()
-                    .size(12.0),
-            );
-        } else if source.loading {
-            ui.label(RichText::new("Refreshing…").weak().size(12.0));
-        } else {
-            ui.label(RichText::new("Git").weak().size(12.0));
-        }
+    full_width_row(ui, CONTROL_HEIGHT, |ui, width| {
+        let refresh_width = 72.0;
+        let branch_width = (width - refresh_width - ROW_ITEM_GAP).max(80.0);
+
+        left_cell(ui, egui::vec2(branch_width, CONTROL_HEIGHT), |ui| {
+            branch_picker(ui, source, project, branch_width);
+        });
 
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.set_width(ui.available_width());
             if ui
                 .add(
                     ActionButton::new(Icon::ARROW_ROTATE_RIGHT, "Refresh")
                         .size(ButtonSize::Small)
                         .enabled(!source.busy())
-                        .tooltip("Refresh git status"),
+                        .tooltip("Refresh git status and branches"),
                 )
                 .clicked()
             {
                 source.request_refresh(&project.root);
+                source.request_branch_list(&project.root);
             }
         });
     });
+}
+
+fn branch_picker(
+    ui: &mut Ui,
+    source: &mut SourceControlState,
+    project: &ProjectConfig,
+    width: f32,
+) {
+    if source.not_repo {
+        ui.label(RichText::new("Not a repository").weak().size(12.0));
+        return;
+    }
+
+    if source.branches.is_empty() && !source.branches_loading && !source.busy() {
+        source.request_branch_list(&project.root);
+    }
+
+    let selected = source
+        .status
+        .as_ref()
+        .map(branch_label)
+        .unwrap_or_else(|| {
+            if source.branches_loading {
+                "Loading branches…".into()
+            } else {
+                "Select branch…".into()
+            }
+        });
+
+    let current_branch = source
+        .status
+        .as_ref()
+        .map(|status| status.branch.clone())
+        .unwrap_or_else(|| "HEAD".into());
+
+    ComboBox::from_id_salt("kiwi-sc-branch-picker")
+        .selected_text(selected)
+        .width(width.max(80.0))
+        .show_ui(ui, |ui| {
+            if source.branches.is_empty() {
+                ui.label(RichText::new("No local branches").weak().size(11.0));
+            }
+            for branch in source.branches.clone() {
+                let is_current = current_branch == branch;
+                if ui.selectable_label(is_current, &branch).clicked() && !is_current {
+                    source.checkout_branch(&project.root, branch);
+                }
+            }
+            ui.separator();
+            if ui.selectable_label(false, "+ Create branch…").clicked() {
+                source.open_create_branch();
+            }
+            if ui
+                .selectable_label(false, "Refresh branch list")
+                .clicked()
+            {
+                source.request_branch_list(&project.root);
+            }
+        });
 }
 
 fn commit_section(ui: &mut Ui, source: &mut SourceControlState, project: &ProjectConfig) {

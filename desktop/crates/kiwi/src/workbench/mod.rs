@@ -41,12 +41,16 @@ use crate::workbench::activity::Activity;
 use crate::workbench::bottom_panel::BottomTab;
 use crate::workbench::editor::{active_issue_number, editor_panel, EditorPanelRequest, EditorTabDragPayload, EditorTabView};
 use crate::workbench::editor_files::{
-    apply_file_load, apply_file_save, apply_issue_created, begin_file_save, issue_tab_key,
-    open_new_issue_tab, parse_issue_tab_repo, spawn_save_file,
+    apply_file_load, apply_file_save, apply_issue_created, apply_pr_load, begin_file_save, issue_tab_key,
+    open_new_issue_tab, parse_issue_tab_repo, pr_tab_key, spawn_save_file,
 };
 use crate::workbench::issues::{
-    comment_modal, load_token_from_config, read_github_repo, CommentModalAction, IssueCreateEvent,
+    comment_modal, load_token_from_config, read_github_repo, show_issue_metadata_modal,
+    show_labels_modal, show_milestones_modal, show_pr_merge_modal, CommentModalAction,
+    IssueCreateEvent, IssueMetadataModalAction, LabelsModalAction, MilestonesModalAction,
+    PrMergeModalAction,
 };
+use crate::workbench::source_control::{show_branch_create_modal, BranchCreateModalAction};
 use crate::workbench::watcher::ProjectWatcher;
 use nest_ai_ollama::{OllamaConfig, OllamaSharedConfig};
 
@@ -267,6 +271,9 @@ impl WorkbenchView for KiwiWorkbench {
             self.state
                 .source_control
                 .request_refresh(&self.state.project.root);
+            self.state
+                .source_control
+                .request_branch_list(&self.state.project.root);
         }
         if self.state.activity == Activity::Issues
             && self.last_activity != Activity::Issues
@@ -276,11 +283,17 @@ impl WorkbenchView for KiwiWorkbench {
                 self.state
                     .issues
                     .request_list(&self.state.project.root, http.clone());
+                self.state
+                    .issues
+                    .request_pr_list(&self.state.project.root, http.clone());
             }
         }
         self.last_activity = self.state.activity;
 
         self.show_comment_modal(ctx, app_ctx);
+        self.show_metadata_modals(ctx, app_ctx);
+        self.show_branch_create_modal(ctx);
+        self.show_pr_merge_modal(ctx, app_ctx);
 
         Ok(())
     }
@@ -380,6 +393,9 @@ impl KiwiWorkbench {
             self.state
                 .source_control
                 .request_refresh(&project.root);
+            self.state
+                .source_control
+                .request_branch_list(&project.root);
             self.source_control_loaded = true;
             tracing::info!(
                 target: "kiwi",
@@ -522,6 +538,36 @@ impl KiwiWorkbench {
             self.reload_open_issue_tab(number, app_ctx);
             ctx.request_repaint();
         }
+        if let Some(number) = self.state.issues.issue_updated_on.take() {
+            self.reload_open_issue_tab(number, app_ctx);
+            ctx.request_repaint();
+        }
+        if let Some(issue) = self.state.issues.issue_sent_to_agent.take() {
+            self.state
+                .prompt
+                .attach_issue(issue.number, &issue.title, &issue.content);
+            self.state.agent_mode = true;
+            ctx.request_repaint();
+        }
+        if let Some((tab_index, detail)) = self.state.issues.pr_loaded.take() {
+            apply_pr_load(&mut self.state.editor, tab_index, &detail);
+            ctx.request_repaint();
+        }
+        if let Some(number) = self.state.issues.pr_merged_on.take() {
+            self.reload_open_pr_tab(number, app_ctx);
+            self.state
+                .source_control
+                .request_refresh(&self.state.project.root);
+            self.state
+                .source_control
+                .request_branch_list(&self.state.project.root);
+            if let Ok(http) = app_ctx.service::<nest_http_client::HttpClientService>() {
+                self.state
+                    .issues
+                    .request_pr_list(&self.state.project.root, http.clone());
+            }
+            ctx.request_repaint();
+        }
     }
 
     fn poll_issue_create(&mut self, ctx: &egui::Context) {
@@ -546,34 +592,42 @@ impl KiwiWorkbench {
         if self.menu.new_comment_requested {
             self.menu.new_comment_requested = false;
             let issue_number = active_issue_number(&self.state.editor);
-            self.state
+            self.state.issues.open_new_comment(issue_number);
+            ctx.request_repaint();
+        }
+
+        if self.menu.manage_labels_requested {
+            self.menu.manage_labels_requested = false;
+            self.state.issues.open_manage_labels();
+            ctx.request_repaint();
+        }
+
+        if self.menu.manage_milestones_requested {
+            self.menu.manage_milestones_requested = false;
+            self.state.issues.open_manage_milestones();
+            ctx.request_repaint();
+        }
+
+        if self.menu.new_issue_requested {
+            self.menu.new_issue_requested = false;
+
+            let repo = self
+                .state
                 .issues
-                .comment_modal
-                .open_with_issue(issue_number);
+                .repo
+                .clone()
+                .or_else(|| read_github_repo(&self.state.project.root).ok());
+
+            let Some((owner, repo)) = repo else {
+                self.state.issues.error =
+                    Some("Could not resolve GitHub repository from origin".into());
+                ctx.request_repaint();
+                return;
+            };
+
+            open_new_issue_tab(&mut self.state.editor, &owner, &repo);
             ctx.request_repaint();
         }
-
-        if !self.menu.new_issue_requested {
-            return;
-        }
-        self.menu.new_issue_requested = false;
-
-        let repo = self
-            .state
-            .issues
-            .repo
-            .clone()
-            .or_else(|| read_github_repo(&self.state.project.root).ok());
-
-        let Some((owner, repo)) = repo else {
-            self.state.issues.error =
-                Some("Could not resolve GitHub repository from origin".into());
-            ctx.request_repaint();
-            return;
-        };
-
-        open_new_issue_tab(&mut self.state.editor, &owner, &repo);
-        ctx.request_repaint();
     }
 
     fn show_comment_modal(&mut self, ctx: &egui::Context, app_ctx: &AppContext) {
@@ -622,6 +676,215 @@ impl KiwiWorkbench {
         ctx.request_repaint();
     }
 
+    fn show_metadata_modals(&mut self, ctx: &egui::Context, app_ctx: &AppContext) {
+        if let Some(action) = show_labels_modal(ctx, &mut self.state.issues.labels_modal) {
+            self.handle_labels_modal_action(action, app_ctx, ctx);
+        }
+        if let Some(action) = show_milestones_modal(ctx, &mut self.state.issues.milestones_modal) {
+            self.handle_milestones_modal_action(action, app_ctx, ctx);
+        }
+        if let Some(action) =
+            show_issue_metadata_modal(ctx, &mut self.state.issues.issue_metadata_modal)
+        {
+            self.handle_issue_metadata_modal_action(action, app_ctx, ctx);
+        }
+    }
+
+    fn github_repo(&self) -> Option<(String, String)> {
+        self.state
+            .issues
+            .repo
+            .clone()
+            .or_else(|| read_github_repo(&self.state.project.root).ok())
+    }
+
+    fn github_http(&self, app_ctx: &AppContext) -> Option<nest_http_client::HttpClientService> {
+        app_ctx
+            .service::<nest_http_client::HttpClientService>()
+            .ok()
+            .cloned()
+    }
+
+    fn handle_labels_modal_action(
+        &mut self,
+        action: LabelsModalAction,
+        app_ctx: &AppContext,
+        ctx: &egui::Context,
+    ) {
+        let Some((owner, repo)) = self.github_repo() else {
+            self.state.issues.labels_modal.fail(
+                "Could not resolve GitHub repository from origin".into(),
+            );
+            ctx.request_repaint();
+            return;
+        };
+        let Some(http) = self.github_http(app_ctx) else {
+            self.state
+                .issues
+                .labels_modal
+                .fail("HTTP client is not configured".into());
+            ctx.request_repaint();
+            return;
+        };
+
+        match action {
+            LabelsModalAction::RequestList => {
+                self.state
+                    .issues
+                    .request_list_labels(&owner, &repo, http);
+            }
+            LabelsModalAction::Create {
+                name,
+                color,
+                description,
+            } => {
+                self.state.issues.request_create_label(
+                    &owner, &repo, name, color, description, http,
+                );
+            }
+            LabelsModalAction::Update {
+                original_name,
+                name,
+                color,
+                description,
+            } => {
+                self.state.issues.request_update_label(
+                    &owner,
+                    &repo,
+                    original_name,
+                    name,
+                    color,
+                    description,
+                    http,
+                );
+            }
+            LabelsModalAction::Delete { name } => {
+                self.state
+                    .issues
+                    .request_delete_label(&owner, &repo, name, http);
+            }
+        }
+        ctx.request_repaint();
+    }
+
+    fn handle_milestones_modal_action(
+        &mut self,
+        action: MilestonesModalAction,
+        app_ctx: &AppContext,
+        ctx: &egui::Context,
+    ) {
+        let Some((owner, repo)) = self.github_repo() else {
+            self.state.issues.milestones_modal.fail(
+                "Could not resolve GitHub repository from origin".into(),
+            );
+            ctx.request_repaint();
+            return;
+        };
+        let Some(http) = self.github_http(app_ctx) else {
+            self.state.issues.milestones_modal.fail(
+                "HTTP client is not configured".into(),
+            );
+            ctx.request_repaint();
+            return;
+        };
+
+        match action {
+            MilestonesModalAction::RequestList => {
+                self.state
+                    .issues
+                    .request_list_milestones(&owner, &repo, http);
+            }
+            MilestonesModalAction::Create {
+                title,
+                description,
+                due_on,
+            } => {
+                self.state.issues.request_create_milestone(
+                    &owner, &repo, title, description, due_on, http,
+                );
+            }
+            MilestonesModalAction::Update {
+                number,
+                title,
+                description,
+                due_on,
+                state,
+            } => {
+                self.state.issues.request_update_milestone(
+                    &owner, &repo, number, title, description, due_on, state, http,
+                );
+            }
+            MilestonesModalAction::Delete { number } => {
+                self.state
+                    .issues
+                    .request_delete_milestone(&owner, &repo, number, http);
+            }
+        }
+        ctx.request_repaint();
+    }
+
+    fn handle_issue_metadata_modal_action(
+        &mut self,
+        action: IssueMetadataModalAction,
+        app_ctx: &AppContext,
+        ctx: &egui::Context,
+    ) {
+        let Some((owner, repo)) = self.github_repo() else {
+            self.state.issues.issue_metadata_modal.fail(
+                "Could not resolve GitHub repository from origin".into(),
+            );
+            ctx.request_repaint();
+            return;
+        };
+        let Some(http) = self.github_http(app_ctx) else {
+            self.state.issues.issue_metadata_modal.fail(
+                "HTTP client is not configured".into(),
+            );
+            ctx.request_repaint();
+            return;
+        };
+
+        match action {
+            IssueMetadataModalAction::RequestLoad => {
+                self.state.issues.request_load_issue_metadata(
+                    &owner,
+                    &repo,
+                    self.state.issues.issue_metadata_modal.issue_number,
+                    http,
+                );
+            }
+            IssueMetadataModalAction::Save {
+                issue_number,
+                labels,
+                milestone,
+            } => {
+                self.state.issues.request_update_issue_metadata(
+                    &owner, &repo, issue_number, labels, milestone, http,
+                );
+            }
+        }
+        ctx.request_repaint();
+    }
+
+    fn show_branch_create_modal(&mut self, ctx: &egui::Context) {
+        let branches = self.state.source_control.branches.clone();
+        let Some(action) = show_branch_create_modal(
+            ctx,
+            &mut self.state.source_control.branch_create_modal,
+            &branches,
+        ) else {
+            return;
+        };
+
+        let BranchCreateModalAction::Create { name, start_branch } = action;
+        self.state.source_control.create_branch(
+            &self.state.project.root,
+            name,
+            start_branch,
+        );
+        ctx.request_repaint();
+    }
+
     fn reload_open_issue_tab(&mut self, number: u64, app_ctx: &AppContext) {
         let repo = self
             .state
@@ -663,6 +926,72 @@ impl KiwiWorkbench {
             tab_index,
             http.clone(),
         ));
+    }
+
+    fn reload_open_pr_tab(&mut self, number: u64, app_ctx: &AppContext) {
+        let repo = self
+            .state
+            .issues
+            .repo
+            .clone()
+            .or_else(|| read_github_repo(&self.state.project.root).ok());
+        let Some((owner, repo)) = repo else {
+            return;
+        };
+
+        let rel_path = pr_tab_key(&owner, &repo, number);
+        let view = EditorTabView::PullRequest { number };
+        let Some(tab_index) = self.state.editor.tabs.iter().position(|tab| {
+            tab.rel_path == rel_path && tab.view == view
+        }) else {
+            return;
+        };
+
+        self.state.editor.active_tab = tab_index;
+        {
+            let tab = &mut self.state.editor.tabs[tab_index];
+            tab.loading = true;
+            tab.error = None;
+        }
+
+        let Ok(http) = app_ctx.service::<nest_http_client::HttpClientService>() else {
+            return;
+        };
+
+        self.state.issues.request_open_pr(
+            &self.state.project.root,
+            number,
+            tab_index,
+            http.clone(),
+        );
+    }
+
+    fn show_pr_merge_modal(&mut self, ctx: &egui::Context, app_ctx: &AppContext) {
+        let Some(action) = show_pr_merge_modal(ctx, &mut self.state.issues.pr_merge_modal) else {
+            return;
+        };
+
+        let PrMergeModalAction::Merge {
+            number,
+            merge_method,
+        } = action;
+
+        let Ok(http) = app_ctx.service::<nest_http_client::HttpClientService>() else {
+            self.state
+                .issues
+                .pr_merge_modal
+                .fail("HTTP client is not configured".into());
+            ctx.request_repaint();
+            return;
+        };
+
+        self.state.issues.request_merge_pr(
+            &self.state.project.root,
+            number,
+            merge_method,
+            http.clone(),
+        );
+        ctx.request_repaint();
     }
 
     fn poll_file_load(&mut self, ctx: &egui::Context) {
@@ -1041,6 +1370,24 @@ fn central_panel(
                     tab_index,
                     http.clone(),
                 ));
+            }
+            EditorPanelRequest::EditIssueMetadata(tab_index) => {
+                let Some(tab) = state.editor.tabs.get(tab_index) else {
+                    return;
+                };
+                let EditorTabView::Issue { number } = tab.view else {
+                    return;
+                };
+                state.issues.open_issue_metadata(number);
+            }
+            EditorPanelRequest::MergePullRequest(tab_index) => {
+                let Some(tab) = state.editor.tabs.get(tab_index) else {
+                    return;
+                };
+                let EditorTabView::PullRequest { number } = tab.view else {
+                    return;
+                };
+                state.issues.open_merge_pr(number);
             }
         }
     }

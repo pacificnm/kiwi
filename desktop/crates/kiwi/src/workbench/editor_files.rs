@@ -8,7 +8,7 @@ use nest_error::NestError;
 use nest_file::FileService;
 
 use super::editor::{EditorState, EditorTab, EditorTabView};
-use crate::workbench::issues::IssueCreateEvent;
+use crate::workbench::issues::{IssueCreateEvent, PullRequestDetail};
 use crate::workbench::source_control::{spawn_git_diff, DiffSide, GitDiffEvent};
 
 /// Result of a background file read for one editor tab.
@@ -171,9 +171,45 @@ pub fn open_issue_tab(
     Some(editor.active_tab)
 }
 
+/// Opens or focuses a GitHub pull request tab; returns index when a fetch was started.
+pub fn open_pr_tab(
+    editor: &mut EditorState,
+    owner: &str,
+    repo: &str,
+    number: u64,
+    html_url: String,
+) -> Option<usize> {
+    let rel_path = pr_tab_key(owner, repo, number);
+    let view = EditorTabView::PullRequest { number };
+    if let Some(index) = editor.tabs.iter().position(|tab| tab.rel_path == rel_path && tab.view == view)
+    {
+        editor.active_tab = index;
+        let tab = &mut editor.tabs[index];
+        if tab.error.is_some() {
+            tab.loading = true;
+            tab.error = None;
+            return Some(index);
+        }
+        return None;
+    }
+
+    editor.tabs.push({
+        let mut tab = EditorTab::new(rel_path.clone(), PathBuf::from(html_url), view);
+        tab.loading = true;
+        tab
+    });
+    editor.active_tab = editor.tabs.len() - 1;
+    Some(editor.active_tab)
+}
+
 /// Virtual tab key for a GitHub issue.
 pub fn issue_tab_key(owner: &str, repo: &str, number: u64) -> String {
     format!("github:{owner}/{repo}#{number}")
+}
+
+/// Virtual tab key for a GitHub pull request.
+pub fn pr_tab_key(owner: &str, repo: &str, number: u64) -> String {
+    format!("github:{owner}/{repo}#pull/{number}")
 }
 
 /// Virtual tab key for composing a new GitHub issue.
@@ -265,6 +301,17 @@ pub fn apply_file_load(editor: &mut EditorState, event: FileLoadEvent) {
                 tab.error = Some(error);
             }
         }
+    }
+}
+
+/// Applies a loaded pull request to the target editor tab.
+pub fn apply_pr_load(editor: &mut EditorState, tab_index: usize, detail: &PullRequestDetail) {
+    if let Some(tab) = editor.tabs.get_mut(tab_index) {
+        tab.content = detail.content.clone();
+        tab.abs_path = std::path::PathBuf::from(&detail.html_url);
+        tab.loading = false;
+        tab.error = None;
+        tab.save_error = None;
     }
 }
 

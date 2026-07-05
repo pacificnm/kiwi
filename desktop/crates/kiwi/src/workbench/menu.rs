@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use egui::{RichText, Ui};
 
 use crate::project::RecentProjects;
+use crate::theme::menu;
 
 /// Pending actions from the title bar menu.
 #[derive(Debug, Default)]
@@ -17,17 +18,23 @@ pub struct MenuState {
     pub new_issue_requested: bool,
     /// User chose **Git → New Comment** — open the comment modal.
     pub new_comment_requested: bool,
+    /// User chose **Git → Manage Labels** — open the labels modal.
+    pub manage_labels_requested: bool,
+    /// User chose **Git → Manage Milestones** — open the milestones modal.
+    pub manage_milestones_requested: bool,
 }
 
 /// Renders the **File** menu in the title bar.
 pub fn file_menu(ui: &mut Ui, recent: &RecentProjects, menu: &mut MenuState) {
     ui.menu_button(RichText::new("File").size(13.0), |ui| {
+        menu::prepare_menu_ui(ui);
         if ui.button("Open Folder…").clicked() {
             menu.open_folder_requested = true;
             ui.close_menu();
         }
 
         ui.menu_button("Open Recent", |ui| {
+            menu::prepare_menu_ui(ui);
             if recent.is_empty() {
                 ui.label(RichText::new("No recent folders").weak().size(12.0));
             } else {
@@ -50,12 +57,22 @@ pub fn file_menu(ui: &mut Ui, recent: &RecentProjects, menu: &mut MenuState) {
 /// Renders the **Git** menu in the title bar.
 pub fn git_menu(ui: &mut Ui, menu: &mut MenuState) {
     ui.menu_button(RichText::new("Git").size(13.0), |ui| {
+        menu::prepare_menu_ui(ui);
         if ui.button("New Comment…").clicked() {
             menu.new_comment_requested = true;
             ui.close_menu();
         }
         if ui.button("New Issue…").clicked() {
             menu.new_issue_requested = true;
+            ui.close_menu();
+        }
+        ui.separator();
+        if ui.button("Manage Labels…").clicked() {
+            menu.manage_labels_requested = true;
+            ui.close_menu();
+        }
+        if ui.button("Manage Milestones…").clicked() {
+            menu.manage_milestones_requested = true;
             ui.close_menu();
         }
     });
