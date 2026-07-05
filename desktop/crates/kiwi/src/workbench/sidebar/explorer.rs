@@ -1,7 +1,6 @@
 //! Explorer sidebar — project file tree.
 
 use egui::{Button, RichText, Ui};
-use nest_core::AppContext;
 use nest_file::FileService;
 
 use crate::project::ProjectConfig;
@@ -21,9 +20,9 @@ pub fn show(
     ui: &mut Ui,
     explorer: &mut ExplorerState,
     project: &ProjectConfig,
+    files: &FileService,
     editor: &mut EditorState,
     file_pending: &mut Option<FileLoadPending>,
-    app_ctx: &AppContext,
 ) {
     ui.label(
         RichText::new(format!("{} — {}", explorer.root_label, project.root.display()))
@@ -34,10 +33,8 @@ pub fn show(
 
     ui.horizontal(|ui| {
         if ui.small_button("Refresh").clicked() {
-            if let Ok(files) = app_ctx.service::<FileService>() {
-                if let Err(error) = explorer.refresh(&files) {
-                    explorer.error = Some(error.to_string());
-                }
+            if let Err(error) = explorer.refresh(files) {
+                explorer.error = Some(error.to_string());
             }
         }
         if ui.small_button("Collapse all").clicked() {
@@ -55,12 +52,7 @@ pub fn show(
 
     ui.add_space(4.0);
 
-    let Ok(files) = app_ctx.service::<FileService>() else {
-        ui.label(RichText::new("File service unavailable").weak().size(12.0));
-        return;
-    };
-
-    if let Err(error) = explorer.ensure_root_loaded(&files) {
+    if let Err(error) = explorer.ensure_root_loaded(files) {
         explorer.error = Some(error.to_string());
     }
 
@@ -84,7 +76,7 @@ pub fn show(
     for action in actions {
         match action {
             ExplorerAction::Toggle(rel_path) => {
-                if let Err(error) = explorer.toggle_dir(&rel_path, &files) {
+                if let Err(error) = explorer.toggle_dir(&rel_path, files) {
                     explorer.error = Some(error.to_string());
                 }
             }

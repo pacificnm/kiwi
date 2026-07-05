@@ -2,6 +2,7 @@
 
 use nest_ai::ChatRole;
 use nest_ai::CompletionMetrics;
+use nest_file::FileService;
 
 use super::activity::Activity;
 use super::bottom_panel::BottomTab;
@@ -52,7 +53,7 @@ pub struct ToolActivityEntry {
 }
 
 /// Workbench UI state (layout MVP placeholders).
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct WorkbenchState {
     /// Selected activity bar item.
     pub activity: Activity,
@@ -68,6 +69,8 @@ pub struct WorkbenchState {
     pub model: String,
     /// Open project configuration.
     pub project: ProjectConfig,
+    /// Scoped file I/O for the current workspace root.
+    pub files: FileService,
     /// Sidebar search query (Search activity).
     pub search_query: String,
     /// Conversation history for the AI panel.
@@ -98,6 +101,8 @@ pub struct WorkbenchState {
     pub bottom_panel_toggle_requested: bool,
     /// Integrated terminal emulator state.
     pub terminal: TerminalState,
+    /// Git status and commit UI state.
+    pub source_control: crate::workbench::source_control::SourceControlState,
 }
 
 impl Default for WorkbenchState {
@@ -115,6 +120,13 @@ impl WorkbenchState {
             ignore: merged_ignore(None),
         };
         let project_root = project.root.clone();
+        let files = FileService::with_config(nest_file::FileServiceConfig::scoped(
+            project_root.clone(),
+        ))
+        .unwrap_or_else(|error| {
+            tracing::warn!(target: "kiwi", %error, "File service init failed; using unscoped");
+            FileService::new().expect("default file service")
+        });
         Self {
             activity: Activity::Explorer,
             bottom_tab: BottomTab::Terminal,
@@ -123,6 +135,7 @@ impl WorkbenchState {
             prompt: PromptDraft::default(),
             model: "smollm2:360m".into(),
             project,
+            files,
             search_query: String::new(),
             chat_messages: Vec::new(),
             chat_busy: false,
@@ -137,7 +150,8 @@ impl WorkbenchState {
             bottom_panel_maximized: false,
             bottom_panel_restored_height: super::bottom_panel::DEFAULT_HEIGHT,
             bottom_panel_toggle_requested: false,
-            terminal: TerminalState::new(project_root),
+            terminal: TerminalState::new(project_root.clone()),
+            source_control: crate::workbench::source_control::SourceControlState::new(project_root),
         }
     }
 

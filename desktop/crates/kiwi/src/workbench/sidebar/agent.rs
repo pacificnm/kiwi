@@ -8,12 +8,12 @@ use nest_icon::Icon;
 use crate::agent::{try_persist_preferences, AgentSettings};
 use crate::workbench::state::WorkbenchState;
 use crate::theme::PALETTE;
-use super::SIDEBAR_INNER_WIDTH;
+use super::panel_width;
 use nest_ai_ollama::OllamaSharedConfig;
 
 /// Renders the agent configuration panel.
 pub fn show(ui: &mut Ui, state: &mut WorkbenchState, app_ctx: &AppContext) {
-    ui.set_width(SIDEBAR_INNER_WIDTH);
+    let width = panel_width(ui);
 
     ui.label(RichText::new("Agent endpoint").strong().size(12.0));
     ui.add_space(4.0);
@@ -22,7 +22,7 @@ pub fn show(ui: &mut Ui, state: &mut WorkbenchState, app_ctx: &AppContext) {
     ui.add(
         TextEdit::singleline(&mut state.agent.host)
             .hint_text("192.168.88.10")
-            .desired_width(SIDEBAR_INNER_WIDTH),
+            .desired_width(width),
     );
 
     ui.add_space(6.0);
@@ -43,7 +43,7 @@ pub fn show(ui: &mut Ui, state: &mut WorkbenchState, app_ctx: &AppContext) {
     for (index, model) in state.agent.models.iter().enumerate() {
         let selected = state.agent.model == *model;
         ui.allocate_ui_with_layout(
-            egui::vec2(SIDEBAR_INNER_WIDTH, row_height),
+            egui::vec2(width, row_height),
             Layout::left_to_right(Align::Center),
             |ui| {
                 if ui.selectable_label(selected, model).clicked() {
@@ -70,12 +70,12 @@ pub fn show(ui: &mut Ui, state: &mut WorkbenchState, app_ctx: &AppContext) {
 
     ui.add_space(6.0);
     ui.horizontal(|ui| {
-        ui.set_width(SIDEBAR_INNER_WIDTH);
+        ui.set_width(width);
         ui.spacing_mut().item_spacing.x = 8.0;
         ui.add(
             TextEdit::singleline(&mut state.agent.new_model)
                 .hint_text("Add model…")
-                .desired_width(SIDEBAR_INNER_WIDTH - 80.0),
+                .desired_width((width - 80.0).max(80.0)),
         );
         if ui
             .add(
@@ -93,7 +93,7 @@ pub fn show(ui: &mut Ui, state: &mut WorkbenchState, app_ctx: &AppContext) {
     ui.add_space(12.0);
     let mut apply_and_save = false;
     ui.horizontal(|ui| {
-        ui.set_width(SIDEBAR_INNER_WIDTH);
+        ui.set_width(width);
         ui.spacing_mut().item_spacing.x = 8.0;
         if ui
             .add(

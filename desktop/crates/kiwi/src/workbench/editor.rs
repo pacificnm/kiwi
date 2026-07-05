@@ -4,6 +4,7 @@ use egui::{pos2, Align, Button, Frame, Layout, Rect, RichText, ScrollArea, Strok
 use nest_gui::{ActionButton, ButtonSize};
 
 use crate::theme::PALETTE;
+use crate::workbench::editor_diff::colorized_diff_editor;
 use crate::workbench::editor_syntax::highlighted_code_editor_with_lines;
 use nest_icon::{Icon, IconButton, icons::solid};
 
@@ -20,6 +21,18 @@ pub struct EditorTabDragPayload {
     pub rel_path: String,
     /// Current buffer contents.
     pub content: String,
+}
+
+/// How the editor tab is presenting a file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorTabView {
+    /// Editable file buffer.
+    Source,
+    /// Read-only unified git diff.
+    Diff {
+        /// True when diffing the index (staged) version.
+        staged: bool,
+    },
 }
 
 /// One open editor tab.
@@ -43,6 +56,8 @@ pub struct EditorTab {
     pub error: Option<String>,
     /// Save error message.
     pub save_error: Option<String>,
+    /// Source file vs git diff presentation.
+    pub view: EditorTabView,
 }
 
 /// Open editor tabs and active selection.
@@ -77,9 +92,11 @@ pub fn editor_panel(ui: &mut Ui, ctx: &egui::Context, editor: &mut EditorState) 
             .inner_margin(egui::Margin::symmetric(12, 12))
             .show(ui, |ui| {
                 ui.label(
-                    RichText::new("Open a file from the explorer.")
-                        .weak()
-                        .size(14.0),
+                    RichText::new(
+                        "Open a file from the explorer, or click a change in Source Control.",
+                    )
+                    .weak()
+                    .size(14.0),
                 );
             });
         return None;
@@ -125,28 +142,46 @@ pub fn editor_panel(ui: &mut Ui, ctx: &egui::Context, editor: &mut EditorState) 
                 return;
             }
 
-            editor_toolbar(ui, tab, active, &mut save_request);
-            ui.add_space(EDITOR_TOOLBAR_GAP);
+            match tab.view {
+                EditorTabView::Source => {
+                    editor_toolbar(ui, tab, active, &mut save_request);
+                    ui.add_space(EDITOR_TOOLBAR_GAP);
 
-            let rel_path = editor.tabs[active].rel_path.clone();
-            ScrollArea::vertical()
-                .id_salt("kiwi-editor")
-                .max_height(
-                    (content_height - EDITOR_TOOLBAR_HEIGHT - EDITOR_TOOLBAR_GAP).max(40.0),
-                )
-                .auto_shrink([false; 2])
-                .show(ui, |ui| {
-                    let response = highlighted_code_editor_with_lines(
-                        ui,
-                        &mut editor.tabs[active].content,
-                        &rel_path,
-                    );
-                    if response.changed() {
-                        let tab = &mut editor.tabs[active];
-                        tab.dirty = tab.content != tab.saved_content;
-                        tab.save_error = None;
-                    }
-                });
+                    let rel_path = editor.tabs[active].rel_path.clone();
+                    ScrollArea::vertical()
+                        .id_salt("kiwi-editor")
+                        .max_height(
+                            (content_height - EDITOR_TOOLBAR_HEIGHT - EDITOR_TOOLBAR_GAP).max(40.0),
+                        )
+                        .auto_shrink([false; 2])
+                        .show(ui, |ui| {
+                            let response = highlighted_code_editor_with_lines(
+                                ui,
+                                &mut editor.tabs[active].content,
+                                &rel_path,
+                            );
+                            if response.changed() {
+                                let tab = &mut editor.tabs[active];
+                                tab.dirty = tab.content != tab.saved_content;
+                                tab.save_error = None;
+                            }
+                        });
+                }
+                EditorTabView::Diff { staged } => {
+                    diff_toolbar(ui, tab, staged);
+                    ui.add_space(EDITOR_TOOLBAR_GAP);
+
+                    ScrollArea::vertical()
+                        .id_salt(("kiwi-editor-diff", &tab.rel_path, staged))
+                        .max_height(
+                            (content_height - EDITOR_TOOLBAR_HEIGHT - EDITOR_TOOLBAR_GAP).max(40.0),
+                        )
+                        .auto_shrink([false; 2])
+                        .show(ui, |ui| {
+                            colorized_diff_editor(ui, &mut editor.tabs[active].content);
+                        });
+                }
+            }
         });
 
     if save_shortcut {
@@ -154,11 +189,41 @@ pub fn editor_panel(ui: &mut Ui, ctx: &egui::Context, editor: &mut EditorState) 
     }
 
     save_request.filter(|index| {
-        editor
-            .tabs
-            .get(*index)
-            .is_some_and(|tab| tab.dirty && !tab.loading && !tab.saving && tab.error.is_none())
+        editor.tabs.get(*index).is_some_and(|tab| {
+            tab.view == EditorTabView::Source
+                && tab.dirty
+                && !tab.loading
+                && !tab.saving
+                && tab.error.is_none()
+        })
     })
+}
+
+fn diff_toolbar(ui: &mut Ui, tab: &EditorTab, staged: bool) {
+    let label = if staged {
+        "Git diff (staged)"
+    } else {
+        "Git diff (working tree)"
+    };
+
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), EDITOR_TOOLBAR_HEIGHT),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            ui.label(
+                RichText::new(label)
+                    .strong()
+                    .size(12.0)
+                    .color(PALETTE.text_secondary),
+            );
+            ui.label(
+                RichText::new(tab.abs_path.display().to_string())
+                    .size(12.0)
+                    .color(PALETTE.text_muted),
+            )
+            .on_hover_text(&tab.rel_path);
+        },
+    );
 }
 
 fn editor_toolbar(ui: &mut Ui, tab: &EditorTab, tab_index: usize, save_request: &mut Option<usize>) {
@@ -273,10 +338,10 @@ fn tab_file_name(rel_path: &str) -> &str {
 
 fn tab_label(tab: &EditorTab) -> String {
     let name = tab_file_name(&tab.rel_path);
-    if tab.dirty {
-        format!("* {name}")
-    } else {
-        name.to_string()
+    match tab.view {
+        EditorTabView::Source if tab.dirty => format!("* {name}"),
+        EditorTabView::Source => name.to_string(),
+        EditorTabView::Diff { .. } => format!("{name} (diff)"),
     }
 }
 

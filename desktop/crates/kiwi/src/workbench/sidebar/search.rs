@@ -2,15 +2,17 @@
 
 use egui::{RichText, TextEdit, Ui};
 
+use super::panel_width;
+
 /// Renders the search sidebar.
 pub fn show(ui: &mut Ui, query: &mut String) {
-    use super::SIDEBAR_INNER_WIDTH;
+    let width = panel_width(ui);
 
     ui.label("Search");
     ui.add(
         TextEdit::singleline(query)
             .hint_text("Search files…")
-            .desired_width(SIDEBAR_INNER_WIDTH),
+            .desired_width(width),
     );
     ui.add_space(8.0);
     ui.label(

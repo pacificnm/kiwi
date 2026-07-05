@@ -17,8 +17,10 @@ use crate::workbench::activity::Activity;
 use crate::workbench::state::WorkbenchState;
 use crate::workbench::FileLoadPending;
 
-/// Inner width for sidebar scroll content (panel default minus frame padding).
-pub(crate) const SIDEBAR_INNER_WIDTH: f32 = 236.0;
+/// Usable inner width (respects scroll bars and margins).
+pub(crate) fn panel_width(ui: &Ui) -> f32 {
+    ui.available_width().max(1.0)
+}
 
 /// Renders the sidebar for the current activity.
 pub fn sidebar(
@@ -27,24 +29,44 @@ pub fn sidebar(
     app_ctx: &AppContext,
     file_pending: &mut Option<FileLoadPending>,
 ) {
+    ui.set_min_width(ui.available_width());
+    ui.set_min_height(ui.available_height());
+
     section_heading(ui, state.activity.tooltip());
 
+    if state.activity == Activity::SourceControl {
+        source_control::show(
+            ui,
+            &mut state.source_control,
+            &state.project,
+            &mut state.editor,
+            file_pending,
+        );
+        return;
+    }
+
+    let scroll_height = ui.available_height().max(0.0);
     ScrollArea::vertical()
-        .id_salt(("kiwi-sidebar", format!("{:?}", state.activity)))
-        .auto_shrink([true; 2])
+        .id_salt((
+            "kiwi-sidebar",
+            format!("{:?}", state.activity),
+            state.project.root.display().to_string(),
+        ))
+        .auto_shrink([false; 2])
+        .max_height(scroll_height)
         .show(ui, |ui| {
-            ui.set_width(SIDEBAR_INNER_WIDTH);
+            ui.set_min_width(ui.available_width());
             match state.activity {
                 Activity::Explorer => explorer::show(
                     ui,
                     &mut state.explorer,
                     &state.project,
+                    &state.files,
                     &mut state.editor,
                     file_pending,
-                    app_ctx,
                 ),
                 Activity::Search => search::show(ui, &mut state.search_query),
-                Activity::SourceControl => source_control::show(ui),
+                Activity::SourceControl => unreachable!(),
                 Activity::Issues => issues::show(ui),
                 Activity::Tasks => tasks::show(ui),
                 Activity::Agent => agent::show(ui, state, app_ctx),

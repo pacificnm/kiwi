@@ -1,5 +1,9 @@
 //! Project root resolution for the Kiwi workspace.
 
+mod recent;
+
+pub use recent::RecentProjects;
+
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -41,6 +45,23 @@ pub struct ProjectConfig {
     pub name: String,
     /// Directory names hidden from the explorer.
     pub ignore: Vec<String>,
+}
+
+/// Returns true when `path` is under the project root and passes through an ignored segment.
+pub fn path_is_ignored(path: &Path, root: &Path, ignored: &[String]) -> bool {
+    let rel = match path.strip_prefix(root) {
+        Ok(rel) => rel,
+        Err(_) => return true,
+    };
+    for component in rel.components() {
+        if let std::path::Component::Normal(name) = component {
+            let name = name.to_string_lossy();
+            if ignored.iter().any(|ignored| ignored == name.as_ref()) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Merges configured ignore entries with the built-in defaults.

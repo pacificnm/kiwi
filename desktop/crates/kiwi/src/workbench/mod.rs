@@ -3,14 +3,19 @@
 mod activity;
 mod bottom_panel;
 mod editor;
+mod editor_diff;
 mod editor_files;
 mod editor_syntax;
 mod explorer;
+mod menu;
 mod prompt;
 mod sidebar;
+mod source_control;
 mod state;
 mod watcher;
+mod workspace;
 
+use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 use egui::{Align, CentralPanel, ComboBox, Frame, Layout, RichText, ScrollArea, SidePanel, TextEdit, TopBottomPanel, Ui, UiBuilder};
@@ -29,8 +34,9 @@ use crate::agent::AgentLoopConfig;
 use crate::agent::AgentSettings;
 use crate::agent::try_persist_preferences;
 use crate::chat::{self, AgentRunEvent, ChatStreamEvent};
-use crate::project::ProjectConfig;
+use crate::project::{ProjectConfig, RecentProjects};
 use crate::theme::PALETTE;
+use crate::workbench::activity::Activity;
 use crate::workbench::bottom_panel::BottomTab;
 use crate::workbench::editor_files::{apply_file_load, apply_file_save, begin_file_save, spawn_save_file};
 use crate::workbench::watcher::ProjectWatcher;
@@ -42,11 +48,15 @@ pub type FileLoadPending = Receiver<FileLoadEvent>;
 /// Background file write channel for editor tabs.
 pub type FileSavePending = Receiver<FileSaveEvent>;
 
+/// Native folder picker result channel.
+type FolderDialogPending = Receiver<FolderDialogEvent>;
+
 use activity::{activity_bar, ACTIVITY_BAR_WIDTH};
 use editor::{editor_panel, EditorTabDragPayload};
 use sidebar::{section_heading, sidebar};
 
-use prompt::PROMPT_INPUT_HEIGHT;
+use menu::MenuState;
+use workspace::{spawn_folder_dialog, switch_workspace, FolderDialogEvent};
 
 const TITLE_BAR_HEIGHT: f32 = 36.0;
 const SIDEBAR_WIDTH: f32 = 260.0;
@@ -57,6 +67,8 @@ const AI_CHAT_HEADER_HEIGHT: f32 = 36.0;
 const AI_PROMPT_SECTION_HEIGHT: f32 = 192.0;
 /// Matches [`ButtonSize::Small`] action buttons in the chat toolbar.
 const CHAT_CONTROL_HEIGHT: f32 = 28.0;
+use prompt::PROMPT_INPUT_HEIGHT;
+
 const CHAT_MODEL_WIDTH: f32 = 148.0;
 
 /// Kiwi IDE workbench shell (layout MVP).
@@ -71,6 +83,13 @@ pub struct KiwiWorkbench {
     file_pending: Option<FileLoadPending>,
     file_save_pending: Option<FileSavePending>,
     project_watcher: Option<ProjectWatcher>,
+    source_control_loaded: bool,
+    last_activity: Activity,
+    menu: MenuState,
+    recent: RecentProjects,
+    recent_loaded: bool,
+    folder_dialog: Option<FolderDialogPending>,
+    workspace_error: Option<String>,
 }
 
 impl Default for KiwiWorkbench {
@@ -86,6 +105,13 @@ impl Default for KiwiWorkbench {
             file_pending: None,
             file_save_pending: None,
             project_watcher: None,
+            source_control_loaded: false,
+            last_activity: Activity::Explorer,
+            menu: MenuState::default(),
+            recent: RecentProjects::load(None),
+            recent_loaded: false,
+            folder_dialog: None,
+            workspace_error: None,
         }
     }
 }
@@ -107,18 +133,11 @@ impl WorkbenchView for KiwiWorkbench {
         self.poll_agent(ctx);
         self.poll_file_load(ctx);
         self.poll_file_save(ctx);
-        if self.chat_pending.is_some()
-            || self.agent_pending.is_some()
-            || self.file_pending.is_some()
-            || self.file_save_pending.is_some()
-        {
-            ctx.request_repaint_after(std::time::Duration::from_millis(32));
-        }
+        self.poll_source_control(ctx);
+        self.poll_workspace(ctx, app_ctx);
+        self.poll_project_watcher(ctx);
+        self.schedule_background_poll(ctx);
         self.sync_status(app_ctx);
-
-        let sidebar_frame = Frame::new()
-            .fill(PALETTE.background_sidebar)
-            .inner_margin(egui::Margin::symmetric(8, 2));
 
         TopBottomPanel::top("kiwi-title-bar")
             .exact_height(TITLE_BAR_HEIGHT)
@@ -129,7 +148,13 @@ impl WorkbenchView for KiwiWorkbench {
                     .inner_margin(egui::Margin::symmetric(8, 0)),
             )
             .show(ctx, |ui| {
-                title_bar(ui, &self.state);
+                title_bar(
+                    ui,
+                    &self.state,
+                    &self.recent,
+                    &mut self.menu,
+                    self.workspace_error.as_deref(),
+                );
             });
 
         SidePanel::left("kiwi-activity-bar")
@@ -163,11 +188,16 @@ impl WorkbenchView for KiwiWorkbench {
                 );
             });
 
-        SidePanel::left("kiwi-sidebar-v2")
+        SidePanel::left("kiwi-sidebar-v3")
             .default_width(SIDEBAR_WIDTH)
-            .width_range(200.0..=320.0)
+            .width_range(200.0..=400.0)
             .resizable(true)
-            .frame(sidebar_frame)
+            .show_separator_line(true)
+            .frame(
+                Frame::new()
+                    .fill(PALETTE.background_sidebar)
+                    .inner_margin(egui::Margin::symmetric(8, 2)),
+            )
             .show(ctx, |ui| {
                 sidebar(
                     ui,
@@ -186,27 +216,31 @@ impl WorkbenchView for KiwiWorkbench {
                     .inner_margin(egui::Margin::ZERO),
             )
             .show(ctx, |ui| {
-                central_panel(ui, ctx, &mut self.state, app_ctx, &mut self.file_save_pending);
+                central_panel(ui, ctx, &mut self.state, &mut self.file_save_pending);
             });
 
         self.poll_chat(ctx);
         self.poll_agent(ctx);
         self.poll_file_load(ctx);
         self.poll_file_save(ctx);
-        self.poll_project_watcher(ctx, app_ctx);
+        self.poll_source_control(ctx);
+        self.poll_workspace(ctx, app_ctx);
+        self.poll_project_watcher(ctx);
         if self.state.bottom_tab == BottomTab::Terminal
             && (self.state.terminal.poll() || self.state.terminal.is_active())
         {
             ctx.request_repaint_after(std::time::Duration::from_millis(32));
         }
-        if self.chat_pending.is_some()
-            || self.agent_pending.is_some()
-            || self.file_pending.is_some()
-            || self.file_save_pending.is_some()
-            || self.project_watcher.as_ref().is_some_and(|w| w.has_pending())
+        self.schedule_background_poll(ctx);
+
+        if self.state.activity == Activity::SourceControl
+            && self.last_activity != Activity::SourceControl
         {
-            ctx.request_repaint_after(std::time::Duration::from_millis(32));
+            self.state
+                .source_control
+                .request_refresh(&self.state.project.root);
         }
+        self.last_activity = self.state.activity;
 
         Ok(())
     }
@@ -257,15 +291,37 @@ impl KiwiWorkbench {
             return;
         };
         if let Ok(project) = ProjectConfig::from_config_service(&config) {
+            if !self.recent_loaded {
+                self.recent = RecentProjects::load(config.path());
+                self.recent_loaded = true;
+            }
+            let _ = self.recent.record(&project.root);
+
+            let files = nest_file::FileService::with_config(
+                nest_file::FileServiceConfig::scoped(project.root.clone()),
+            )
+            .unwrap_or_else(|error| {
+                tracing::warn!(target: "kiwi", %error, "scoped file service failed at startup");
+                self.state.files.clone()
+            });
+
             self.state.project = project.clone();
+            self.state.files = files;
             self.state.explorer = crate::workbench::explorer::ExplorerState::new(
                 &project.root,
                 &project.name,
                 project.ignore.clone(),
             );
-            self.project_watcher = ProjectWatcher::new(&project.root).ok();
+            self.project_watcher =
+                ProjectWatcher::new(&project.root, project.ignore.clone()).ok();
             self.project_loaded = true;
             self.state.terminal.set_cwd(project.root.clone());
+            self.state.source_control =
+                crate::workbench::source_control::SourceControlState::new(project.root.clone());
+            self.state
+                .source_control
+                .request_refresh(&project.root);
+            self.source_control_loaded = true;
             tracing::info!(
                 target: "kiwi",
                 root = %project.root.display(),
@@ -293,20 +349,103 @@ impl KiwiWorkbench {
         }
     }
 
-    fn poll_project_watcher(&mut self, ctx: &egui::Context, app_ctx: &AppContext) {
+    fn poll_project_watcher(&mut self, ctx: &egui::Context) {
         let Some(watcher) = self.project_watcher.as_mut() else {
             return;
         };
         if !watcher.poll() {
             return;
         }
-        let Ok(files) = app_ctx.service::<nest_file::FileService>() else {
-            return;
-        };
-        if let Err(error) = self.state.explorer.refresh(&files) {
+        if let Err(error) = self.state.explorer.refresh(&self.state.files) {
             self.state.explorer.error = Some(error.to_string());
         }
+        self.state
+            .source_control
+            .request_refresh(&self.state.project.root);
         ctx.request_repaint();
+    }
+
+    /// Schedules a single follow-up frame while background I/O is in flight.
+    fn schedule_background_poll(&self, ctx: &egui::Context) {
+        const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
+
+        let needs_poll = self.chat_pending.is_some()
+            || self.agent_pending.is_some()
+            || self.file_pending.is_some()
+            || self.file_save_pending.is_some()
+            || self.state.source_control.has_pending_io()
+            || self.folder_dialog.is_some()
+            || (self.state.bottom_tab == BottomTab::Terminal
+                && self.state.terminal.is_active());
+
+        if needs_poll {
+            ctx.request_repaint_after(POLL_INTERVAL);
+        }
+    }
+
+    fn poll_workspace(&mut self, ctx: &egui::Context, app_ctx: &AppContext) {
+        if !self.recent_loaded {
+            if let Ok(config) = app_ctx.service::<ConfigService>() {
+                self.recent = RecentProjects::load(config.path());
+            }
+            self.recent_loaded = true;
+        }
+
+        if self.menu.open_folder_requested && self.folder_dialog.is_none() {
+            self.menu.open_folder_requested = false;
+            self.folder_dialog = Some(spawn_folder_dialog());
+        }
+
+        if let Some(rx) = self.folder_dialog.as_ref() {
+            match rx.try_recv() {
+                Ok(FolderDialogEvent::Selected(path)) => {
+                    self.folder_dialog = None;
+                    self.open_workspace_root(app_ctx, path);
+                    ctx.request_repaint();
+                }
+                Ok(FolderDialogEvent::Cancelled) => {
+                    self.folder_dialog = None;
+                }
+                Err(TryRecvError::Empty) => {}
+                Err(TryRecvError::Disconnected) => {
+                    self.folder_dialog = None;
+                    self.workspace_error = Some("Folder picker interrupted".into());
+                    ctx.request_repaint();
+                }
+            }
+        }
+
+        if let Some(path) = self.menu.open_recent_path.take() {
+            self.open_workspace_root(app_ctx, path);
+            ctx.request_repaint();
+        }
+    }
+
+    fn open_workspace_root(&mut self, app_ctx: &AppContext, root: PathBuf) {
+        self.file_pending = None;
+        self.file_save_pending = None;
+        match switch_workspace(
+            &mut self.state,
+            &mut self.project_watcher,
+            &mut self.recent,
+            app_ctx,
+            root,
+        ) {
+            Ok(()) => {
+                self.workspace_error = None;
+                self.source_control_loaded = true;
+            }
+            Err(error) => {
+                self.workspace_error = Some(error.to_string());
+            }
+        }
+    }
+
+    fn poll_source_control(&mut self, ctx: &egui::Context) {
+        let root = self.state.project.root.clone();
+        if self.state.source_control.poll(&root) {
+            ctx.request_repaint();
+        }
     }
 
     fn poll_file_load(&mut self, ctx: &egui::Context) {
@@ -575,15 +714,23 @@ impl KiwiWorkbench {
     }
 }
 
-fn title_bar(ui: &mut Ui, state: &WorkbenchState) {
+fn title_bar(
+    ui: &mut Ui,
+    state: &WorkbenchState,
+    recent: &RecentProjects,
+    menu: &mut MenuState,
+    workspace_error: Option<&str>,
+) {
     let weak = ui.visuals().weak_text_color();
     let stroke = ui.visuals().widgets.noninteractive.bg_stroke;
     ui.painter()
         .hline(ui.max_rect().x_range(), ui.max_rect().bottom(), stroke);
 
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 16.0;
-        ui.add_space(12.0);
+        ui.spacing_mut().item_spacing.x = 12.0;
+        ui.add_space(8.0);
+        menu::file_menu(ui, recent, menu);
+        ui.separator();
         ui.label(RichText::new("Kiwi").strong().size(14.0));
         ui.label(
             RichText::new(format!("Project: {}", state.project.name))
@@ -597,6 +744,14 @@ fn title_bar(ui: &mut Ui, state: &WorkbenchState) {
                 .color(weak),
         );
 
+        if let Some(error) = workspace_error {
+            ui.label(
+                RichText::new(error)
+                    .size(11.0)
+                    .color(ui.visuals().error_fg_color),
+            );
+        }
+
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 12.0;
             ui.add_space(12.0);
@@ -609,7 +764,6 @@ fn central_panel(
     ui: &mut Ui,
     ctx: &egui::Context,
     state: &mut WorkbenchState,
-    app_ctx: &AppContext,
     file_save_pending: &mut Option<FileSavePending>,
 ) {
     ui.spacing_mut().item_spacing.y = 0.0;
@@ -618,17 +772,15 @@ fn central_panel(
     if let Some(tab_index) = editor_panel(ui, ctx, &mut state.editor) {
         if file_save_pending.is_none() {
             if let Some((rel_path, content)) = begin_file_save(&mut state.editor, tab_index) {
-                if let Ok(files) = app_ctx.service::<nest_file::FileService>() {
-                    *file_save_pending = Some(spawn_save_file(
-                        files.clone(),
-                        rel_path,
-                        content,
-                        tab_index,
-                    ));
-                } else if let Some(tab) = state.editor.tabs.get_mut(tab_index) {
-                    tab.saving = false;
-                    tab.save_error = Some("File service unavailable".into());
-                }
+                *file_save_pending = Some(spawn_save_file(
+                    state.files.clone(),
+                    rel_path,
+                    content,
+                    tab_index,
+                ));
+            } else if let Some(tab) = state.editor.tabs.get_mut(tab_index) {
+                tab.saving = false;
+                tab.save_error = Some("File save failed".into());
             }
         }
     }
