@@ -7,6 +7,7 @@ mod editor_diff;
 mod editor_files;
 mod editor_syntax;
 mod explorer;
+mod issues;
 mod menu;
 mod prompt;
 mod sidebar;
@@ -38,7 +39,14 @@ use crate::project::{ProjectConfig, RecentProjects};
 use crate::theme::PALETTE;
 use crate::workbench::activity::Activity;
 use crate::workbench::bottom_panel::BottomTab;
-use crate::workbench::editor_files::{apply_file_load, apply_file_save, begin_file_save, spawn_save_file};
+use crate::workbench::editor::{active_issue_number, editor_panel, EditorPanelRequest, EditorTabDragPayload, EditorTabView};
+use crate::workbench::editor_files::{
+    apply_file_load, apply_file_save, apply_issue_created, begin_file_save, issue_tab_key,
+    open_new_issue_tab, parse_issue_tab_repo, spawn_save_file,
+};
+use crate::workbench::issues::{
+    comment_modal, load_token_from_config, read_github_repo, CommentModalAction, IssueCreateEvent,
+};
 use crate::workbench::watcher::ProjectWatcher;
 use nest_ai_ollama::{OllamaConfig, OllamaSharedConfig};
 
@@ -48,11 +56,13 @@ pub type FileLoadPending = Receiver<FileLoadEvent>;
 /// Background file write channel for editor tabs.
 pub type FileSavePending = Receiver<FileSaveEvent>;
 
+/// Background GitHub issue creation channel for editor tabs.
+type IssueCreatePending = Receiver<IssueCreateEvent>;
+
 /// Native folder picker result channel.
 type FolderDialogPending = Receiver<FolderDialogEvent>;
 
 use activity::{activity_bar, ACTIVITY_BAR_WIDTH};
-use editor::{editor_panel, EditorTabDragPayload};
 use sidebar::{section_heading, sidebar};
 
 use menu::MenuState;
@@ -78,10 +88,12 @@ pub struct KiwiWorkbench {
     theme_applied: bool,
     ai_config_loaded: bool,
     project_loaded: bool,
+    github_auth_loaded: bool,
     chat_pending: Option<Receiver<ChatStreamEvent>>,
     agent_pending: Option<Receiver<AgentRunEvent>>,
     file_pending: Option<FileLoadPending>,
     file_save_pending: Option<FileSavePending>,
+    issue_create_pending: Option<IssueCreatePending>,
     project_watcher: Option<ProjectWatcher>,
     source_control_loaded: bool,
     last_activity: Activity,
@@ -100,10 +112,12 @@ impl Default for KiwiWorkbench {
             theme_applied: false,
             ai_config_loaded: false,
             project_loaded: false,
+            github_auth_loaded: false,
             chat_pending: None,
             agent_pending: None,
             file_pending: None,
             file_save_pending: None,
+            issue_create_pending: None,
             project_watcher: None,
             source_control_loaded: false,
             last_activity: Activity::Explorer,
@@ -129,11 +143,15 @@ impl WorkbenchView for KiwiWorkbench {
         }
         self.sync_ai_config(app_ctx);
         self.sync_project_config(app_ctx);
+        self.sync_github_auth(app_ctx);
         self.poll_chat(ctx);
         self.poll_agent(ctx);
         self.poll_file_load(ctx);
         self.poll_file_save(ctx);
         self.poll_source_control(ctx);
+        self.poll_issues(ctx, app_ctx);
+        self.poll_issue_create(ctx);
+        self.poll_menu_actions(ctx);
         self.poll_workspace(ctx, app_ctx);
         self.poll_project_watcher(ctx);
         self.schedule_background_poll(ctx);
@@ -216,7 +234,14 @@ impl WorkbenchView for KiwiWorkbench {
                     .inner_margin(egui::Margin::ZERO),
             )
             .show(ctx, |ui| {
-                central_panel(ui, ctx, &mut self.state, &mut self.file_save_pending);
+                central_panel(
+                    ui,
+                    ctx,
+                    &mut self.state,
+                    app_ctx,
+                    &mut self.file_save_pending,
+                    &mut self.issue_create_pending,
+                );
             });
 
         self.poll_chat(ctx);
@@ -224,6 +249,9 @@ impl WorkbenchView for KiwiWorkbench {
         self.poll_file_load(ctx);
         self.poll_file_save(ctx);
         self.poll_source_control(ctx);
+        self.poll_issues(ctx, app_ctx);
+        self.poll_issue_create(ctx);
+        self.poll_menu_actions(ctx);
         self.poll_workspace(ctx, app_ctx);
         self.poll_project_watcher(ctx);
         if self.state.bottom_tab == BottomTab::Terminal
@@ -240,7 +268,19 @@ impl WorkbenchView for KiwiWorkbench {
                 .source_control
                 .request_refresh(&self.state.project.root);
         }
+        if self.state.activity == Activity::Issues
+            && self.last_activity != Activity::Issues
+        {
+            self.state.issues.sync_gh_auth();
+            if let Ok(http) = app_ctx.service::<nest_http_client::HttpClientService>() {
+                self.state
+                    .issues
+                    .request_list(&self.state.project.root, http.clone());
+            }
+        }
         self.last_activity = self.state.activity;
+
+        self.show_comment_modal(ctx, app_ctx);
 
         Ok(())
     }
@@ -281,6 +321,25 @@ impl KiwiWorkbench {
             self.state.agent.apply_runtime(&shared);
         }
         self.ai_config_loaded = true;
+    }
+
+    fn sync_github_auth(&mut self, app_ctx: &AppContext) {
+        if self.github_auth_loaded {
+            return;
+        }
+        if let Ok(config) = app_ctx.service::<ConfigService>() {
+            if let Some(token) = load_token_from_config(&config) {
+                self.state.issues.set_stored_token(Some(token));
+            }
+        }
+        self.state.issues.sync_gh_auth();
+
+        if self.state.issues.auth_login.is_none() && self.state.issues.token().is_some() {
+            if let Ok(http) = app_ctx.service::<nest_http_client::HttpClientService>() {
+                self.state.issues.request_verify(http.clone());
+            }
+        }
+        self.github_auth_loaded = true;
     }
 
     fn sync_project_config(&mut self, app_ctx: &AppContext) {
@@ -374,6 +433,8 @@ impl KiwiWorkbench {
             || self.file_pending.is_some()
             || self.file_save_pending.is_some()
             || self.state.source_control.has_pending_io()
+            || self.state.issues.busy()
+            || self.issue_create_pending.is_some()
             || self.folder_dialog.is_some()
             || (self.state.bottom_tab == BottomTab::Terminal
                 && self.state.terminal.is_active());
@@ -424,6 +485,7 @@ impl KiwiWorkbench {
     fn open_workspace_root(&mut self, app_ctx: &AppContext, root: PathBuf) {
         self.file_pending = None;
         self.file_save_pending = None;
+        self.issue_create_pending = None;
         match switch_workspace(
             &mut self.state,
             &mut self.project_watcher,
@@ -450,6 +512,157 @@ impl KiwiWorkbench {
             self.state.bottom_tab = BottomTab::Git;
             ctx.request_repaint();
         }
+    }
+
+    fn poll_issues(&mut self, ctx: &egui::Context, app_ctx: &AppContext) {
+        if self.state.issues.poll() {
+            ctx.request_repaint();
+        }
+        if let Some(number) = self.state.issues.comment_posted_on.take() {
+            self.reload_open_issue_tab(number, app_ctx);
+            ctx.request_repaint();
+        }
+    }
+
+    fn poll_issue_create(&mut self, ctx: &egui::Context) {
+        let Some(rx) = self.issue_create_pending.as_ref() else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(event) => {
+                apply_issue_created(&mut self.state.editor, event);
+                self.issue_create_pending = None;
+                ctx.request_repaint();
+            }
+            Err(TryRecvError::Empty) => {}
+            Err(TryRecvError::Disconnected) => {
+                self.issue_create_pending = None;
+                ctx.request_repaint();
+            }
+        }
+    }
+
+    fn poll_menu_actions(&mut self, ctx: &egui::Context) {
+        if self.menu.new_comment_requested {
+            self.menu.new_comment_requested = false;
+            let issue_number = active_issue_number(&self.state.editor);
+            self.state
+                .issues
+                .comment_modal
+                .open_with_issue(issue_number);
+            ctx.request_repaint();
+        }
+
+        if !self.menu.new_issue_requested {
+            return;
+        }
+        self.menu.new_issue_requested = false;
+
+        let repo = self
+            .state
+            .issues
+            .repo
+            .clone()
+            .or_else(|| read_github_repo(&self.state.project.root).ok());
+
+        let Some((owner, repo)) = repo else {
+            self.state.issues.error =
+                Some("Could not resolve GitHub repository from origin".into());
+            ctx.request_repaint();
+            return;
+        };
+
+        open_new_issue_tab(&mut self.state.editor, &owner, &repo);
+        ctx.request_repaint();
+    }
+
+    fn show_comment_modal(&mut self, ctx: &egui::Context, app_ctx: &AppContext) {
+        let issues_list = self.state.issues.issues.clone();
+        let Some(action) = comment_modal::show(
+            ctx,
+            &mut self.state.issues.comment_modal,
+            &issues_list,
+        ) else {
+            return;
+        };
+
+        let CommentModalAction::Submit {
+            issue_number,
+            body,
+        } = action;
+
+        let repo = self
+            .state
+            .issues
+            .repo
+            .clone()
+            .or_else(|| read_github_repo(&self.state.project.root).ok());
+
+        let Some((owner, repo)) = repo else {
+            self.state.issues.comment_modal.error =
+                Some("Could not resolve GitHub repository from origin".into());
+            ctx.request_repaint();
+            return;
+        };
+
+        let Ok(http) = app_ctx.service::<nest_http_client::HttpClientService>() else {
+            self.state.issues.comment_modal.error =
+                Some("HTTP client is not configured".into());
+            ctx.request_repaint();
+            return;
+        };
+
+        self.state.issues.request_create_comment(
+            &owner,
+            &repo,
+            issue_number,
+            body,
+            http.clone(),
+        );
+        ctx.request_repaint();
+    }
+
+    fn reload_open_issue_tab(&mut self, number: u64, app_ctx: &AppContext) {
+        let repo = self
+            .state
+            .issues
+            .repo
+            .clone()
+            .or_else(|| read_github_repo(&self.state.project.root).ok());
+        let Some((owner, repo)) = repo else {
+            return;
+        };
+
+        let rel_path = issue_tab_key(&owner, &repo, number);
+        let view = EditorTabView::Issue { number };
+        let Some(tab_index) = self.state.editor.tabs.iter().position(|tab| {
+            tab.rel_path == rel_path && tab.view == view
+        }) else {
+            return;
+        };
+
+        self.state.editor.active_tab = tab_index;
+        {
+            let tab = &mut self.state.editor.tabs[tab_index];
+            tab.loading = true;
+            tab.error = None;
+        }
+
+        if self.file_pending.is_some() {
+            return;
+        }
+
+        let Ok(http) = app_ctx.service::<nest_http_client::HttpClientService>() else {
+            return;
+        };
+
+        self.file_pending = Some(self.state.issues.spawn_open_issue(
+            &owner,
+            &repo,
+            number,
+            tab_index,
+            http.clone(),
+        ));
     }
 
     fn poll_file_load(&mut self, ctx: &egui::Context) {
@@ -736,6 +949,7 @@ fn title_bar(
         ui.label(RichText::new("Kiwi").strong().size(14.0));
         ui.separator();
         menu::file_menu(ui, recent, menu);
+        menu::git_menu(ui, menu);
         ui.separator();
         ui.label(
             RichText::new(&state.project.name)
@@ -769,23 +983,64 @@ fn central_panel(
     ui: &mut Ui,
     ctx: &egui::Context,
     state: &mut WorkbenchState,
+    app_ctx: &AppContext,
     file_save_pending: &mut Option<FileSavePending>,
+    issue_create_pending: &mut Option<IssueCreatePending>,
 ) {
     ui.spacing_mut().item_spacing.y = 0.0;
     ui.set_min_height(ui.available_height());
 
-    if let Some(tab_index) = editor_panel(ui, ctx, &mut state.editor) {
-        if file_save_pending.is_none() {
-            if let Some((rel_path, content)) = begin_file_save(&mut state.editor, tab_index) {
-                *file_save_pending = Some(spawn_save_file(
-                    state.files.clone(),
-                    rel_path,
-                    content,
+    if let Some(request) = editor_panel(ui, ctx, &mut state.editor) {
+        match request {
+            EditorPanelRequest::SaveFile(tab_index) => {
+                if file_save_pending.is_none() {
+                    if let Some((rel_path, content)) = begin_file_save(&mut state.editor, tab_index)
+                    {
+                        *file_save_pending = Some(spawn_save_file(
+                            state.files.clone(),
+                            rel_path,
+                            content,
+                            tab_index,
+                        ));
+                    } else if let Some(tab) = state.editor.tabs.get_mut(tab_index) {
+                        tab.saving = false;
+                        tab.save_error = Some("File save failed".into());
+                    }
+                }
+            }
+            EditorPanelRequest::CreateIssue(tab_index) => {
+                if issue_create_pending.is_some() {
+                    return;
+                }
+                let Some(tab) = state.editor.tabs.get(tab_index) else {
+                    return;
+                };
+                let Some((owner, repo)) = parse_issue_tab_repo(&tab.rel_path) else {
+                    return;
+                };
+                let title = tab.issue_title.trim().to_string();
+                if title.is_empty() {
+                    return;
+                };
+                let body = tab.content.clone();
+                let Ok(http) = app_ctx.service::<nest_http_client::HttpClientService>() else {
+                    if let Some(tab) = state.editor.tabs.get_mut(tab_index) {
+                        tab.save_error = Some("HTTP client is not configured".into());
+                    }
+                    return;
+                };
+                if let Some(tab) = state.editor.tabs.get_mut(tab_index) {
+                    tab.saving = true;
+                    tab.save_error = None;
+                }
+                *issue_create_pending = Some(state.issues.spawn_create_issue(
+                    &owner,
+                    &repo,
+                    title,
+                    body,
                     tab_index,
+                    http.clone(),
                 ));
-            } else if let Some(tab) = state.editor.tabs.get_mut(tab_index) {
-                tab.saving = false;
-                tab.save_error = Some("File save failed".into());
             }
         }
     }

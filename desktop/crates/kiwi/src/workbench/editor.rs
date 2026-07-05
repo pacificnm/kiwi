@@ -1,6 +1,6 @@
 //! Editor area — open tabs and editable file content.
 
-use egui::{pos2, Align, Button, Frame, Layout, Rect, RichText, ScrollArea, Stroke, Ui};
+use egui::{pos2, Align, Button, Frame, Layout, Rect, RichText, ScrollArea, Stroke, TextEdit, Ui};
 use nest_gui::{ActionButton, ButtonSize};
 
 use crate::theme::PALETTE;
@@ -33,6 +33,30 @@ pub enum EditorTabView {
         /// True when diffing the index (staged) version.
         staged: bool,
     },
+    /// Read-only GitHub issue.
+    Issue {
+        /// GitHub issue number.
+        number: u64,
+    },
+    /// Compose a new GitHub issue.
+    NewIssue,
+}
+
+/// User action requested from the editor panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorPanelRequest {
+    /// Save the source tab at this index.
+    SaveFile(usize),
+    /// Create a GitHub issue from the new-issue tab at this index.
+    CreateIssue(usize),
+}
+
+/// Returns the GitHub issue number for the active editor tab, if any.
+pub fn active_issue_number(editor: &EditorState) -> Option<u64> {
+    editor.tabs.get(editor.active_tab).and_then(|tab| match tab.view {
+        EditorTabView::Issue { number } => Some(number),
+        _ => None,
+    })
 }
 
 /// One open editor tab.
@@ -58,6 +82,27 @@ pub struct EditorTab {
     pub save_error: Option<String>,
     /// Source file vs git diff presentation.
     pub view: EditorTabView,
+    /// Title field for [`EditorTabView::NewIssue`] tabs.
+    pub issue_title: String,
+}
+
+impl EditorTab {
+    /// Creates a tab with empty buffers and the given presentation mode.
+    pub(crate) fn new(rel_path: String, abs_path: std::path::PathBuf, view: EditorTabView) -> Self {
+        Self {
+            rel_path,
+            abs_path,
+            content: String::new(),
+            saved_content: String::new(),
+            dirty: false,
+            loading: false,
+            saving: false,
+            error: None,
+            save_error: None,
+            view,
+            issue_title: String::new(),
+        }
+    }
 }
 
 /// Open editor tabs and active selection.
@@ -81,8 +126,12 @@ impl EditorState {
 
 /// Renders the editor tab bar and content area.
 ///
-/// Returns the tab index to save when the user clicks Save or presses Ctrl/Cmd+S.
-pub fn editor_panel(ui: &mut Ui, ctx: &egui::Context, editor: &mut EditorState) -> Option<usize> {
+/// Returns a save or create-issue request from toolbar actions or shortcuts.
+pub fn editor_panel(
+    ui: &mut Ui,
+    ctx: &egui::Context,
+    editor: &mut EditorState,
+) -> Option<EditorPanelRequest> {
     ui.spacing_mut().item_spacing.y = 0.0;
     ui.set_min_height(ui.available_height());
 
@@ -93,7 +142,7 @@ pub fn editor_panel(ui: &mut Ui, ctx: &egui::Context, editor: &mut EditorState) 
             .show(ui, |ui| {
                 ui.label(
                     RichText::new(
-                        "Open a file from the explorer, or click a change in Source Control.",
+                        "Open a file from the explorer, a change in Source Control, or an issue in Issues.",
                     )
                     .weak()
                     .size(14.0),
@@ -109,7 +158,7 @@ pub fn editor_panel(ui: &mut Ui, ctx: &egui::Context, editor: &mut EditorState) 
     editor_tabs(ui, editor);
 
     let content_height = ui.available_height().max(0.0);
-    let mut save_request = None;
+    let mut panel_request = None;
 
     Frame::new()
         .fill(PALETTE.background_panel)
@@ -144,7 +193,7 @@ pub fn editor_panel(ui: &mut Ui, ctx: &egui::Context, editor: &mut EditorState) 
 
             match tab.view {
                 EditorTabView::Source => {
-                    editor_toolbar(ui, tab, active, &mut save_request);
+                    editor_toolbar(ui, tab, active, &mut panel_request);
                     ui.add_space(EDITOR_TOOLBAR_GAP);
 
                     let rel_path = editor.tabs[active].rel_path.clone();
@@ -181,22 +230,171 @@ pub fn editor_panel(ui: &mut Ui, ctx: &egui::Context, editor: &mut EditorState) 
                             colorized_diff_editor(ui, &mut editor.tabs[active].content);
                         });
                 }
+                EditorTabView::Issue { number } => {
+                    issue_toolbar(ui, tab, number);
+                    ui.add_space(EDITOR_TOOLBAR_GAP);
+
+                    ScrollArea::vertical()
+                        .id_salt(("kiwi-editor-issue", &tab.rel_path, number))
+                        .max_height(
+                            (content_height - EDITOR_TOOLBAR_HEIGHT - EDITOR_TOOLBAR_GAP).max(40.0),
+                        )
+                        .auto_shrink([false; 2])
+                        .show(ui, |ui| {
+                            ui.add(
+                                TextEdit::multiline(&mut editor.tabs[active].content)
+                                    .font(egui::TextStyle::Monospace)
+                                    .desired_width(f32::INFINITY)
+                                    .interactive(false)
+                                    .frame(false),
+                            );
+                        });
+                }
+                EditorTabView::NewIssue => {
+                    new_issue_form(
+                        ui,
+                        &mut editor.tabs[active],
+                        active,
+                        content_height,
+                        &mut panel_request,
+                    );
+                }
             }
         });
 
     if save_shortcut {
-        save_request = Some(editor.active_tab);
+        panel_request = Some(EditorPanelRequest::SaveFile(editor.active_tab));
     }
 
-    save_request.filter(|index| {
-        editor.tabs.get(*index).is_some_and(|tab| {
+    panel_request.filter(|request| match request {
+        EditorPanelRequest::SaveFile(index) => editor.tabs.get(*index).is_some_and(|tab| {
             tab.view == EditorTabView::Source
                 && tab.dirty
                 && !tab.loading
                 && !tab.saving
                 && tab.error.is_none()
-        })
+        }),
+        EditorPanelRequest::CreateIssue(index) => editor.tabs.get(*index).is_some_and(|tab| {
+            tab.view == EditorTabView::NewIssue
+                && !tab.issue_title.trim().is_empty()
+                && !tab.saving
+        }),
     })
+}
+
+fn new_issue_form(
+    ui: &mut Ui,
+    tab: &mut EditorTab,
+    tab_index: usize,
+    content_height: f32,
+    panel_request: &mut Option<EditorPanelRequest>,
+) {
+    new_issue_toolbar(ui, tab, tab_index, panel_request);
+
+    ui.add_space(EDITOR_TOOLBAR_GAP);
+    ui.label(RichText::new("Title").strong().size(12.0));
+    ui.add_space(2.0);
+    ui.add(
+        TextEdit::singleline(&mut tab.issue_title)
+            .desired_width(f32::INFINITY)
+            .hint_text("Issue title"),
+    );
+
+    ui.add_space(8.0);
+    ui.label(RichText::new("Description").strong().size(12.0));
+    ui.add_space(2.0);
+
+    let body_height = (content_height - EDITOR_TOOLBAR_HEIGHT - EDITOR_TOOLBAR_GAP - 88.0).max(120.0);
+    ScrollArea::vertical()
+        .id_salt(("kiwi-editor-new-issue", &tab.rel_path))
+        .max_height(body_height)
+        .auto_shrink([false; 2])
+        .show(ui, |ui| {
+            ui.add(
+                TextEdit::multiline(&mut tab.content)
+                    .desired_width(f32::INFINITY)
+                    .hint_text("Describe the issue…")
+                    .frame(true),
+            );
+        });
+}
+
+fn new_issue_toolbar(
+    ui: &mut Ui,
+    tab: &EditorTab,
+    tab_index: usize,
+    panel_request: &mut Option<EditorPanelRequest>,
+) {
+    let can_create = !tab.issue_title.trim().is_empty() && !tab.saving;
+
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), EDITOR_TOOLBAR_HEIGHT),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = 10.0;
+
+            ui.label(
+                RichText::new("New GitHub Issue")
+                    .strong()
+                    .size(12.0)
+                    .color(PALETTE.text_secondary),
+            );
+
+            let mut create_button = ActionButton::new(Icon::solid(solid::PLUS), "Create Issue")
+                .size(ButtonSize::Small)
+                .enabled(can_create)
+                .tooltip("Create issue on GitHub");
+
+            if can_create {
+                create_button = create_button
+                    .fill(PALETTE.accent_primary)
+                    .text_color(egui::Color32::WHITE);
+            }
+
+            if ui.add(create_button).clicked() {
+                *panel_request = Some(EditorPanelRequest::CreateIssue(tab_index));
+            }
+
+            if tab.saving {
+                ui.label(RichText::new("Creating…").weak().italics().size(12.0));
+            }
+
+            if let Some(error) = &tab.save_error {
+                ui.label(
+                    RichText::new(error)
+                        .color(ui.visuals().error_fg_color)
+                        .size(12.0),
+                );
+            }
+
+            ui.label(
+                RichText::new(&tab.rel_path)
+                    .size(12.0)
+                    .color(PALETTE.text_muted),
+            );
+        },
+    );
+}
+
+fn issue_toolbar(ui: &mut Ui, tab: &EditorTab, number: u64) {
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), EDITOR_TOOLBAR_HEIGHT),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            ui.label(
+                RichText::new(format!("GitHub issue #{number}"))
+                    .strong()
+                    .size(12.0)
+                    .color(PALETTE.text_secondary),
+            );
+            ui.label(
+                RichText::new(tab.abs_path.display().to_string())
+                    .size(12.0)
+                    .color(PALETTE.info),
+            )
+            .on_hover_text("Open in browser");
+        },
+    );
 }
 
 fn diff_toolbar(ui: &mut Ui, tab: &EditorTab, staged: bool) {
@@ -226,7 +424,12 @@ fn diff_toolbar(ui: &mut Ui, tab: &EditorTab, staged: bool) {
     );
 }
 
-fn editor_toolbar(ui: &mut Ui, tab: &EditorTab, tab_index: usize, save_request: &mut Option<usize>) {
+fn editor_toolbar(
+    ui: &mut Ui,
+    tab: &EditorTab,
+    tab_index: usize,
+    panel_request: &mut Option<EditorPanelRequest>,
+) {
     let can_save = tab.dirty && !tab.saving;
     let abs_path = tab.abs_path.display().to_string();
 
@@ -248,7 +451,7 @@ fn editor_toolbar(ui: &mut Ui, tab: &EditorTab, tab_index: usize, save_request: 
             }
 
             if ui.add(save_button).clicked() {
-                *save_request = Some(tab_index);
+                *panel_request = Some(EditorPanelRequest::SaveFile(tab_index));
             }
 
             if tab.saving {
@@ -337,11 +540,18 @@ fn tab_file_name(rel_path: &str) -> &str {
 }
 
 fn tab_label(tab: &EditorTab) -> String {
-    let name = tab_file_name(&tab.rel_path);
     match tab.view {
-        EditorTabView::Source if tab.dirty => format!("* {name}"),
-        EditorTabView::Source => name.to_string(),
-        EditorTabView::Diff { .. } => format!("{name} (diff)"),
+        EditorTabView::Source => {
+            let name = tab_file_name(&tab.rel_path);
+            if tab.dirty {
+                format!("* {name}")
+            } else {
+                name.to_string()
+            }
+        }
+        EditorTabView::Diff { .. } => format!("{} (diff)", tab_file_name(&tab.rel_path)),
+        EditorTabView::Issue { number } => format!("#{number}"),
+        EditorTabView::NewIssue => "New Issue".into(),
     }
 }
 

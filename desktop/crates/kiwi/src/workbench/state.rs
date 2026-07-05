@@ -103,6 +103,8 @@ pub struct WorkbenchState {
     pub terminal: TerminalState,
     /// Git status and commit UI state.
     pub source_control: crate::workbench::source_control::SourceControlState,
+    /// GitHub issues for the Issues activity.
+    pub issues: crate::workbench::issues::IssuesState,
 }
 
 impl Default for WorkbenchState {
@@ -151,7 +153,8 @@ impl WorkbenchState {
             bottom_panel_restored_height: super::bottom_panel::DEFAULT_HEIGHT,
             bottom_panel_toggle_requested: false,
             terminal: TerminalState::new(project_root.clone()),
-            source_control: crate::workbench::source_control::SourceControlState::new(project_root),
+            source_control: crate::workbench::source_control::SourceControlState::new(project_root.clone()),
+            issues: crate::workbench::issues::IssuesState::new(),
         }
     }
 

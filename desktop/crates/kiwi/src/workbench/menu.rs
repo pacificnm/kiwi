@@ -1,4 +1,4 @@
-//! Title bar menu (File → Open Folder / Open Recent).
+//! Title bar menus (File, Git).
 
 use std::path::PathBuf;
 
@@ -13,6 +13,10 @@ pub struct MenuState {
     pub open_folder_requested: bool,
     /// User chose a path from **Open Recent**.
     pub open_recent_path: Option<PathBuf>,
+    /// User chose **Git → New Issue** — open the compose tab in the editor.
+    pub new_issue_requested: bool,
+    /// User chose **Git → New Comment** — open the comment modal.
+    pub new_comment_requested: bool,
 }
 
 /// Renders the **File** menu in the title bar.
@@ -40,5 +44,19 @@ pub fn file_menu(ui: &mut Ui, recent: &RecentProjects, menu: &mut MenuState) {
                 }
             }
         });
+    });
+}
+
+/// Renders the **Git** menu in the title bar.
+pub fn git_menu(ui: &mut Ui, menu: &mut MenuState) {
+    ui.menu_button(RichText::new("Git").size(13.0), |ui| {
+        if ui.button("New Comment…").clicked() {
+            menu.new_comment_requested = true;
+            ui.close_menu();
+        }
+        if ui.button("New Issue…").clicked() {
+            menu.new_issue_requested = true;
+            ui.close_menu();
+        }
     });
 }

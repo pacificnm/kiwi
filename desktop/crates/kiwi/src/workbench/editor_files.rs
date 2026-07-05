@@ -8,6 +8,7 @@ use nest_error::NestError;
 use nest_file::FileService;
 
 use super::editor::{EditorState, EditorTab, EditorTabView};
+use crate::workbench::issues::IssueCreateEvent;
 use crate::workbench::source_control::{spawn_git_diff, DiffSide, GitDiffEvent};
 
 /// Result of a background file read for one editor tab.
@@ -104,17 +105,10 @@ pub fn open_file_tab(editor: &mut EditorState, rel_path: String, abs_path: PathB
         return None;
     }
 
-    editor.tabs.push(EditorTab {
-        rel_path: rel_path.clone(),
-        abs_path,
-        content: String::new(),
-        saved_content: String::new(),
-        dirty: false,
-        loading: true,
-        saving: false,
-        error: None,
-        save_error: None,
-        view: EditorTabView::Source,
+    editor.tabs.push({
+        let mut tab = EditorTab::new(rel_path.clone(), abs_path, EditorTabView::Source);
+        tab.loading = true;
+        tab
     });
     editor.active_tab = editor.tabs.len() - 1;
     Some(editor.active_tab)
@@ -137,20 +131,85 @@ pub fn open_diff_tab(
         return Some(index);
     }
 
-    editor.tabs.push(EditorTab {
-        rel_path: rel_path.clone(),
-        abs_path,
-        content: String::new(),
-        saved_content: String::new(),
-        dirty: false,
-        loading: true,
-        saving: false,
-        error: None,
-        save_error: None,
-        view,
+    editor.tabs.push({
+        let mut tab = EditorTab::new(rel_path.clone(), abs_path, view);
+        tab.loading = true;
+        tab
     });
     editor.active_tab = editor.tabs.len() - 1;
     Some(editor.active_tab)
+}
+
+/// Opens or focuses a GitHub issue tab; returns index when a fetch was started.
+pub fn open_issue_tab(
+    editor: &mut EditorState,
+    owner: &str,
+    repo: &str,
+    number: u64,
+    html_url: String,
+) -> Option<usize> {
+    let rel_path = issue_tab_key(owner, repo, number);
+    let view = EditorTabView::Issue { number };
+    if let Some(index) = editor.tabs.iter().position(|tab| tab.rel_path == rel_path && tab.view == view)
+    {
+        editor.active_tab = index;
+        let tab = &mut editor.tabs[index];
+        if tab.error.is_some() {
+            tab.loading = true;
+            tab.error = None;
+            return Some(index);
+        }
+        return None;
+    }
+
+    editor.tabs.push({
+        let mut tab = EditorTab::new(rel_path.clone(), PathBuf::from(html_url), view);
+        tab.loading = true;
+        tab
+    });
+    editor.active_tab = editor.tabs.len() - 1;
+    Some(editor.active_tab)
+}
+
+/// Virtual tab key for a GitHub issue.
+pub fn issue_tab_key(owner: &str, repo: &str, number: u64) -> String {
+    format!("github:{owner}/{repo}#{number}")
+}
+
+/// Virtual tab key for composing a new GitHub issue.
+pub fn new_issue_tab_key(owner: &str, repo: &str) -> String {
+    format!("github:{owner}/{repo}#new")
+}
+
+/// Parses `owner` and `repo` from a virtual GitHub tab key.
+pub fn parse_issue_tab_repo(rel_path: &str) -> Option<(String, String)> {
+    let rest = rel_path.strip_prefix("github:")?;
+    let repo_part = rest.rsplit_once('#')?.0;
+    let (owner, repo) = repo_part.split_once('/')?;
+    if owner.is_empty() || repo.is_empty() {
+        return None;
+    }
+    Some((owner.to_string(), repo.to_string()))
+}
+
+/// Opens or focuses the new-issue compose tab for a repository.
+pub fn open_new_issue_tab(editor: &mut EditorState, owner: &str, repo: &str) {
+    let rel_path = new_issue_tab_key(owner, repo);
+    if let Some(index) = editor
+        .tabs
+        .iter()
+        .position(|tab| tab.rel_path == rel_path && tab.view == EditorTabView::NewIssue)
+    {
+        editor.active_tab = index;
+        return;
+    }
+
+    editor.tabs.push(EditorTab::new(
+        rel_path,
+        PathBuf::from(format!("https://github.com/{owner}/{repo}/issues/new")),
+        EditorTabView::NewIssue,
+    ));
+    editor.active_tab = editor.tabs.len() - 1;
 }
 
 /// Reads a git diff on a background thread and reports via [`FileLoadEvent`].
@@ -232,6 +291,38 @@ pub fn apply_file_save(editor: &mut EditorState, event: FileSaveEvent) {
             }
         }
         FileSaveEvent::Failed { tab_index, error } => {
+            if let Some(tab) = editor.tabs.get_mut(tab_index) {
+                tab.saving = false;
+                tab.save_error = Some(error);
+            }
+        }
+    }
+}
+
+/// Applies a completed GitHub issue creation to the compose tab.
+pub fn apply_issue_created(editor: &mut EditorState, event: IssueCreateEvent) {
+    match event {
+        IssueCreateEvent::Created {
+            tab_index,
+            owner,
+            repo,
+            number,
+            html_url,
+            content,
+        } => {
+            if let Some(tab) = editor.tabs.get_mut(tab_index) {
+                tab.rel_path = issue_tab_key(&owner, &repo, number);
+                tab.abs_path = PathBuf::from(html_url);
+                tab.content = content;
+                tab.issue_title.clear();
+                tab.view = EditorTabView::Issue { number };
+                tab.loading = false;
+                tab.saving = false;
+                tab.save_error = None;
+                tab.error = None;
+            }
+        }
+        IssueCreateEvent::Failed { tab_index, error } => {
             if let Some(tab) = editor.tabs.get_mut(tab_index) {
                 tab.saving = false;
                 tab.save_error = Some(error);

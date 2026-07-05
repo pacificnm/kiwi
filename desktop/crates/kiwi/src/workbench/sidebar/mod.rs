@@ -45,6 +45,18 @@ pub fn sidebar(
         return;
     }
 
+    if state.activity == Activity::Issues {
+        issues::show(
+            ui,
+            &mut state.issues,
+            &state.project,
+            app_ctx,
+            &mut state.editor,
+            file_pending,
+        );
+        return;
+    }
+
     let scroll_height = ui.available_height().max(0.0);
     ScrollArea::vertical()
         .id_salt((
@@ -67,7 +79,7 @@ pub fn sidebar(
                 ),
                 Activity::Search => search::show(ui, &mut state.search_query),
                 Activity::SourceControl => unreachable!(),
-                Activity::Issues => issues::show(ui),
+                Activity::Issues => unreachable!(),
                 Activity::Tasks => tasks::show(ui),
                 Activity::Agent => agent::show(ui, state, app_ctx),
                 Activity::Tools => tools::show(ui),
