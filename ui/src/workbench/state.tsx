@@ -26,6 +26,7 @@ import { docsRead, docTabKey, isDocTab, type DocEntry } from "../lib/docs";
 import { issueTabKey, isIssueTab, type GitHubIssue } from "../lib/github";
 import { isTaskTab, swiftGetTask, taskTabKey, type SwiftTaskDetailResponse } from "../lib/swift";
 import { isThemeTab, themeSetActive, themeTabKey, type ThemeDefinition } from "../lib/themes";
+import { settingsTabKey, type SettingsItem } from "../lib/settings";
 
 /** An open editor tab backed by a workspace file. */
 export type EditorTab = {
@@ -57,6 +58,8 @@ export type EditorTab = {
   componentId?: string | null;
   /** Full theme definition when this tab is a virtual Theme viewer tab. */
   themeData?: ThemeDefinition | null;
+  /** Settings item id when this tab is a virtual Settings detail tab. */
+  settingsItemId?: string | null;
 };
 
 type WorkbenchContextValue = {
@@ -77,11 +80,13 @@ type WorkbenchContextValue = {
   /** Opens (or focuses) a Swift task detail tab. */
   openTask: (taskId: string, title: string) => void;
   /** Opens (or focuses) a Help doc tab and lazily loads its Markdown. */
-  openDoc: (entry: DocEntry) => void;
+  openDoc: (projectId: string, entry: DocEntry) => void;
   /** Opens (or focuses) a @nest/components viewer tab. */
   openComponent: (def: ComponentDef) => void;
   /** Opens (or focuses) a Theme viewer tab and applies it as the active theme. */
   openTheme: (theme: ThemeDefinition) => void;
+  /** Opens (or focuses) a Settings detail tab. */
+  openSetting: (item: SettingsItem) => void;
   /** The currently active theme's id, once known. */
   activeThemeId: string | null;
   /** Focuses an already-open tab. */
@@ -421,10 +426,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   );
 
   const openDoc = useCallback(
-    (entry: DocEntry) => {
-      const relPath = docTabKey(entry.path);
+    (projectId: string, entry: DocEntry) => {
+      const relPath = docTabKey(projectId, entry.path);
       const name = entry.name;
-      klog("workbench", `openDoc path=${entry.path}`);
+      klog("workbench", `openDoc project=${projectId} path=${entry.path}`);
       setActivePath(relPath);
       setTabs((current) => {
         const existing = current.find((tab) => tab.relPath === relPath);
@@ -454,7 +459,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         ];
       });
 
-      void docsRead(entry.path)
+      void docsRead(projectId, entry.path)
         .then((markdown) => {
           setTabs((current) =>
             current.map((tab) =>
@@ -544,6 +549,32 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     [toast],
   );
 
+  const openSetting = useCallback((item: SettingsItem) => {
+    const relPath = settingsTabKey(item.id);
+    klog("workbench", `openSetting id=${item.id}`);
+    setActivePath(relPath);
+    setTabs((current) => {
+      const existing = current.find((tab) => tab.relPath === relPath);
+      if (existing) {
+        return current;
+      }
+      return [
+        ...current,
+        {
+          relPath,
+          name: item.label,
+          content: "",
+          savedContent: "",
+          dirty: false,
+          loading: false,
+          saving: false,
+          error: null,
+          settingsItemId: item.id,
+        },
+      ];
+    });
+  }, []);
+
   const closeTab = useCallback((relPath: string) => {
     setTabs((current) => {
       const next = current.filter((tab) => tab.relPath !== relPath);
@@ -591,6 +622,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       openDoc,
       openComponent,
       openTheme,
+      openSetting,
       activeThemeId,
       focusTab,
       updateTabContent,
@@ -611,6 +643,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       openDoc,
       openComponent,
       openTheme,
+      openSetting,
       activeThemeId,
       focusTab,
       updateTabContent,

@@ -25,7 +25,8 @@ export type ActivityId =
   | "components"
   | "theme"
   | "help"
-  | "extensions";
+  | "extensions"
+  | "settings";
 
 export type ActivityDef = {
   id: ActivityId;

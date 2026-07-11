@@ -7,6 +7,9 @@ import { TaskDetailView } from "./tasks/TaskDetailView";
 import { DocView } from "./DocView";
 import { ComponentDetailView } from "./ComponentDetailView";
 import { ThemeDetailView } from "./ThemeDetailView";
+import { SettingsDetailView } from "./SettingsDetailView";
+import { DocSourcesSettingsView } from "./DocSourcesSettingsView";
+import { KiwiConfigSettingsView } from "./KiwiConfigSettingsView";
 import { useWorkbench } from "./state";
 import type { ThemeDefinition } from "../lib/themes";
 
@@ -91,6 +94,12 @@ export function EditorArea() {
             <DocView content={active.docContent} />
           ) : active.componentId != null ? (
             <ComponentDetailView componentId={active.componentId} />
+          ) : active.settingsItemId === "doc-sources" ? (
+            <DocSourcesSettingsView />
+          ) : active.settingsItemId === "kiwi-config" ? (
+            <KiwiConfigSettingsView />
+          ) : active.settingsItemId != null ? (
+            <SettingsDetailView itemId={active.settingsItemId} />
           ) : active.themeData ? (
             <ThemeTabContent theme={active.themeData} activeThemeId={activeThemeId} onApply={openTheme} />
           ) : (

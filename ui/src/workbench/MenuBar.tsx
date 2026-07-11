@@ -11,9 +11,7 @@ import { LAYOUT } from "./activity";
 
 type MenuBarProps = {
   title: string;
-  model?: string;
   onOpenFolder?: () => void;
-  onOpenSettings?: () => void;
   /** Switches to the Issues sidebar before a Git/GitHub action. */
   onFocusIssues?: () => void;
   /** Opens the Search sidebar and focuses the find field. */
@@ -41,9 +39,7 @@ const menuItemDisabledClass =
  */
 export function MenuBar({
   title,
-  model,
   onOpenFolder,
-  onOpenSettings,
   onFocusIssues,
   onFind,
   onReplace,
@@ -210,21 +206,6 @@ export function MenuBar({
       )}
 
       <div className="relative z-10 flex h-full shrink-0 items-stretch gap-3 pr-0 pl-2">
-        {model ? (
-          <span
-            className="hidden max-w-[140px] truncate self-center text-[11px] text-nest-muted sm:inline"
-            title="Active model"
-          >
-            {model}
-          </span>
-        ) : null}
-        <button
-          type="button"
-          className={`${menuButtonClass} font-medium`}
-          onClick={onOpenSettings}
-        >
-          Settings
-        </button>
         {showWindowChrome ? <WindowControls /> : null}
       </div>
 

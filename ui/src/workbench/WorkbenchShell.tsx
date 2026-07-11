@@ -18,7 +18,7 @@ import { EditorArea } from "./EditorArea";
 import { MenuBar } from "./MenuBar";
 import { Sidebar } from "./Sidebar";
 import { WorkbenchProvider, useWorkbench } from "./state";
-import { AgentSettingsProvider, useAgentSettings } from "./agentSettings";
+import { AgentSettingsProvider } from "./agentSettings";
 import { EditorCommandsProvider } from "./editorCommands";
 import { EditorNavigationProvider } from "./editorNavigation";
 import { SearchPanelFocusProvider, useSearchPanelFocus } from "./searchPanelFocus";
@@ -57,7 +57,6 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
 function WorkbenchBody({ statusLeft, statusRight }: WorkbenchShellProps) {
   const [activity, setActivity] = useState<ActivityId>("explorer");
   const { workspace, openWorkspace } = useWorkbench();
-  const { settings } = useAgentSettings();
   const { requestFocus } = useSearchPanelFocus();
   const toast = useToast();
   const bottomPanelRef = useRef<ImperativePanelHandle>(null);
@@ -125,14 +124,6 @@ function WorkbenchBody({ statusLeft, statusRight }: WorkbenchShellProps) {
     }
   }, [openWorkspace, toast]);
 
-  const handleOpenSettings = useCallback(() => {
-    setActivity("agent");
-    const panel = sidebarPanelRef.current;
-    if (panel?.isCollapsed()) {
-      panel.expand();
-    }
-  }, []);
-
   const focusIssues = useCallback(() => {
     setActivity("issues");
     const panel = sidebarPanelRef.current;
@@ -199,9 +190,7 @@ function WorkbenchBody({ statusLeft, statusRight }: WorkbenchShellProps) {
       <div className="flex h-full min-h-0 flex-col bg-nest-background">
         <MenuBar
           title={workspace?.name ?? "Kiwi"}
-          model={settings.model}
           onOpenFolder={() => void handleOpenFolder()}
-          onOpenSettings={handleOpenSettings}
           onFocusIssues={focusIssues}
           onFind={() => focusSearch("find")}
           onReplace={() => focusSearch("replace")}

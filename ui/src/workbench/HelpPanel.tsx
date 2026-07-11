@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { formatIpcError } from "../lib/agent";
 import { docsList, docTabKey, type DocEntry } from "../lib/docs";
-import { faChevronLeft } from "../lib/fontawesome";
+import { docSourcesList, docSourceSync, type DocProject } from "../lib/docSources";
+import { faChevronDown, faChevronLeft, faChevronRight, faRotateRight } from "../lib/fontawesome";
 import { Icon, isTauri } from "../shell";
 import { useWorkbench } from "./state";
 
@@ -9,43 +10,31 @@ type HelpPanelProps = {
   onToggleCollapse?: () => void;
 };
 
-/** Help Activity sidebar — lists Kiwi's own `docs/`; opens each as an editor tab. */
+/** Help Activity sidebar — lists docs grouped by registered project; opens each as an editor tab. */
 export function HelpPanel({ onToggleCollapse }: HelpPanelProps) {
-  const { activePath, openDoc } = useWorkbench();
-  const [entries, setEntries] = useState<DocEntry[]>([]);
+  const [projects, setProjects] = useState<DocProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadProjects = useCallback(async () => {
     if (!isTauri()) {
       setLoading(false);
       return;
     }
-
-    let cancelled = false;
-
-    async function loadIndex() {
-      try {
-        const list = await docsList();
-        if (!cancelled) {
-          setEntries(list);
-        }
-      } catch (loadError) {
-        if (!cancelled) {
-          setError(formatIpcError(loadError));
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
+    try {
+      const list = await docSourcesList();
+      setProjects(list);
+      setError(null);
+    } catch (loadError) {
+      setError(formatIpcError(loadError));
+    } finally {
+      setLoading(false);
     }
-
-    void loadIndex();
-    return () => {
-      cancelled = true;
-    };
   }, []);
+
+  useEffect(() => {
+    void loadProjects();
+  }, [loadProjects]);
 
   if (!isTauri()) {
     return (
@@ -60,34 +49,132 @@ export function HelpPanel({ onToggleCollapse }: HelpPanelProps) {
       {error ? <p className="px-3 py-2 text-xs text-nest-error">{error}</p> : null}
       {loading ? (
         <p className="px-3 py-4 text-xs text-nest-muted">Loading…</p>
-      ) : entries.length === 0 ? (
-        <p className="px-3 py-4 text-xs text-nest-muted">No documentation found.</p>
+      ) : projects.length === 0 ? (
+        <p className="px-3 py-4 text-xs text-nest-muted">
+          No doc sources yet. Add one in Settings &rarr; Help &rarr; Doc Sources.
+        </p>
       ) : (
-        <ul>
-          {entries.map((entry) => {
-            const selected = activePath === docTabKey(entry.path);
-            return (
-              <li key={entry.path}>
-                <button
-                  type="button"
-                  onClick={() => openDoc(entry)}
-                  title={entry.path}
-                  style={{ paddingLeft: `${12 + entry.depth * 14}px` }}
-                  className={[
-                    "flex w-full items-center gap-1.5 py-1.5 pr-3 text-left text-xs transition-colors",
-                    selected
-                      ? "bg-nest-accent/15 text-nest-foreground"
-                      : "text-nest-muted hover:bg-nest-muted/10 hover:text-nest-foreground",
-                  ].join(" ")}
-                >
-                  <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+        projects.map((project) => (
+          <ProjectSection key={project.id} project={project} onSynced={loadProjects} />
+        ))
       )}
     </PanelFrame>
+  );
+}
+
+function ProjectSection({
+  project,
+  onSynced,
+}: {
+  project: DocProject;
+  onSynced: () => void;
+}) {
+  const { activePath, openDoc } = useWorkbench();
+  const [entries, setEntries] = useState<DocEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [open, setOpen] = useState(true);
+
+  useEffect(() => {
+    if (!project.synced) {
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    void docsList(project.id)
+      .then((list) => {
+        if (!cancelled) {
+          setEntries(list);
+          setError(null);
+        }
+      })
+      .catch((loadError) => {
+        if (!cancelled) {
+          setError(formatIpcError(loadError));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [project.id, project.synced]);
+
+  const handleSync = useCallback(async () => {
+    setSyncing(true);
+    setError(null);
+    try {
+      await docSourceSync(project.id);
+      onSynced();
+    } catch (syncError) {
+      setError(formatIpcError(syncError));
+    } finally {
+      setSyncing(false);
+    }
+  }, [project.id, onSynced]);
+
+  return (
+    <div className="border-b border-nest-border">
+      <div className="flex items-center gap-1.5 px-3 py-1.5">
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-nest-muted hover:text-nest-foreground"
+        >
+          <Icon icon={open ? faChevronDown : faChevronRight} className="size-2.5 shrink-0" />
+          <span className="min-w-0 flex-1 truncate">{project.name}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleSync()}
+          disabled={syncing}
+          title={project.synced ? "Pull latest docs" : "Sync docs"}
+          className="flex size-5 shrink-0 items-center justify-center rounded-nest-sm text-nest-muted hover:bg-nest-muted/10 hover:text-nest-foreground disabled:opacity-50"
+        >
+          <Icon icon={faRotateRight} className={["size-3", syncing ? "animate-spin" : ""].join(" ")} />
+        </button>
+      </div>
+      {open ? (
+        <>
+          {error ? <p className="px-3 pb-2 text-[11px] text-nest-error">{error}</p> : null}
+          {!project.synced ? (
+            <p className="px-3 pb-2 text-[11px] italic text-nest-muted/70">Not synced yet</p>
+          ) : loading ? (
+            <p className="px-3 pb-2 text-[11px] text-nest-muted">Loading…</p>
+          ) : entries.length === 0 ? (
+            <p className="px-3 pb-2 text-[11px] italic text-nest-muted/70">No documents found</p>
+          ) : (
+            <ul className="pb-1">
+              {entries.map((entry) => {
+                const selected = activePath === docTabKey(project.id, entry.path);
+                return (
+                  <li key={entry.path}>
+                    <button
+                      type="button"
+                      onClick={() => openDoc(project.id, entry)}
+                      title={entry.path}
+                      style={{ paddingLeft: `${12 + entry.depth * 14}px` }}
+                      className={[
+                        "flex w-full items-center gap-1.5 py-1.5 pr-3 text-left text-xs transition-colors",
+                        selected
+                          ? "bg-nest-accent/15 text-nest-foreground"
+                          : "text-nest-muted hover:bg-nest-muted/10 hover:text-nest-foreground",
+                      ].join(" ")}
+                    >
+                      <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
+      ) : null}
+    </div>
   );
 }
 
