@@ -4,7 +4,9 @@
 /desktop/logs/
 /src-tauri/target/
 /ui/dist/
+/ui/bin/
 node_modules/
+*.tsbuildinfo
 /.venv/
 .env
 __pycache__/
