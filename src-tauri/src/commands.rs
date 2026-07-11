@@ -6,6 +6,8 @@ use std::path::PathBuf;
 
 use nest_error::{NestError, NestResult};
 use nest_logging::ui_buffer;
+use nest_tauri::NestHostState;
+use nest_theme::{ThemeDefinition, ThemeId, ThemeService};
 use serde::Serialize;
 use tauri::{plugin::TauriPlugin, AppHandle, Runtime, State};
 
@@ -200,6 +202,34 @@ fn docs_read(path: String) -> NestResult<String> {
     match &result {
         Ok(content) => tracing::info!(target: "kiwi", bytes = content.len(), "docs_read: ok"),
         Err(error) => tracing::error!(target: "kiwi", %error, "docs_read: err"),
+    }
+    result
+}
+
+/// Lists all registered themes with full token data, for the Theme Activity panel.
+#[tauri::command]
+fn themes_list(state: State<'_, NestHostState>) -> NestResult<Vec<ThemeDefinition>> {
+    tracing::info!(target: "kiwi", "themes_list: enter");
+    let themes = state.context.service::<ThemeService>()?;
+    let result: NestResult<Vec<ThemeDefinition>> =
+        themes.list_themes().iter().map(|id| themes.theme(id)).collect();
+    match &result {
+        Ok(list) => tracing::info!(target: "kiwi", count = list.len(), "themes_list: ok"),
+        Err(error) => tracing::error!(target: "kiwi", %error, "themes_list: err"),
+    }
+    result
+}
+
+/// Switches Kiwi's active theme. The caller must re-invoke `nest_theme_css`
+/// (see `nest-tauri`) and re-apply the returned root block to take effect.
+#[tauri::command]
+fn theme_set_active(state: State<'_, NestHostState>, id: String) -> NestResult<()> {
+    tracing::info!(target: "kiwi", %id, "theme_set_active: enter");
+    let themes = state.context.service::<ThemeService>()?;
+    let result = themes.set_active_theme(&ThemeId::from(id));
+    match &result {
+        Ok(()) => tracing::info!(target: "kiwi", "theme_set_active: ok"),
+        Err(error) => tracing::error!(target: "kiwi", %error, "theme_set_active: err"),
     }
     result
 }
@@ -856,6 +886,8 @@ pub fn kiwi_plugin<R: Runtime>() -> TauriPlugin<R> {
             problems_run,
             docs_list,
             docs_read,
+            themes_list,
+            theme_set_active,
             swift_status,
             swift_tasks_overview,
             swift_list_projects,

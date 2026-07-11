@@ -7,6 +7,7 @@ import {
   faFolder,
   faLink,
   faMagnifyingGlass,
+  faPalette,
   faPlus,
   faShapes,
   faUser,
@@ -22,6 +23,7 @@ export type ActivityId =
   | "agent"
   | "tools"
   | "components"
+  | "theme"
   | "help"
   | "extensions";
 
@@ -41,6 +43,7 @@ export const ACTIVITIES: ActivityDef[] = [
   { id: "agent", label: "Agent", icon: faUser },
   { id: "tools", label: "Tools", icon: faBars },
   { id: "components", label: "Components", icon: faShapes },
+  { id: "theme", label: "Theme", icon: faPalette },
   { id: "help", label: "Help", icon: faCircleQuestion },
   { id: "extensions", label: "Extensions", icon: faPlus },
 ];

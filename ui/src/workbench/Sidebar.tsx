@@ -9,6 +9,7 @@ import { SourceControlPanel } from "./SourceControlPanel";
 import { TasksPanel } from "./TasksPanel";
 import { HelpPanel } from "./HelpPanel";
 import { ComponentsPanel } from "./ComponentsPanel";
+import { ThemesPanel } from "./ThemesPanel";
 
 type SidebarProps = {
   activity: ActivityId;
@@ -43,6 +44,9 @@ export function Sidebar({ activity, onToggleCollapse }: SidebarProps) {
   }
   if (activity === "components") {
     return <ComponentsPanel onToggleCollapse={onToggleCollapse} />;
+  }
+  if (activity === "theme") {
+    return <ThemesPanel onToggleCollapse={onToggleCollapse} />;
   }
   const label = ACTIVITIES.find((item) => item.id === activity)?.label ?? "Sidebar";
   return <PanelPlaceholder title={label} onToggleCollapse={onToggleCollapse} />;
