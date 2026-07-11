@@ -5,6 +5,7 @@ import { IssueDetailView } from "./issues/IssueDetailView";
 import { CommitChangesView } from "./CommitChangesView";
 import { TaskDetailView } from "./tasks/TaskDetailView";
 import { DocView } from "./DocView";
+import { ComponentDetailView } from "./ComponentDetailView";
 import { useWorkbench } from "./state";
 
 export function EditorArea() {
@@ -85,6 +86,8 @@ export function EditorArea() {
             <TaskDetailView detail={active.swiftTaskDetail} />
           ) : active.docContent != null ? (
             <DocView content={active.docContent} />
+          ) : active.componentId != null ? (
+            <ComponentDetailView componentId={active.componentId} />
           ) : (
             <MonacoEditor tab={active} onChange={updateTabContent} onSave={saveTab} />
           )

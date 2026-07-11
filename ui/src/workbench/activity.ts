@@ -8,6 +8,7 @@ import {
   faLink,
   faMagnifyingGlass,
   faPlus,
+  faShapes,
   faUser,
 } from "../lib/fontawesome";
 
@@ -20,6 +21,7 @@ export type ActivityId =
   | "tasks"
   | "agent"
   | "tools"
+  | "components"
   | "help"
   | "extensions";
 
@@ -38,6 +40,7 @@ export const ACTIVITIES: ActivityDef[] = [
   { id: "tasks", label: "Tasks", icon: faCheck },
   { id: "agent", label: "Agent", icon: faUser },
   { id: "tools", label: "Tools", icon: faBars },
+  { id: "components", label: "Components", icon: faShapes },
   { id: "help", label: "Help", icon: faCircleQuestion },
   { id: "extensions", label: "Extensions", icon: faPlus },
 ];

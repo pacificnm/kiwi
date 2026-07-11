@@ -20,6 +20,7 @@ import {
 } from "../lib/workspace";
 import { scheduleProblemsRun } from "../lib/problems";
 import { commitTabKey, isCommitTab, type GitCommitChanges } from "../lib/git";
+import { componentTabKey, isComponentTab, type ComponentDef } from "../lib/componentsLibrary";
 import { docsRead, docTabKey, isDocTab, type DocEntry } from "../lib/docs";
 import { issueTabKey, isIssueTab, type GitHubIssue } from "../lib/github";
 import { isTaskTab, swiftGetTask, taskTabKey, type SwiftTaskDetailResponse } from "../lib/swift";
@@ -50,6 +51,8 @@ export type EditorTab = {
   swiftTaskDetail?: SwiftTaskDetailResponse | null;
   /** Rendered Markdown when this tab is a virtual Help doc tab. */
   docContent?: string | null;
+  /** Component id when this tab is a virtual @nest/components viewer tab. */
+  componentId?: string | null;
 };
 
 type WorkbenchContextValue = {
@@ -71,6 +74,8 @@ type WorkbenchContextValue = {
   openTask: (taskId: string, title: string) => void;
   /** Opens (or focuses) a Help doc tab and lazily loads its Markdown. */
   openDoc: (entry: DocEntry) => void;
+  /** Opens (or focuses) a @nest/components viewer tab. */
+  openComponent: (def: ComponentDef) => void;
   /** Focuses an already-open tab. */
   focusTab: (relPath: string) => void;
   /** Updates a tab's in-editor content (marks it dirty). */
@@ -126,7 +131,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       if (isIssueTab(relPath) || isCommitTab(relPath)) {
         return;
       }
-      if (isTaskTab(relPath) || isDocTab(relPath)) {
+      if (isTaskTab(relPath) || isDocTab(relPath) || isComponentTab(relPath)) {
         return;
       }
       const tab = tabsRef.current.find((entry) => entry.relPath === relPath);
@@ -447,6 +452,32 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     [toast],
   );
 
+  const openComponent = useCallback((def: ComponentDef) => {
+    const relPath = componentTabKey(def.id);
+    klog("workbench", `openComponent id=${def.id}`);
+    setActivePath(relPath);
+    setTabs((current) => {
+      const existing = current.find((tab) => tab.relPath === relPath);
+      if (existing) {
+        return current;
+      }
+      return [
+        ...current,
+        {
+          relPath,
+          name: def.name,
+          content: "",
+          savedContent: "",
+          dirty: false,
+          loading: false,
+          saving: false,
+          error: null,
+          componentId: def.id,
+        },
+      ];
+    });
+  }, []);
+
   const closeTab = useCallback((relPath: string) => {
     setTabs((current) => {
       const next = current.filter((tab) => tab.relPath !== relPath);
@@ -492,6 +523,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       openCommit,
       openTask,
       openDoc,
+      openComponent,
       focusTab,
       updateTabContent,
       saveTab,
@@ -509,6 +541,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       openCommit,
       openTask,
       openDoc,
+      openComponent,
       focusTab,
       updateTabContent,
       saveTab,
