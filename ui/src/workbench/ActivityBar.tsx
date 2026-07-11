@@ -44,7 +44,12 @@ export function ActivityBar({ active, onSelect }: ActivityBarProps) {
           type="button"
           title="Settings"
           aria-label="Settings"
-          className="flex h-9 w-full items-center justify-center text-nest-muted hover:text-nest-foreground"
+          aria-current={active === "settings" ? "page" : undefined}
+          onClick={() => onSelect("settings")}
+          className={[
+            "flex h-9 w-full items-center justify-center transition-colors",
+            active === "settings" ? "text-nest-foreground" : "text-nest-muted hover:text-nest-foreground",
+          ].join(" ")}
         >
           <Icon icon={faGear} className="size-4" />
         </button>

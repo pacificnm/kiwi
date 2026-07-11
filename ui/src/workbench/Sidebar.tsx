@@ -10,6 +10,7 @@ import { TasksPanel } from "./TasksPanel";
 import { HelpPanel } from "./HelpPanel";
 import { ComponentsPanel } from "./ComponentsPanel";
 import { ThemesPanel } from "./ThemesPanel";
+import { SettingsPanel } from "./SettingsPanel";
 
 type SidebarProps = {
   activity: ActivityId;
@@ -47,6 +48,9 @@ export function Sidebar({ activity, onToggleCollapse }: SidebarProps) {
   }
   if (activity === "theme") {
     return <ThemesPanel onToggleCollapse={onToggleCollapse} />;
+  }
+  if (activity === "settings") {
+    return <SettingsPanel onToggleCollapse={onToggleCollapse} />;
   }
   const label = ACTIVITIES.find((item) => item.id === activity)?.label ?? "Sidebar";
   return <PanelPlaceholder title={label} onToggleCollapse={onToggleCollapse} />;

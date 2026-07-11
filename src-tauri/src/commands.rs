@@ -14,7 +14,9 @@ use tauri::{plugin::TauriPlugin, AppHandle, Runtime, State};
 use crate::accounts::{self, AccountStatus};
 use crate::agent::AgentPty;
 use crate::agent_config::{AgentConfig, AgentSettings};
+use crate::doc_sources::{self, DocProject, DocProjectInput};
 use crate::docs::{self, DocEntry};
+use crate::kiwi_config;
 use crate::git::{self, GitCommit, GitCommitChanges, GitStatus};
 use crate::github::{
     self, GitHubAuthStatus, GitHubIssue, GitHubIssueActionResult, GitHubIssueListItem,
@@ -182,11 +184,11 @@ async fn mcp_overview(agent_config: State<'_, AgentConfig>) -> NestResult<McpOve
     result
 }
 
-/// Lists Kiwi's documentation entries for the Help Activity panel.
+/// Lists a registered project's documentation entries for the Help Activity panel.
 #[tauri::command]
-fn docs_list() -> NestResult<Vec<DocEntry>> {
-    tracing::info!(target: "kiwi", "docs_list: enter");
-    let result = docs::list();
+fn docs_list(project_id: String) -> NestResult<Vec<DocEntry>> {
+    tracing::info!(target: "kiwi", %project_id, "docs_list: enter");
+    let result = doc_sources::docs_root(&project_id).and_then(|root| docs::list(&root));
     match &result {
         Ok(entries) => tracing::info!(target: "kiwi", count = entries.len(), "docs_list: ok"),
         Err(error) => tracing::error!(target: "kiwi", %error, "docs_list: err"),
@@ -194,14 +196,90 @@ fn docs_list() -> NestResult<Vec<DocEntry>> {
     result
 }
 
-/// Reads one of Kiwi's documentation files for the Help Activity panel.
+/// Reads one documentation file from a registered project for the Help Activity panel.
 #[tauri::command]
-fn docs_read(path: String) -> NestResult<String> {
-    tracing::info!(target: "kiwi", %path, "docs_read: enter");
-    let result = docs::read(&path);
+fn docs_read(project_id: String, path: String) -> NestResult<String> {
+    tracing::info!(target: "kiwi", %project_id, %path, "docs_read: enter");
+    let result = doc_sources::docs_root(&project_id).and_then(|root| docs::read(&root, &path));
     match &result {
         Ok(content) => tracing::info!(target: "kiwi", bytes = content.len(), "docs_read: ok"),
         Err(error) => tracing::error!(target: "kiwi", %error, "docs_read: err"),
+    }
+    result
+}
+
+/// Path to the config file the "Kiwi Config" settings view reads/writes.
+#[tauri::command]
+fn kiwi_config_path() -> String {
+    kiwi_config::display_path()
+}
+
+/// Reads Kiwi's `config.toml` raw text for the "Kiwi Config" settings view.
+#[tauri::command]
+fn kiwi_config_read() -> NestResult<String> {
+    tracing::info!(target: "kiwi", "kiwi_config_read: enter");
+    let result = kiwi_config::read();
+    match &result {
+        Ok(content) => tracing::info!(target: "kiwi", bytes = content.len(), "kiwi_config_read: ok"),
+        Err(error) => tracing::error!(target: "kiwi", %error, "kiwi_config_read: err"),
+    }
+    result
+}
+
+/// Writes Kiwi's `config.toml` raw text from the "Kiwi Config" settings view.
+#[tauri::command]
+fn kiwi_config_write(content: String) -> NestResult<()> {
+    tracing::info!(target: "kiwi", bytes = content.len(), "kiwi_config_write: enter");
+    let result = kiwi_config::write(&content);
+    if let Err(error) = &result {
+        tracing::error!(target: "kiwi", %error, "kiwi_config_write: err");
+    }
+    result
+}
+
+/// Lists registered documentation sources for the Doc Sources settings view.
+#[tauri::command]
+fn doc_sources_list() -> NestResult<Vec<DocProject>> {
+    tracing::info!(target: "kiwi", "doc_sources_list: enter");
+    let result = doc_sources::list();
+    match &result {
+        Ok(projects) => tracing::info!(target: "kiwi", count = projects.len(), "doc_sources_list: ok"),
+        Err(error) => tracing::error!(target: "kiwi", %error, "doc_sources_list: err"),
+    }
+    result
+}
+
+/// Registers a new documentation source (does not sync it yet).
+#[tauri::command]
+fn doc_sources_add(input: DocProjectInput) -> NestResult<DocProject> {
+    tracing::info!(target: "kiwi", name = %input.name, "doc_sources_add: enter");
+    let result = doc_sources::add(input);
+    match &result {
+        Ok(project) => tracing::info!(target: "kiwi", id = %project.id, "doc_sources_add: ok"),
+        Err(error) => tracing::error!(target: "kiwi", %error, "doc_sources_add: err"),
+    }
+    result
+}
+
+/// Removes a documentation source and its local cache.
+#[tauri::command]
+fn doc_sources_remove(id: String) -> NestResult<()> {
+    tracing::info!(target: "kiwi", %id, "doc_sources_remove: enter");
+    let result = doc_sources::remove(&id);
+    if let Err(error) = &result {
+        tracing::error!(target: "kiwi", %error, "doc_sources_remove: err");
+    }
+    result
+}
+
+/// Clones (first sync) or pulls (subsequent syncs) a documentation source.
+#[tauri::command]
+fn doc_sources_sync(id: String) -> NestResult<DocProject> {
+    tracing::info!(target: "kiwi", %id, "doc_sources_sync: enter");
+    let result = doc_sources::sync(&id);
+    match &result {
+        Ok(project) => tracing::info!(target: "kiwi", id = %project.id, "doc_sources_sync: ok"),
+        Err(error) => tracing::error!(target: "kiwi", %error, "doc_sources_sync: err"),
     }
     result
 }
@@ -886,6 +964,13 @@ pub fn kiwi_plugin<R: Runtime>() -> TauriPlugin<R> {
             problems_run,
             docs_list,
             docs_read,
+            kiwi_config_path,
+            kiwi_config_read,
+            kiwi_config_write,
+            doc_sources_list,
+            doc_sources_add,
+            doc_sources_remove,
+            doc_sources_sync,
             themes_list,
             theme_set_active,
             swift_status,

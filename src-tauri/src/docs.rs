@@ -1,10 +1,12 @@
-//! Kiwi's own documentation — list and read Markdown under `docs/`.
+//! Documentation listing/reading for the Help Activity panel.
 //!
-//! Powers the Help sidebar. Unlike the project [`Workspace`](crate::workspace),
-//! this is always rooted at Kiwi's own `docs/` directory, not the open project.
+//! Rooted at whatever local directory [`crate::doc_sources`] resolves for a
+//! given registered project (a synced sparse-checkout under
+//! `~/.config/kiwi/docs/<id>/`) — this module has no knowledge of the
+//! registry itself, just Markdown-tree traversal.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use nest_error::{NestError, NestResult};
 use serde::Serialize;
@@ -13,7 +15,7 @@ use serde::Serialize;
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DocEntry {
-    /// Path relative to Kiwi's `docs/` directory (`/`-separated).
+    /// Path relative to the project's docs root (`/`-separated).
     pub path: String,
     /// Display name, derived from the file/parent-directory name.
     pub name: String,
@@ -21,11 +23,10 @@ pub struct DocEntry {
     pub depth: u32,
 }
 
-/// Lists Kiwi's documentation entries (all `docs/**/*.md`, sorted by path).
-pub fn list() -> NestResult<Vec<DocEntry>> {
-    let root = resolve_docs_dir()?;
+/// Lists a project's documentation entries (all `**/*.md` under `root`, sorted by path).
+pub fn list(root: &Path) -> NestResult<Vec<DocEntry>> {
     let mut paths = Vec::new();
-    collect_markdown(&root, &root, &mut paths)?;
+    collect_markdown(root, root, &mut paths)?;
     paths.sort();
 
     Ok(paths
@@ -38,9 +39,8 @@ pub fn list() -> NestResult<Vec<DocEntry>> {
         .collect())
 }
 
-/// Reads a Markdown file relative to Kiwi's `docs/` directory.
-pub fn read(rel_path: &str) -> NestResult<String> {
-    let root = resolve_docs_dir()?;
+/// Reads a Markdown file relative to `root`.
+pub fn read(root: &Path, rel_path: &str) -> NestResult<String> {
     let rel = rel_path.trim().trim_start_matches('/');
     if rel.is_empty() || rel.contains("..") {
         return Err(NestError::validation("invalid document path"));
@@ -56,18 +56,6 @@ pub fn read(rel_path: &str) -> NestResult<String> {
 
     fs::read_to_string(&path)
         .map_err(|error| NestError::validation(format!("failed to read {rel}: {error}")))
-}
-
-/// Locates Kiwi's `docs/` directory (dev tree only — `../docs` from
-/// `src-tauri/`, matching [`crate::config_host`]'s dev-path conventions).
-fn resolve_docs_dir() -> NestResult<PathBuf> {
-    for candidate in ["../docs", "docs"] {
-        let path = PathBuf::from(candidate);
-        if path.is_dir() {
-            return Ok(path);
-        }
-    }
-    Err(NestError::config("could not locate Kiwi's docs/ directory"))
 }
 
 fn collect_markdown(dir: &Path, root: &Path, paths: &mut Vec<String>) -> NestResult<()> {
