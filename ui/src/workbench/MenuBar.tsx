@@ -45,7 +45,7 @@ export function MenuBar({
   onReplace,
 }: MenuBarProps) {
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
-  const { activePath } = useWorkbench();
+  const { activePath, openFetchSource } = useWorkbench();
   const editor = useEditorCommands();
   const issues = useIssuesActions();
   const toast = useToast();
@@ -118,6 +118,14 @@ export function MenuBar({
             }}
           />
           <MenuItem label="Open Recent" disabled trailing={<Chevron />} />
+          <MenuSeparator />
+          <MenuItem
+            label="Fetch Nest Source…"
+            onClick={() => {
+              openFetchSource();
+              close();
+            }}
+          />
         </MenuDropdown>
 
         <MenuDropdown

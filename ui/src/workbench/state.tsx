@@ -20,7 +20,13 @@ import {
   type WorkspaceInfo,
 } from "../lib/workspace";
 import { scheduleProblemsRun } from "../lib/problems";
-import { commitTabKey, isCommitTab, type GitCommitChanges } from "../lib/git";
+import {
+  commitTabKey,
+  fetchSourceTabKey,
+  isCommitTab,
+  isFetchSourceTab,
+  type GitCommitChanges,
+} from "../lib/git";
 import { componentTabKey, isComponentTab, type ComponentDef } from "../lib/componentsLibrary";
 import { docsRead, docTabKey, isDocTab, type DocEntry } from "../lib/docs";
 import { issueTabKey, isIssueTab, type GitHubIssue } from "../lib/github";
@@ -60,6 +66,8 @@ export type EditorTab = {
   themeData?: ThemeDefinition | null;
   /** Settings item id when this tab is a virtual Settings detail tab. */
   settingsItemId?: string | null;
+  /** True when this tab is the virtual Fetch Source form (File → Fetch Nest Source). */
+  isFetchSource?: boolean;
 };
 
 type WorkbenchContextValue = {
@@ -87,6 +95,8 @@ type WorkbenchContextValue = {
   openTheme: (theme: ThemeDefinition) => void;
   /** Opens (or focuses) a Settings detail tab. */
   openSetting: (item: SettingsItem) => void;
+  /** Opens (or focuses) the Fetch Source form tab (File → Fetch Nest Source). */
+  openFetchSource: () => void;
   /** The currently active theme's id, once known. */
   activeThemeId: string | null;
   /** Focuses an already-open tab. */
@@ -160,7 +170,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         isTaskTab(relPath) ||
         isDocTab(relPath) ||
         isComponentTab(relPath) ||
-        isThemeTab(relPath)
+        isThemeTab(relPath) ||
+        isFetchSourceTab(relPath)
       ) {
         return;
       }
@@ -575,6 +586,32 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const openFetchSource = useCallback(() => {
+    const relPath = fetchSourceTabKey();
+    klog("workbench", "openFetchSource");
+    setActivePath(relPath);
+    setTabs((current) => {
+      const existing = current.find((tab) => tab.relPath === relPath);
+      if (existing) {
+        return current;
+      }
+      return [
+        ...current,
+        {
+          relPath,
+          name: "Fetch Nest Source",
+          content: "",
+          savedContent: "",
+          dirty: false,
+          loading: false,
+          saving: false,
+          error: null,
+          isFetchSource: true,
+        },
+      ];
+    });
+  }, []);
+
   const closeTab = useCallback((relPath: string) => {
     setTabs((current) => {
       const next = current.filter((tab) => tab.relPath !== relPath);
@@ -623,6 +660,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       openComponent,
       openTheme,
       openSetting,
+      openFetchSource,
       activeThemeId,
       focusTab,
       updateTabContent,
@@ -644,6 +682,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       openComponent,
       openTheme,
       openSetting,
+      openFetchSource,
       activeThemeId,
       focusTab,
       updateTabContent,

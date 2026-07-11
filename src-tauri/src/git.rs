@@ -177,6 +177,36 @@ pub fn status(root: &Path) -> NestResult<GitStatus> {
     })
 }
 
+/// Clones `url` at `branch` into `root`, which must exist and be empty.
+///
+/// Used by File → Fetch Nest Source to populate a fresh workspace folder.
+pub fn clone(root: &Path, url: &str, branch: &str) -> NestResult<()> {
+    let url = url.trim();
+    if url.is_empty() {
+        return Err(NestError::validation("git URL is empty"));
+    }
+    if !is_dir_empty(root)? {
+        return Err(NestError::validation(
+            "workspace folder is not empty — Fetch Source requires an empty folder",
+        ));
+    }
+
+    let branch = branch.trim();
+    let mut command = git(root);
+    command.arg("clone");
+    if !branch.is_empty() {
+        command.args(["--branch", branch]);
+    }
+    command.args(["--", url, "."]);
+    run(&mut command, "clone")
+}
+
+fn is_dir_empty(root: &Path) -> NestResult<bool> {
+    let mut entries = std::fs::read_dir(root)
+        .map_err(|error| NestError::io(format!("failed to read {}: {error}", root.display())))?;
+    Ok(entries.next().is_none())
+}
+
 /// Stages one path (`git add <path>`).
 pub fn stage(root: &Path, path: &str) -> NestResult<()> {
     run(git(root).arg("add").arg("--").arg(path), "stage")

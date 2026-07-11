@@ -60,6 +60,7 @@ const KIWI_COMMANDS: &[&str] = &[
     "workspace_open",
     "workspace_search",
     "workspace_replace_all",
+    "git_fetch_source",
     "git_status",
     "git_stage",
     "git_stage_all",

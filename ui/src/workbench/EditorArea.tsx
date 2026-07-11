@@ -8,6 +8,7 @@ import { DocView } from "./DocView";
 import { ComponentDetailView } from "./ComponentDetailView";
 import { ThemeDetailView } from "./ThemeDetailView";
 import { SettingsDetailView } from "./SettingsDetailView";
+import { FetchSourceView } from "./FetchSourceView";
 import { DocSourcesSettingsView } from "./DocSourcesSettingsView";
 import { KiwiConfigSettingsView } from "./KiwiConfigSettingsView";
 import { useWorkbench } from "./state";
@@ -84,6 +85,8 @@ export function EditorArea() {
             <p className="p-3 text-xs text-nest-muted">Loading {active.name}…</p>
           ) : active.error ? (
             <p className="p-3 text-xs text-nest-error">{active.error}</p>
+          ) : active.isFetchSource ? (
+            <FetchSourceView />
           ) : active.gitCommitChanges ? (
             <CommitChangesView changes={active.gitCommitChanges} />
           ) : active.githubIssue ? (

@@ -1,4 +1,5 @@
 import { kiwiInvoke } from "./ipc";
+import type { WorkspaceInfo } from "./workspace";
 
 /** Kind of working-tree change (drives the badge letter). */
 export type GitChangeKind =
@@ -85,6 +86,22 @@ export function changeBadge(kind: GitChangeKind): string {
     default:
       return "?";
   }
+}
+
+/** Virtual editor tab key for the Fetch Source form (singleton tab). */
+const FETCH_SOURCE_TAB_KEY = "git-fetch-source";
+
+export function fetchSourceTabKey(): string {
+  return FETCH_SOURCE_TAB_KEY;
+}
+
+export function isFetchSourceTab(relPath: string): boolean {
+  return relPath === FETCH_SOURCE_TAB_KEY;
+}
+
+/** Clones `url` at `branch` into the (empty) workspace root. */
+export async function gitFetchSource(url: string, branch: string): Promise<WorkspaceInfo> {
+  return kiwiInvoke<WorkspaceInfo>("git_fetch_source", { url, branch });
 }
 
 /** Reads the repository status (branch, ahead/behind, changed files). */
