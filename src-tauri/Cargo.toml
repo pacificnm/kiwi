@@ -1,0 +1,45 @@
+[package]
+name = "kiwi-tauri"
+version = "0.1.0"
+description = "Kiwi IDE — desktop host (Tauri + React)"
+edition = "2021"
+rust-version = "1.75"
+
+[[bin]]
+name = "kiwi-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+nest-config = { path = "../../../core/crates/nest-config" }
+nest-data-postgres = { path = "../../../modules/crates/nest-data-postgres" }
+nest-error = { path = "../../../core/crates/nest-error" }
+nest-file = { path = "../../../core/crates/nest-file" }
+nest-logging = { path = "../../../core/crates/nest-logging" }
+nest-mcp = { path = "../../../core/crates/nest-mcp" }
+nest-tauri = { path = "../../../core/crates/nest-tauri", features = ["runtime"] }
+nest-theme = { path = "../../../core/crates/nest-theme" }
+swift-data = { path = "../../swift/crates/swift-data" }
+base64 = "0.22"
+dirs = "6.0.0"
+globset = "0.4"
+ignore = "0.4"
+portable-pty = "0.9"
+regex = "1"
+uuid = { version = "1", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+toml = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tracing = "0.1"
+ureq = { version = "2", features = ["json"] }
+tauri-plugin-clipboard-manager = "2.1.0-beta.7"
+
+[dev-dependencies]
+tempfile = "3"
+
+[workspace]

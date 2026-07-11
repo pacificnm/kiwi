@@ -3,13 +3,13 @@
 use std::io::{self, Read};
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use nest_agent::{AgentEvent, AgentLoop, CancelToken};
+use nest_agent::{AgentEvent, AgentLoop, CancelToken, CompositeToolSource, SharedMcpHub};
 use nest_ai::{AiService, ChatMessage};
 use nest_cli::AsyncCliCommand;
 use nest_config::ConfigService;
 use nest_core::AppContext;
 use nest_error::NestResult;
-use nest_mcp::McpHub;
+use nest_file::FileService;
 use tokio::sync::mpsc;
 
 use crate::agent::{mcp_config_error, AgentLoopConfig};
@@ -47,9 +47,15 @@ impl AsyncCliCommand for AgentCommand {
         let agent_cfg = AgentLoopConfig::from_config_service(&config)?;
         let message = read_message(matches)?;
 
-        let mut hub = McpHub::from_config_file(
+        let mcp_servers: Vec<String> = agent_cfg
+            .enabled_mcp_servers()
+            .into_iter()
+            .filter(|name| name != "nest-file")
+            .collect();
+
+        let hub = SharedMcpHub::from_config_file(
             &agent_cfg.mcp_config_path,
-            Some(&agent_cfg.mcp_servers),
+            Some(&mcp_servers),
         )
         .await
         .map_err(|error| {
@@ -60,15 +66,24 @@ impl AsyncCliCommand for AgentCommand {
             .with_module("nest-mcp")
         })?;
 
+        let mut tools = CompositeToolSource::new(hub);
+        let workspace_root = ctx
+            .service::<FileService>()
+            .ok()
+            .and_then(|files| files.config().root.clone());
+        if let Ok(files) = ctx.service::<FileService>() {
+            tools = tools.with_files(files.clone());
+        }
+
         let (tx, mut rx) = mpsc::channel(32);
-        let loop_ = AgentLoop::new(ai.clone(), agent_cfg.agent_config());
+        let loop_ = AgentLoop::new(ai.clone(), agent_cfg.agent_config(workspace_root));
         let model = Some(agent_cfg.model.clone());
         let cancel = CancelToken::new();
 
         let run_handle = tokio::spawn(async move {
             loop_
                 .run(
-                    &mut hub,
+                    &mut tools,
                     vec![ChatMessage::user(&message)],
                     model,
                     tx,

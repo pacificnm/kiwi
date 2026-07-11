@@ -2,6 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
+use std::time::Duration;
+
 use nest_agent::AgentConfig;
 use nest_config::ConfigService;
 use nest_error::{NestError, NestResult};
@@ -40,6 +42,9 @@ pub struct AgentSection {
     /// When true, `save_context_memory` may auto-run without per-call approval.
     #[serde(default)]
     pub allow_save_context: bool,
+    /// When true, Nest file write/delete tools may auto-run without per-call approval.
+    #[serde(default)]
+    pub allow_file_writes: bool,
 }
 
 impl Default for AgentSection {
@@ -52,6 +57,7 @@ impl Default for AgentSection {
             max_steps: default_max_steps(),
             agent_mode: false,
             allow_save_context: false,
+            allow_file_writes: false,
         }
     }
 }
@@ -85,9 +91,12 @@ pub struct AgentLoopConfig {
     /// Maximum loop steps.
     pub max_steps: u32,
     /// Default Agent checkbox state in the chat panel.
+    #[allow(dead_code)]
     pub agent_mode: bool,
     /// Whether `save_context_memory` may auto-run.
     pub allow_save_context: bool,
+    /// Whether Nest file write/delete tools may auto-run.
+    pub allow_file_writes: bool,
 }
 
 impl AgentLoopConfig {
@@ -117,6 +126,7 @@ impl AgentLoopConfig {
             max_steps: section.max_steps,
             agent_mode: section.agent_mode,
             allow_save_context: section.allow_save_context,
+            allow_file_writes: section.allow_file_writes,
         })
     }
 
@@ -130,10 +140,16 @@ impl AgentLoopConfig {
     }
 
     /// Builds [`AgentConfig`] for [`nest_agent::AgentLoop`].
-    pub fn agent_config(&self) -> AgentConfig {
-        AgentConfig::default()
+    pub fn agent_config(&self, workspace_root: Option<std::path::PathBuf>) -> AgentConfig {
+        let mut config = AgentConfig::default()
             .with_max_steps(self.max_steps)
             .with_allow_save_context(self.allow_save_context)
+            .with_allow_file_writes(self.allow_file_writes)
+            .with_tool_timeout(Duration::from_secs(180));
+        if let Some(root) = workspace_root {
+            config = config.with_workspace_root(root);
+        }
+        config
     }
 }
 

@@ -1,0 +1,39 @@
+# Copy to ~/.config/kiwi/config.toml for installed Kiwi (kiwi-desktop).
+#
+#   mkdir -p ~/.config/kiwi
+#   cp apps/kiwi/desktop/config.example.toml ~/.config/kiwi/config.toml
+#   cp apps/kiwi/desktop/mcp.json.example ~/.config/kiwi/mcp.json
+#
+# Edit [project].root and absolute paths in mcp.json for your machine.
+
+[agent]
+agent_mode = true
+allow_file_writes = false
+allow_save_context = false
+connection = "ollama"
+disabled_mcp_servers = []
+max_steps = 10
+mcp_config = "mcp.json"
+mcp_servers = [
+    "nest-memory",
+    "nest-knowledge",
+    "nest-context-memory",
+]
+model = "qwen3.5:397b-cloud"
+runtime = "claude"
+
+[ai]
+base_url = "http://127.0.0.1:11434"
+enabled = true
+host = "127.0.0.1"
+model = "qwen3.5:397b-cloud"
+models = ["qwen3.5:397b-cloud"]
+port = 11434
+provider = "ollama"
+
+[project]
+name = "nest"
+root = "/data/projects/nest"
+
+[swift]
+config_path = "/data/projects/nest/apps/swift/config.toml"

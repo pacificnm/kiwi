@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_ROOT="$(cd "$(dirname "$0")" && pwd)"
+DESKTOP_ROOT="$APP_ROOT/desktop"
+TAURI_MANIFEST="$APP_ROOT/src-tauri/Cargo.toml"
+export CARGO_TARGET_DIR="$APP_ROOT/target"
+export RUSTFLAGS="${RUSTFLAGS:--D warnings}"
+
+cd "$APP_ROOT"
+
+ensure_ui_deps() {
+  if [[ ! -d "$APP_ROOT/ui/node_modules" ]]; then
+    npm install --prefix "$APP_ROOT/ui"
+  fi
+}
+
+run_tauri_dev() {
+  CARGO_TARGET_DIR="$APP_ROOT/target" \
+    "$APP_ROOT/ui/node_modules/.bin/tauri" dev \
+    --config "$APP_ROOT/src-tauri/tauri.conf.json" \
+    "$@"
+}
+
+run_tauri_build() {
+  CARGO_TARGET_DIR="$APP_ROOT/target" \
+    "$APP_ROOT/ui/node_modules/.bin/tauri" build \
+    --config "$APP_ROOT/src-tauri/tauri.conf.json" \
+    "$@"
+}
+
+copy_deb_to_dist() {
+  local deb_dir="$APP_ROOT/target/release/bundle/deb"
+  local dist_dir="$APP_ROOT/dist"
+  local deb
+  deb="$(find "$deb_dir" -maxdepth 1 -name '*.deb' -print -quit)"
+  if [[ -z "$deb" ]]; then
+    echo "error: no .deb found in $deb_dir" >&2
+    exit 1
+  fi
+  mkdir -p "$dist_dir"
+  cp -f "$deb" "$dist_dir/"
+  echo "Copied $(basename "$deb") -> $dist_dir/"
+}
+
+cmd="${1:-run}"
+shift || true
+
+case "$cmd" in
+  build)
+    cargo build --manifest-path "$DESKTOP_ROOT/Cargo.toml" -p kiwi "$@"
+    cargo check --manifest-path "$TAURI_MANIFEST" "$@"
+    ;;
+  release)
+    cargo build --manifest-path "$DESKTOP_ROOT/Cargo.toml" -p kiwi --release "$@"
+    ;;
+  run)
+    ensure_ui_deps
+    run_tauri_dev "$@"
+    ;;
+  cli)
+    if [[ "${1:-}" == "--release" ]]; then
+      cargo run --manifest-path "$DESKTOP_ROOT/Cargo.toml" -p kiwi --release -- "${@:2}"
+    else
+      cargo run --manifest-path "$DESKTOP_ROOT/Cargo.toml" -p kiwi -- "$@"
+    fi
+    ;;
+  test)
+    cargo test --manifest-path "$DESKTOP_ROOT/Cargo.toml" --workspace -- --test-threads=1 "$@"
+    cargo test --manifest-path "$TAURI_MANIFEST" -- --test-threads=1 "$@"
+    ;;
+  check)
+    cargo fmt --manifest-path "$DESKTOP_ROOT/Cargo.toml" --all -- --check
+    cargo clippy --manifest-path "$DESKTOP_ROOT/Cargo.toml" --workspace -- -D warnings
+    cargo test --manifest-path "$DESKTOP_ROOT/Cargo.toml" --workspace -- --test-threads=1
+    cargo clippy --manifest-path "$TAURI_MANIFEST" -- -D warnings
+    cargo test --manifest-path "$TAURI_MANIFEST" -- --test-threads=1
+    ;;
+  desktop | tauri)
+    ensure_ui_deps
+    run_tauri_dev "$@"
+    ;;
+  desktop-build | tauri-build)
+    ensure_ui_deps
+    run_tauri_build "$@"
+    ;;
+  release-deb)
+    ensure_ui_deps
+    run_tauri_build --bundles deb "$@"
+    copy_deb_to_dist
+    ;;
+  *)
+    cargo --manifest-path "$DESKTOP_ROOT/Cargo.toml" "$cmd" "$@"
+    ;;
+esac

@@ -1,9 +1,5 @@
 //! Project root resolution for the Kiwi workspace.
 
-mod recent;
-
-pub use recent::RecentProjects;
-
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -41,13 +37,16 @@ pub struct ProjectSection {
 pub struct ProjectConfig {
     /// Absolute path to the project root.
     pub root: PathBuf,
-    /// Short label shown in the title bar.
+    /// Short label for the workspace.
+    #[allow(dead_code)]
     pub name: String,
     /// Directory names hidden from the explorer.
+    #[allow(dead_code)]
     pub ignore: Vec<String>,
 }
 
 /// Returns true when `path` is under the project root and passes through an ignored segment.
+#[allow(dead_code)]
 pub fn path_is_ignored(path: &Path, root: &Path, ignored: &[String]) -> bool {
     let rel = match path.strip_prefix(root) {
         Ok(rel) => rel,
@@ -109,12 +108,19 @@ impl ProjectConfig {
             let trimmed = raw.trim();
             if !trimmed.is_empty() {
                 let root = resolve_root_path(config_path, trimmed);
-                let name = section
-                    .as_ref()
-                    .and_then(|section| section.name.clone())
-                    .filter(|value| !value.trim().is_empty())
-                    .unwrap_or_else(|| default_name_from_root(&root));
-                return Self::from_root_with_name(root, name, ignore);
+                if root.is_dir() {
+                    let name = section
+                        .as_ref()
+                        .and_then(|section| section.name.clone())
+                        .filter(|value| !value.trim().is_empty())
+                        .unwrap_or_else(|| default_name_from_root(&root));
+                    return Self::from_root_with_name(root, name, ignore);
+                }
+                tracing::warn!(
+                    target: "kiwi",
+                    root = %root.display(),
+                    "Configured [project].root is missing; falling back to auto-detect"
+                );
             }
         }
 
@@ -127,6 +133,7 @@ impl ProjectConfig {
     }
 
     /// Loads project settings from a running config service.
+    #[allow(dead_code)]
     pub fn from_config_service(service: &ConfigService) -> NestResult<Self> {
         Self::resolve(None, service.path())
     }
@@ -232,6 +239,76 @@ fn default_name_from_root(root: &Path) -> String {
         .to_string()
 }
 
+/// Writes `[project].root` and `name` to the Kiwi config file.
+#[allow(dead_code)]
+pub fn persist_project_root(config_path: &Path, root: &Path) -> NestResult<()> {
+    use std::fs;
+    use toml::Value;
+
+    let root = root
+        .canonicalize()
+        .map_err(|error| NestError::config(format!("invalid project root: {error}")))?;
+    if !root.is_dir() {
+        return Err(NestError::config(format!(
+            "project root is not a directory: {}",
+            root.display()
+        )));
+    }
+
+    let content = fs::read_to_string(config_path).map_err(|error| {
+        NestError::io(format!("failed to read {}: {error}", config_path.display()))
+    })?;
+    let mut document: Value = content.parse().map_err(|error| {
+        NestError::config(format!("failed to parse {}: {error}", config_path.display()))
+    })?;
+
+    let table = document
+        .as_table_mut()
+        .ok_or_else(|| NestError::config("config root must be a table"))?;
+
+    let project = table
+        .entry("project")
+        .or_insert_with(|| Value::Table(toml::map::Map::new()));
+
+    let project_table = project
+        .as_table_mut()
+        .ok_or_else(|| NestError::config("[project] must be a table"))?;
+
+    let stored_root = relativize_root_for_config(config_path, &root);
+    project_table.insert("root".into(), Value::String(stored_root));
+    project_table.insert(
+        "name".into(),
+        Value::String(default_name_from_root(&root)),
+    );
+
+    let serialized = toml::to_string_pretty(&document).map_err(|error| {
+        NestError::config(format!("failed to serialize config: {error}"))
+    })?;
+    fs::write(config_path, serialized).map_err(|error| {
+        NestError::io(format!("failed to write {}: {error}", config_path.display()))
+    })?;
+    Ok(())
+}
+
+fn relativize_root_for_config(config_path: &Path, root: &Path) -> String {
+    let Some(config_dir) = config_path.parent() else {
+        return root.display().to_string();
+    };
+    if root == config_dir {
+        return ".".into();
+    }
+    if let Ok(rel) = root.strip_prefix(config_dir) {
+        let rel = rel.to_string_lossy();
+        if rel.is_empty() {
+            ".".into()
+        } else {
+            rel.replace('\\', "/")
+        }
+    } else {
+        root.display().to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -265,6 +342,30 @@ mod tests {
         let dir = tempdir().unwrap();
         let cfg = ProjectConfig::from_root(dir.path().to_path_buf()).unwrap();
         assert!(cfg.ignore.iter().any(|name| name == "target"));
+    }
+
+    #[test]
+    fn relativize_root_for_config_uses_dot_for_config_directory() {
+        let dir = tempdir().unwrap();
+        let config = dir.path().join("config.toml");
+        assert_eq!(
+            relativize_root_for_config(&config, dir.path()),
+            "."
+        );
+    }
+
+    #[test]
+    fn persist_project_root_writes_section() {
+        let dir = tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        fs::create_dir_all(&workspace).unwrap();
+        let config = dir.path().join("config.toml");
+        fs::write(&config, "[project]\nname = \"Kiwi\"\n").unwrap();
+
+        persist_project_root(&config, &workspace).unwrap();
+        let content = fs::read_to_string(&config).unwrap();
+        assert!(content.contains("[project]"));
+        assert!(content.contains("root = \"workspace\""));
     }
 
     #[test]
