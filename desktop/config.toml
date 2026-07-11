@@ -1,21 +1,24 @@
 [agent]
 agent_mode = true
+allow_file_writes = true
 allow_save_context = true
+connection = "ollama"
 disabled_mcp_servers = []
 max_steps = 10
-mcp_config = "../../../.cursor/mcp.json"
+mcp_config = "mcp.json"
 mcp_servers = [
     "nest-memory",
     "nest-knowledge",
     "nest-context-memory",
 ]
-model = "qwen2.5:3b"
+model = "qwen3.5:397b-cloud"
+runtime = "opencode"
 
 [ai]
 base_url = "http://192.168.88.10:11434"
 enabled = true
 host = "192.168.88.10"
-model = "qwen2.5:3b"
+model = "qwen3.5:397b-cloud"
 models = [
     "nomic-embed-text:latest",
     "llama3.2:3b",
@@ -23,16 +26,20 @@ models = [
     "qwen2.5-coder:7b",
     "qwen2.5:7b",
     "qwen2.5:3b",
+    "qwen3.5:2b",
+    "qwen3.5:latest",
+    "qwen3.5:4b",
+    "qwen3-vl:4b",
+    "glm-4.7:cloud",
+    "deepseek-coder:6.7b",
+    "qwen3.5:397b-cloud",
 ]
 port = 11434
 provider = "ollama"
 
-[gui]
-height = 900
-title = "Kiwi"
-vsync = true
-width = 1600
-
 [project]
 name = "nest"
-root = "../../.."
+root = "/data/projects/nest"
+
+[swift]
+config_path = "../../swift/config.toml"

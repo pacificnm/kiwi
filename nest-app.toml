@@ -1,0 +1,11 @@
+# Nest Shell manifest — registers Kiwi with the desktop launcher.
+
+[shell]
+name = "Kiwi"
+category = "Development"
+icon = "fa-solid fa-kiwi-bird"
+description = "Agent IDE and app builder for the Nest platform."
+
+[shell.launch]
+# Nest Shell spawns `kiwi-desktop` for all desktop icons except Help.
+mode = "module"

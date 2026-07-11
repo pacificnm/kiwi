@@ -14,21 +14,13 @@ nest-ai-ollama = { git = "https://github.com/pacificnm/nest", branch = "main" }
 nest-cli = { git = "https://github.com/pacificnm/nest", branch = "main", features = ["async"] }
 nest-config = { git = "https://github.com/pacificnm/nest", branch = "main" }
 nest-core = { git = "https://github.com/pacificnm/nest", branch = "main" }
-nest-design = { git = "https://github.com/pacificnm/nest", branch = "main" }
 nest-error = { git = "https://github.com/pacificnm/nest", branch = "main" }
-nest-gui = { git = "https://github.com/pacificnm/nest", branch = "main", features = ["icons", "async"] }
 nest-http = { git = "https://github.com/pacificnm/nest", branch = "main" }
 nest-http-client = { git = "https://github.com/pacificnm/nest", branch = "main" }
-nest-icon = { git = "https://github.com/pacificnm/nest", branch = "main" }
 nest-logging = { git = "https://github.com/pacificnm/nest", branch = "main" }
-nest-theme = { git = "https://github.com/pacificnm/nest", branch = "main" }
 nest-agent = { git = "https://github.com/pacificnm/nest", branch = "main" }
 nest-mcp = { git = "https://github.com/pacificnm/nest", branch = "main" }
 nest-file = { git = "https://github.com/pacificnm/nest", branch = "main" }
-notify = "7"
-egui = "0.31"
-egui_extras = { version = "0.31", default-features = false, features = ["syntect"] }
-eframe = { version = "0.31", default-features = true }
 tracing = "0.1"
 
 [patch."https://github.com/pacificnm/nest"]
@@ -37,14 +29,10 @@ nest-ai-ollama = { path = "../../../modules/crates/nest-ai-ollama" }
 nest-cli = { path = "../../../core/crates/nest-cli" }
 nest-config = { path = "../../../core/crates/nest-config" }
 nest-core = { path = "../../../core/crates/nest-core" }
-nest-design = { path = "../../../core/crates/nest-design" }
 nest-error = { path = "../../../core/crates/nest-error" }
-nest-gui = { path = "../../../core/crates/nest-gui" }
 nest-http = { path = "../../../core/crates/nest-http" }
 nest-http-client = { path = "../../../core/crates/nest-http-client" }
-nest-icon = { path = "../../../core/crates/nest-icon" }
 nest-logging = { path = "../../../core/crates/nest-logging" }
-nest-theme = { path = "../../../core/crates/nest-theme" }
 nest-agent = { path = "../../../core/crates/nest-agent" }
 nest-mcp = { path = "../../../core/crates/nest-mcp" }
 nest-file = { path = "../../../core/crates/nest-file" }

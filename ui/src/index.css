@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Default theme fallbacks (cursor-dark). Overridden at runtime by nest_theme_css. */
+:root {
+  --nest-color-background: #1b1f23;
+  --nest-color-foreground: #cccccc;
+  --nest-color-primary: #4f8ef7;
+  --nest-color-secondary: #9da5b4;
+  --nest-color-border: #313842;
+  --nest-color-surface: #252b32;
+  --nest-color-accent: #4f8ef7;
+  --nest-color-muted: #6e7681;
+  --nest-color-success: #3fb950;
+  --nest-color-warning: #d29922;
+  --nest-color-error: #f85149;
+  --nest-color-info: #58a6ff;
+}
+
+html,
+body {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  min-height: 100vh;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(1rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.toast-enter {
+  animation: toast-in 0.2s ease-out;
+}
+
+/* Rich text content — restore list markers stripped by Tailwind base. */
+.nest-rich-text ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+  margin: 0.25rem 0;
+}
+
+.nest-rich-text ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+  margin: 0.25rem 0;
+}
+
+.nest-rich-text a {
+  color: var(--nest-color-primary);
+  text-decoration: underline;
+}

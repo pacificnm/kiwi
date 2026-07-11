@@ -1,6 +1,10 @@
 /target/
+/dist/
 /desktop/target/
 /desktop/logs/
+/src-tauri/target/
+/ui/dist/
+node_modules/
 /.venv/
 .env
 __pycache__/
