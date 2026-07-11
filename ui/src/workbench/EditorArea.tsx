@@ -5,10 +5,14 @@ import { IssueDetailView } from "./issues/IssueDetailView";
 import { CommitChangesView } from "./CommitChangesView";
 import { TaskDetailView } from "./tasks/TaskDetailView";
 import { DocView } from "./DocView";
+import { ComponentDetailView } from "./ComponentDetailView";
+import { ThemeDetailView } from "./ThemeDetailView";
 import { useWorkbench } from "./state";
+import type { ThemeDefinition } from "../lib/themes";
 
 export function EditorArea() {
-  const { tabs, activePath, focusTab, closeTab, updateTabContent, saveTab } = useWorkbench();
+  const { tabs, activePath, activeThemeId, openTheme, focusTab, closeTab, updateTabContent, saveTab } =
+    useWorkbench();
   const active = tabs.find((tab) => tab.relPath === activePath) ?? null;
 
   if (tabs.length === 0) {
@@ -85,11 +89,33 @@ export function EditorArea() {
             <TaskDetailView detail={active.swiftTaskDetail} />
           ) : active.docContent != null ? (
             <DocView content={active.docContent} />
+          ) : active.componentId != null ? (
+            <ComponentDetailView componentId={active.componentId} />
+          ) : active.themeData ? (
+            <ThemeTabContent theme={active.themeData} activeThemeId={activeThemeId} onApply={openTheme} />
           ) : (
             <MonacoEditor tab={active} onChange={updateTabContent} onSave={saveTab} />
           )
         ) : null}
       </div>
     </div>
+  );
+}
+
+function ThemeTabContent({
+  theme,
+  activeThemeId,
+  onApply,
+}: {
+  theme: ThemeDefinition;
+  activeThemeId: string | null;
+  onApply: (theme: ThemeDefinition) => void;
+}) {
+  return (
+    <ThemeDetailView
+      theme={theme}
+      isActive={activeThemeId === theme.id}
+      onApply={() => onApply(theme)}
+    />
   );
 }

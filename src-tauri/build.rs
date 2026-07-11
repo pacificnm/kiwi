@@ -12,6 +12,8 @@ const KIWI_COMMANDS: &[&str] = &[
     "problems_run",
     "docs_list",
     "docs_read",
+    "themes_list",
+    "theme_set_active",
     "swift_status",
     "swift_tasks_overview",
     "swift_list_projects",

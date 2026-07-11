@@ -10,6 +10,7 @@ import {
 } from "react";
 import { formatIpcError } from "../lib/agent";
 import { klog } from "../lib/log";
+import { applyThemeRootBlock, fetchThemeCss } from "../lib/nest";
 import { isTauri, useToast } from "../shell";
 import {
   openWorkspace as openWorkspaceIpc,
@@ -20,9 +21,11 @@ import {
 } from "../lib/workspace";
 import { scheduleProblemsRun } from "../lib/problems";
 import { commitTabKey, isCommitTab, type GitCommitChanges } from "../lib/git";
+import { componentTabKey, isComponentTab, type ComponentDef } from "../lib/componentsLibrary";
 import { docsRead, docTabKey, isDocTab, type DocEntry } from "../lib/docs";
 import { issueTabKey, isIssueTab, type GitHubIssue } from "../lib/github";
 import { isTaskTab, swiftGetTask, taskTabKey, type SwiftTaskDetailResponse } from "../lib/swift";
+import { isThemeTab, themeSetActive, themeTabKey, type ThemeDefinition } from "../lib/themes";
 
 /** An open editor tab backed by a workspace file. */
 export type EditorTab = {
@@ -50,6 +53,10 @@ export type EditorTab = {
   swiftTaskDetail?: SwiftTaskDetailResponse | null;
   /** Rendered Markdown when this tab is a virtual Help doc tab. */
   docContent?: string | null;
+  /** Component id when this tab is a virtual @nest/components viewer tab. */
+  componentId?: string | null;
+  /** Full theme definition when this tab is a virtual Theme viewer tab. */
+  themeData?: ThemeDefinition | null;
 };
 
 type WorkbenchContextValue = {
@@ -71,6 +78,12 @@ type WorkbenchContextValue = {
   openTask: (taskId: string, title: string) => void;
   /** Opens (or focuses) a Help doc tab and lazily loads its Markdown. */
   openDoc: (entry: DocEntry) => void;
+  /** Opens (or focuses) a @nest/components viewer tab. */
+  openComponent: (def: ComponentDef) => void;
+  /** Opens (or focuses) a Theme viewer tab and applies it as the active theme. */
+  openTheme: (theme: ThemeDefinition) => void;
+  /** The currently active theme's id, once known. */
+  activeThemeId: string | null;
   /** Focuses an already-open tab. */
   focusTab: (relPath: string) => void;
   /** Updates a tab's in-editor content (marks it dirty). */
@@ -92,6 +105,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [tabs, setTabs] = useState<EditorTab[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
+  const [activeThemeId, setActiveThemeId] = useState<string | null>(null);
   const toast = useToast();
   const tabsRef = useRef<EditorTab[]>([]);
   useEffect(() => {
@@ -106,6 +120,17 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       .then(setWorkspace)
       .catch((error) => toast.error(formatIpcError(error)));
   }, [toast]);
+
+  useEffect(() => {
+    if (!isTauri()) {
+      return;
+    }
+    void fetchThemeCss()
+      .then((css) => setActiveThemeId(css.id))
+      .catch(() => {
+        // App.tsx already surfaces theme-load failures on startup.
+      });
+  }, []);
 
   const focusTab = useCallback((relPath: string) => {
     setActivePath(relPath);
@@ -126,7 +151,12 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       if (isIssueTab(relPath) || isCommitTab(relPath)) {
         return;
       }
-      if (isTaskTab(relPath) || isDocTab(relPath)) {
+      if (
+        isTaskTab(relPath) ||
+        isDocTab(relPath) ||
+        isComponentTab(relPath) ||
+        isThemeTab(relPath)
+      ) {
         return;
       }
       const tab = tabsRef.current.find((entry) => entry.relPath === relPath);
@@ -447,6 +477,73 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     [toast],
   );
 
+  const openComponent = useCallback((def: ComponentDef) => {
+    const relPath = componentTabKey(def.id);
+    klog("workbench", `openComponent id=${def.id}`);
+    setActivePath(relPath);
+    setTabs((current) => {
+      const existing = current.find((tab) => tab.relPath === relPath);
+      if (existing) {
+        return current;
+      }
+      return [
+        ...current,
+        {
+          relPath,
+          name: def.name,
+          content: "",
+          savedContent: "",
+          dirty: false,
+          loading: false,
+          saving: false,
+          error: null,
+          componentId: def.id,
+        },
+      ];
+    });
+  }, []);
+
+  const openTheme = useCallback(
+    (theme: ThemeDefinition) => {
+      const relPath = themeTabKey(theme.id);
+      klog("workbench", `openTheme id=${theme.id}`);
+      setActivePath(relPath);
+      setTabs((current) => {
+        const existing = current.find((tab) => tab.relPath === relPath);
+        if (existing) {
+          return current.map((tab) =>
+            tab.relPath === relPath ? { ...tab, themeData: theme } : tab,
+          );
+        }
+        return [
+          ...current,
+          {
+            relPath,
+            name: theme.id,
+            content: "",
+            savedContent: "",
+            dirty: false,
+            loading: false,
+            saving: false,
+            error: null,
+            themeData: theme,
+          },
+        ];
+      });
+
+      void themeSetActive(theme.id)
+        .then(() => fetchThemeCss())
+        .then((css) => {
+          applyThemeRootBlock(css.root_block);
+          setActiveThemeId(css.id);
+        })
+        .catch((error) => {
+          toast.error(formatIpcError(error));
+        });
+    },
+    [toast],
+  );
+
   const closeTab = useCallback((relPath: string) => {
     setTabs((current) => {
       const next = current.filter((tab) => tab.relPath !== relPath);
@@ -492,6 +589,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       openCommit,
       openTask,
       openDoc,
+      openComponent,
+      openTheme,
+      activeThemeId,
       focusTab,
       updateTabContent,
       saveTab,
@@ -509,6 +609,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       openCommit,
       openTask,
       openDoc,
+      openComponent,
+      openTheme,
+      activeThemeId,
       focusTab,
       updateTabContent,
       saveTab,
