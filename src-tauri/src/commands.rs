@@ -756,6 +756,23 @@ fn workspace_replace_all(
     result
 }
 
+/// Clones a repo at `branch` into the (empty) workspace root (File → Fetch Nest Source).
+#[tauri::command]
+fn git_fetch_source(
+    workspace: State<'_, Workspace>,
+    url: String,
+    branch: String,
+) -> NestResult<WorkspaceInfo> {
+    tracing::info!(target: "kiwi", %url, %branch, "git_fetch_source: enter");
+    let root = workspace.root();
+    let result = git::clone(&root, &url, &branch).and_then(|()| workspace.open(root));
+    match &result {
+        Ok(info) => tracing::info!(target: "kiwi", root = %info.root, "git_fetch_source: ok"),
+        Err(error) => tracing::error!(target: "kiwi", %error, "git_fetch_source: err"),
+    }
+    result
+}
+
 /// Reads the repository status (branch, ahead/behind, changed files).
 #[tauri::command]
 fn git_status(workspace: State<'_, Workspace>) -> NestResult<GitStatus> {
@@ -1012,6 +1029,7 @@ pub fn kiwi_plugin<R: Runtime>() -> TauriPlugin<R> {
             workspace_open,
             workspace_search,
             workspace_replace_all,
+            git_fetch_source,
             git_status,
             git_stage,
             git_stage_all,
