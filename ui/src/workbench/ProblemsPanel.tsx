@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
 import { formatIpcError } from "../lib/agent";
 import { faCircleExclamation, faRotateRight, faTriangleExclamation } from "../lib/fontawesome";
 import {
@@ -27,6 +28,7 @@ export function ProblemsPanel({ active }: ProblemsPanelProps) {
   const { openAt } = useEditorNavigation();
   const [report, setReport] = useState<ProblemsReport | null>(null);
   const [busy, setBusy] = useState(false);
+  const [menu, setMenu] = useState<{ x: number; y: number; item: ProblemDiagnostic } | null>(null);
 
   const refresh = useCallback(async () => {
     if (!isTauri()) {
@@ -75,6 +77,34 @@ export function ProblemsPanel({ active }: ProblemsPanelProps) {
     [openAt, openFile],
   );
 
+  const copyProblem = useCallback(
+    (item: ProblemDiagnostic) => {
+      void navigator.clipboard
+        .writeText(formatProblemForCopy(item))
+        .then(() => toast.success("Copied problem"))
+        .catch((error) => toast.error(formatIpcError(error)));
+    },
+    [toast],
+  );
+
+  const onDiagnosticContextMenu = useCallback(
+    (event: ReactMouseEvent, item: ProblemDiagnostic) => {
+      event.preventDefault();
+      setMenu({ x: event.clientX, y: event.clientY, item });
+    },
+    [],
+  );
+
+  const menuItems: ContextMenuItem[] = menu
+    ? [
+        {
+          id: "copy",
+          label: "Copy",
+          onSelect: () => copyProblem(menu.item),
+        },
+      ]
+    : [];
+
   if (!isTauri()) {
     return (
       <p className="px-3 py-2 text-xs text-nest-muted">
@@ -121,6 +151,7 @@ export function ProblemsPanel({ active }: ProblemsPanelProps) {
                   key={item.id}
                   type="button"
                   onClick={() => openDiagnostic(item)}
+                  onContextMenu={(event) => onDiagnosticContextMenu(event, item)}
                   title={item.message}
                   className="flex w-full items-start gap-2 px-3 py-1 text-left text-xs hover:bg-nest-muted/10"
                 >
@@ -139,8 +170,19 @@ export function ProblemsPanel({ active }: ProblemsPanelProps) {
           ))
         )}
       </div>
+
+      {menu ? (
+        <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />
+      ) : null}
     </div>
   );
+}
+
+/** Formats a diagnostic as `path:line:col - severity[code]: message`, ready to paste into an agent. */
+function formatProblemForCopy(item: ProblemDiagnostic): string {
+  const location = `${item.relPath}:${item.line}:${item.col}`;
+  const tag = item.code ? `${item.severity}[${item.code}]` : item.severity;
+  return `${location} - ${tag}: ${item.message}`;
 }
 
 function SeverityIcon({ severity }: { severity: ProblemDiagnostic["severity"] }) {
