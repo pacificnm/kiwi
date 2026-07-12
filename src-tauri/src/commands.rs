@@ -866,6 +866,29 @@ fn git_discard(workspace: State<'_, Workspace>, path: String) -> NestResult<()> 
     git::discard(&workspace.root(), &path)
 }
 
+/// Lists local branch names (for the Create Branch base selector).
+#[tauri::command]
+fn git_branch_list(workspace: State<'_, Workspace>) -> NestResult<Vec<String>> {
+    tracing::info!(target: "kiwi", "git_branch_list: enter");
+    git::branch_list(&workspace.root())
+}
+
+/// Creates a new branch from `base` and checks it out.
+#[tauri::command]
+fn git_create_branch(
+    workspace: State<'_, Workspace>,
+    name: String,
+    base: String,
+) -> NestResult<()> {
+    tracing::info!(target: "kiwi", %name, %base, "git_create_branch: enter");
+    let result = git::create_branch(&workspace.root(), &name, &base);
+    match &result {
+        Ok(()) => tracing::info!(target: "kiwi", "git_create_branch: ok"),
+        Err(error) => tracing::error!(target: "kiwi", %error, "git_create_branch: err"),
+    }
+    result
+}
+
 /// Commits staged changes; stages everything first when `stageAll` is set.
 #[tauri::command]
 fn git_commit(
@@ -1083,6 +1106,8 @@ pub fn kiwi_plugin<R: Runtime>() -> TauriPlugin<R> {
             git_unstage,
             git_discard,
             git_commit,
+            git_branch_list,
+            git_create_branch,
             git_push,
             git_pull,
             git_log,

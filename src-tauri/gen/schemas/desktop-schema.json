@@ -2337,10 +2337,10 @@
           "markdownDescription": "Denies the save command without any pre-configured scope."
         },
         {
-          "description": "Default plugin permissions.\n#### This default permission set includes:\n\n- `allow-kiwi-host-info`\n- `allow-logs-snapshot`\n- `allow-logs-clear`\n- `allow-problems-snapshot`\n- `allow-problems-run`\n- `allow-docs-list`\n- `allow-docs-read`\n- `allow-kiwi-config-path`\n- `allow-kiwi-config-read`\n- `allow-kiwi-config-write`\n- `allow-doc-sources-list`\n- `allow-doc-sources-add`\n- `allow-doc-sources-remove`\n- `allow-doc-sources-sync`\n- `allow-themes-list`\n- `allow-theme-set-active`\n- `allow-swift-status`\n- `allow-swift-tasks-overview`\n- `allow-swift-list-projects`\n- `allow-swift-link-workspace`\n- `allow-swift-unlink-workspace`\n- `allow-swift-get-task`\n- `allow-mcp-overview`\n- `allow-agent-launch`\n- `allow-agent-input`\n- `allow-agent-resize`\n- `allow-agent-stop`\n- `allow-agent-status`\n- `allow-agent-settings-get`\n- `allow-agent-settings-save`\n- `allow-ollama-list-models`\n- `allow-ollama-auth-status`\n- `allow-ollama-signin`\n- `allow-ollama-signout`\n- `allow-codex-account-status`\n- `allow-codex-login`\n- `allow-codex-logout`\n- `allow-terminal-open`\n- `allow-terminal-input`\n- `allow-terminal-resize`\n- `allow-terminal-close`\n- `allow-terminal-list`\n- `allow-workspace-info`\n- `allow-workspace-list`\n- `allow-workspace-read`\n- `allow-workspace-write`\n- `allow-workspace-create-file`\n- `allow-workspace-create-dir`\n- `allow-workspace-rename`\n- `allow-workspace-delete`\n- `allow-workspace-copy`\n- `allow-workspace-reveal`\n- `allow-workspace-open`\n- `allow-workspace-search`\n- `allow-workspace-replace-all`\n- `allow-git-fetch-source`\n- `allow-git-status`\n- `allow-git-stage`\n- `allow-git-stage-all`\n- `allow-git-unstage`\n- `allow-git-discard`\n- `allow-git-commit`\n- `allow-git-push`\n- `allow-git-pull`\n- `allow-git-log`\n- `allow-git-commit-changes`\n- `allow-github-auth-status`\n- `allow-github-repo`\n- `allow-github-issue-list`\n- `allow-github-issue-view`\n- `allow-github-issue-create`\n- `allow-github-issue-comment`\n- `allow-github-label-list`\n- `allow-github-milestone-list`",
+          "description": "Default plugin permissions.\n#### This default permission set includes:\n\n- `allow-kiwi-host-info`\n- `allow-logs-snapshot`\n- `allow-logs-clear`\n- `allow-problems-snapshot`\n- `allow-problems-run`\n- `allow-docs-list`\n- `allow-docs-read`\n- `allow-kiwi-config-path`\n- `allow-kiwi-config-read`\n- `allow-kiwi-config-write`\n- `allow-doc-sources-list`\n- `allow-doc-sources-add`\n- `allow-doc-sources-remove`\n- `allow-doc-sources-sync`\n- `allow-themes-list`\n- `allow-theme-set-active`\n- `allow-swift-status`\n- `allow-swift-tasks-overview`\n- `allow-swift-list-projects`\n- `allow-swift-link-workspace`\n- `allow-swift-unlink-workspace`\n- `allow-swift-get-task`\n- `allow-mcp-overview`\n- `allow-agent-launch`\n- `allow-agent-input`\n- `allow-agent-resize`\n- `allow-agent-stop`\n- `allow-agent-status`\n- `allow-agent-settings-get`\n- `allow-agent-settings-save`\n- `allow-ollama-list-models`\n- `allow-ollama-auth-status`\n- `allow-ollama-signin`\n- `allow-ollama-signout`\n- `allow-codex-account-status`\n- `allow-codex-login`\n- `allow-codex-logout`\n- `allow-terminal-open`\n- `allow-terminal-input`\n- `allow-terminal-resize`\n- `allow-terminal-close`\n- `allow-terminal-list`\n- `allow-workspace-info`\n- `allow-workspace-list`\n- `allow-workspace-read`\n- `allow-workspace-write`\n- `allow-workspace-create-file`\n- `allow-workspace-create-dir`\n- `allow-workspace-rename`\n- `allow-workspace-delete`\n- `allow-workspace-copy`\n- `allow-workspace-reveal`\n- `allow-workspace-open`\n- `allow-workspace-search`\n- `allow-workspace-replace-all`\n- `allow-git-fetch-source`\n- `allow-git-status`\n- `allow-git-stage`\n- `allow-git-stage-all`\n- `allow-git-unstage`\n- `allow-git-discard`\n- `allow-git-commit`\n- `allow-git-branch-list`\n- `allow-git-create-branch`\n- `allow-git-push`\n- `allow-git-pull`\n- `allow-git-log`\n- `allow-git-commit-changes`\n- `allow-github-auth-status`\n- `allow-github-repo`\n- `allow-github-issue-list`\n- `allow-github-issue-view`\n- `allow-github-issue-create`\n- `allow-github-issue-comment`\n- `allow-github-label-list`\n- `allow-github-milestone-list`",
           "type": "string",
           "const": "kiwi:default",
-          "markdownDescription": "Default plugin permissions.\n#### This default permission set includes:\n\n- `allow-kiwi-host-info`\n- `allow-logs-snapshot`\n- `allow-logs-clear`\n- `allow-problems-snapshot`\n- `allow-problems-run`\n- `allow-docs-list`\n- `allow-docs-read`\n- `allow-kiwi-config-path`\n- `allow-kiwi-config-read`\n- `allow-kiwi-config-write`\n- `allow-doc-sources-list`\n- `allow-doc-sources-add`\n- `allow-doc-sources-remove`\n- `allow-doc-sources-sync`\n- `allow-themes-list`\n- `allow-theme-set-active`\n- `allow-swift-status`\n- `allow-swift-tasks-overview`\n- `allow-swift-list-projects`\n- `allow-swift-link-workspace`\n- `allow-swift-unlink-workspace`\n- `allow-swift-get-task`\n- `allow-mcp-overview`\n- `allow-agent-launch`\n- `allow-agent-input`\n- `allow-agent-resize`\n- `allow-agent-stop`\n- `allow-agent-status`\n- `allow-agent-settings-get`\n- `allow-agent-settings-save`\n- `allow-ollama-list-models`\n- `allow-ollama-auth-status`\n- `allow-ollama-signin`\n- `allow-ollama-signout`\n- `allow-codex-account-status`\n- `allow-codex-login`\n- `allow-codex-logout`\n- `allow-terminal-open`\n- `allow-terminal-input`\n- `allow-terminal-resize`\n- `allow-terminal-close`\n- `allow-terminal-list`\n- `allow-workspace-info`\n- `allow-workspace-list`\n- `allow-workspace-read`\n- `allow-workspace-write`\n- `allow-workspace-create-file`\n- `allow-workspace-create-dir`\n- `allow-workspace-rename`\n- `allow-workspace-delete`\n- `allow-workspace-copy`\n- `allow-workspace-reveal`\n- `allow-workspace-open`\n- `allow-workspace-search`\n- `allow-workspace-replace-all`\n- `allow-git-fetch-source`\n- `allow-git-status`\n- `allow-git-stage`\n- `allow-git-stage-all`\n- `allow-git-unstage`\n- `allow-git-discard`\n- `allow-git-commit`\n- `allow-git-push`\n- `allow-git-pull`\n- `allow-git-log`\n- `allow-git-commit-changes`\n- `allow-github-auth-status`\n- `allow-github-repo`\n- `allow-github-issue-list`\n- `allow-github-issue-view`\n- `allow-github-issue-create`\n- `allow-github-issue-comment`\n- `allow-github-label-list`\n- `allow-github-milestone-list`"
+          "markdownDescription": "Default plugin permissions.\n#### This default permission set includes:\n\n- `allow-kiwi-host-info`\n- `allow-logs-snapshot`\n- `allow-logs-clear`\n- `allow-problems-snapshot`\n- `allow-problems-run`\n- `allow-docs-list`\n- `allow-docs-read`\n- `allow-kiwi-config-path`\n- `allow-kiwi-config-read`\n- `allow-kiwi-config-write`\n- `allow-doc-sources-list`\n- `allow-doc-sources-add`\n- `allow-doc-sources-remove`\n- `allow-doc-sources-sync`\n- `allow-themes-list`\n- `allow-theme-set-active`\n- `allow-swift-status`\n- `allow-swift-tasks-overview`\n- `allow-swift-list-projects`\n- `allow-swift-link-workspace`\n- `allow-swift-unlink-workspace`\n- `allow-swift-get-task`\n- `allow-mcp-overview`\n- `allow-agent-launch`\n- `allow-agent-input`\n- `allow-agent-resize`\n- `allow-agent-stop`\n- `allow-agent-status`\n- `allow-agent-settings-get`\n- `allow-agent-settings-save`\n- `allow-ollama-list-models`\n- `allow-ollama-auth-status`\n- `allow-ollama-signin`\n- `allow-ollama-signout`\n- `allow-codex-account-status`\n- `allow-codex-login`\n- `allow-codex-logout`\n- `allow-terminal-open`\n- `allow-terminal-input`\n- `allow-terminal-resize`\n- `allow-terminal-close`\n- `allow-terminal-list`\n- `allow-workspace-info`\n- `allow-workspace-list`\n- `allow-workspace-read`\n- `allow-workspace-write`\n- `allow-workspace-create-file`\n- `allow-workspace-create-dir`\n- `allow-workspace-rename`\n- `allow-workspace-delete`\n- `allow-workspace-copy`\n- `allow-workspace-reveal`\n- `allow-workspace-open`\n- `allow-workspace-search`\n- `allow-workspace-replace-all`\n- `allow-git-fetch-source`\n- `allow-git-status`\n- `allow-git-stage`\n- `allow-git-stage-all`\n- `allow-git-unstage`\n- `allow-git-discard`\n- `allow-git-commit`\n- `allow-git-branch-list`\n- `allow-git-create-branch`\n- `allow-git-push`\n- `allow-git-pull`\n- `allow-git-log`\n- `allow-git-commit-changes`\n- `allow-github-auth-status`\n- `allow-github-repo`\n- `allow-github-issue-list`\n- `allow-github-issue-view`\n- `allow-github-issue-create`\n- `allow-github-issue-comment`\n- `allow-github-label-list`\n- `allow-github-milestone-list`"
         },
         {
           "description": "Enables the agent_input command without any pre-configured scope.",
@@ -2439,6 +2439,12 @@
           "markdownDescription": "Enables the docs_read command without any pre-configured scope."
         },
         {
+          "description": "Enables the git_branch_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "kiwi:allow-git-branch-list",
+          "markdownDescription": "Enables the git_branch_list command without any pre-configured scope."
+        },
+        {
           "description": "Enables the git_commit command without any pre-configured scope.",
           "type": "string",
           "const": "kiwi:allow-git-commit",
@@ -2449,6 +2455,12 @@
           "type": "string",
           "const": "kiwi:allow-git-commit-changes",
           "markdownDescription": "Enables the git_commit_changes command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the git_create_branch command without any pre-configured scope.",
+          "type": "string",
+          "const": "kiwi:allow-git-create-branch",
+          "markdownDescription": "Enables the git_create_branch command without any pre-configured scope."
         },
         {
           "description": "Enables the git_discard command without any pre-configured scope.",
@@ -2883,6 +2895,12 @@
           "markdownDescription": "Denies the docs_read command without any pre-configured scope."
         },
         {
+          "description": "Denies the git_branch_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "kiwi:deny-git-branch-list",
+          "markdownDescription": "Denies the git_branch_list command without any pre-configured scope."
+        },
+        {
           "description": "Denies the git_commit command without any pre-configured scope.",
           "type": "string",
           "const": "kiwi:deny-git-commit",
@@ -2893,6 +2911,12 @@
           "type": "string",
           "const": "kiwi:deny-git-commit-changes",
           "markdownDescription": "Denies the git_commit_changes command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the git_create_branch command without any pre-configured scope.",
+          "type": "string",
+          "const": "kiwi:deny-git-create-branch",
+          "markdownDescription": "Denies the git_create_branch command without any pre-configured scope."
         },
         {
           "description": "Denies the git_discard command without any pre-configured scope.",

@@ -120,6 +120,16 @@ export async function gitStatus(): Promise<GitStatus> {
   return kiwiInvoke<GitStatus>("git_status");
 }
 
+/** Lists local branch names (for the Create Branch base selector). */
+export async function gitBranchList(): Promise<string[]> {
+  return kiwiInvoke<string[]>("git_branch_list");
+}
+
+/** Creates a new branch from `base` and checks it out. */
+export async function gitCreateBranch(name: string, base: string): Promise<void> {
+  return kiwiInvoke<void>("git_create_branch", { name, base });
+}
+
 /** Stages one repository-relative path. */
 export async function gitStage(path: string): Promise<void> {
   return kiwiInvoke<void>("git_stage", { path });

@@ -67,6 +67,8 @@ const KIWI_COMMANDS: &[&str] = &[
     "git_unstage",
     "git_discard",
     "git_commit",
+    "git_branch_list",
+    "git_create_branch",
     "git_push",
     "git_pull",
     "git_log",

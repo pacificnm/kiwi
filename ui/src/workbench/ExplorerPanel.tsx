@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useTransition,
   type MouseEvent as ReactMouseEvent,
@@ -103,6 +104,16 @@ export function ExplorerPanel({ onToggleCollapse }: { onToggleCollapse?: () => v
   const [confirmDelete, setConfirmDelete] = useState<MenuTarget | null>(null);
   const [, startTransition] = useTransition();
 
+  // Track the current expansion and the workspace we last built the tree for,
+  // so a refresh can reload in place without collapsing the tree.
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
+  const builtRootRef = useRef<string | null>(null);
+  // WebKitGTK (Linux) fires a synthetic `click` right after `contextmenu`.
+  // Ignore row clicks until this timestamp so right-clicking a folder doesn't
+  // also toggle (collapse) it.
+  const suppressClickUntilRef = useRef(0);
+
   const loadDir = useCallback((rel: string) => {
     klog("explorer", `loadDir start rel=${rel}`);
     setLoading((current) => new Set(current).add(rel));
@@ -133,10 +144,21 @@ export function ExplorerPanel({ onToggleCollapse }: { onToggleCollapse?: () => v
     if (!isTauri() || !workspace) {
       return;
     }
-    setEntriesByDir({});
-    setExpanded(new Set());
-    setErrors({});
+    if (builtRootRef.current !== workspace.root) {
+      // Switched projects (or first load): rebuild the tree from scratch.
+      builtRootRef.current = workspace.root;
+      setEntriesByDir({});
+      setExpanded(new Set());
+      setErrors({});
+      loadDir(ROOT);
+      return;
+    }
+    // Same project, explicit refresh: reload the root and every expanded folder
+    // in place, keeping the tree's expansion state intact.
     loadDir(ROOT);
+    for (const rel of expandedRef.current) {
+      loadDir(rel);
+    }
   }, [workspace, refreshToken, loadDir]);
 
   const toggleDir = useCallback(
@@ -378,6 +400,7 @@ export function ExplorerPanel({ onToggleCollapse }: { onToggleCollapse?: () => v
   const openMenu = useCallback((event: ReactMouseEvent, target: MenuTarget) => {
     event.preventDefault();
     event.stopPropagation();
+    suppressClickUntilRef.current = Date.now() + 400;
     setMenu({ x: event.clientX, y: event.clientY, target });
   }, []);
 
@@ -462,11 +485,17 @@ export function ExplorerPanel({ onToggleCollapse }: { onToggleCollapse?: () => v
                     >
                       <button
                         type="button"
-                        onClick={() =>
-                          entry.isDir
-                            ? toggleDir(entry.relPath)
-                            : openFile(entry.relPath, entry.name)
-                        }
+                        onClick={() => {
+                          if (Date.now() < suppressClickUntilRef.current) {
+                            suppressClickUntilRef.current = 0;
+                            return;
+                          }
+                          if (entry.isDir) {
+                            toggleDir(entry.relPath);
+                          } else {
+                            openFile(entry.relPath, entry.name);
+                          }
+                        }}
                         onContextMenu={(event) =>
                           openMenu(event, { relPath: entry.relPath, isDir: entry.isDir })
                         }

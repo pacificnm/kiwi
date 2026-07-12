@@ -1,8 +1,12 @@
 /**
  * Surface components for @nest/components
- *
- * Coming soon: Card, Accordion, Paper, Divider
  */
 
-// Placeholder export to allow module resolution
-export {};
+export { Paper } from './Paper';
+export type { PaperProps, PaperElevation, PaperVariant } from './Paper';
+
+export { Card, CardHeader, CardContent, CardActions, CardMedia } from './Card';
+export type { CardProps, CardHeaderProps, CardContentProps, CardActionsProps, CardMediaProps } from './Card';
+
+export { Accordion, AccordionItem, AccordionSummary, AccordionDetails } from './Accordion';
+export type { AccordionProps, AccordionItemProps, AccordionSummaryProps, AccordionDetailsProps } from './Accordion';

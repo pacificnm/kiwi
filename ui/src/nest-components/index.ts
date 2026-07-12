@@ -4,17 +4,20 @@
  * A comprehensive collection of React components built with Tailwind CSS
  * and Nest design tokens, following MUI API conventions.
  *
+ * Themable values (colors, spacing, radius) are supplied by the host at runtime
+ * via the nest-design / nest-react-theme pipeline (nest_theme_css → :root vars).
+ * This package ships no palette of its own — only the theme-independent motion in
+ * runtime.css below.
+ *
  * @packageDocumentation
  */
 
-// Input components
-export * from './components/inputs';
+// Theme-independent component motion (keyframes only — no palette). Imported once
+// so animations are always delivered regardless of the consumer's Tailwind config.
+import './runtime.css';
 
-// Feedback components
-export * from './components/feedback';
-
-// Navigation components
-export * from './components/navigation';
+// All component categories (inputs, feedback, navigation, surface, layout, data-display)
+export * from './components';
 
 // Context providers
 export * from './context';
