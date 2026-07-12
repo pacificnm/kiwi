@@ -990,6 +990,12 @@ use nest_http_serve::{HttpResult, HttpServer, Json, RequestContext, RouteGroup};
 use serde::Serialize;
 
 #[derive(Serialize)]
+struct Index {
+    service: &'static str,
+    endpoints: [&'static str; 2],
+}
+
+#[derive(Serialize)]
 struct Health {
     status: &'static str,
 }
@@ -997,6 +1003,15 @@ struct Health {
 #[derive(Serialize)]
 struct Greeting {
     message: String,
+}
+
+/// Root route so hitting the base URL returns something useful instead of 404.
+async fn index(_ctx: RequestContext) -> HttpResult {
+    Json(Index {
+        service: env!("CARGO_PKG_NAME"),
+        endpoints: ["/api/health", "/api/hello"],
+    })
+    .into_response()
 }
 
 async fn health(_ctx: RequestContext) -> HttpResult {
@@ -1013,10 +1028,15 @@ async fn hello(_ctx: RequestContext) -> HttpResult {
 #[tokio::main]
 async fn main() {
     let addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".to_string());
+    let host = if addr.starts_with("0.0.0.0") { "localhost:3000" } else { &addr };
     println!("{} listening on http://{addr}", env!("CARGO_PKG_NAME"));
+    println!("  GET http://{host}/            service info");
+    println!("  GET http://{host}/api/health  health check");
+    println!("  GET http://{host}/api/hello   greeting");
 
     if let Err(err) = HttpServer::builder()
         .bind(&addr)
+        .routes(RouteGroup::new("").get("/", index))
         .routes(
             RouteGroup::new("/api")
                 .get("/health", health)
