@@ -1051,6 +1051,62 @@ async fn main() {
 }
 "#;
 
+/// `main.rs` for the API+Web variant: serves the built `web/` front end at `/`
+/// (with SPA fallback) alongside the `/api` routes. `__CORE_CRATE__` → core crate.
+const API_WEB_MAIN_TEMPLATE: &str = r#"//! HTTP API server that also serves the web/ front end at `/`.
+
+use nest_http_serve::{HttpResult, HttpServer, Json, RequestContext, RouteGroup};
+use serde::Serialize;
+
+#[derive(Serialize)]
+struct Health {
+    status: &'static str,
+}
+
+#[derive(Serialize)]
+struct Greeting {
+    message: String,
+}
+
+async fn health(_ctx: RequestContext) -> HttpResult {
+    Json(Health { status: "ok" }).into_response()
+}
+
+async fn hello(_ctx: RequestContext) -> HttpResult {
+    Json(Greeting {
+        message: __CORE_CRATE__::greeting(),
+    })
+    .into_response()
+}
+
+#[tokio::main]
+async fn main() {
+    let addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".to_string());
+    let host = if addr.starts_with("0.0.0.0") { "localhost:3000" } else { &addr };
+    // The built front end. Run `cd web && npm install && npm run build` first;
+    // resolved relative to this crate so it works whatever the process CWD is.
+    let web_dist = concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/dist");
+    println!("{} listening on http://{addr}", env!("CARGO_PKG_NAME"));
+    println!("  http://{host}/            web app (build web/ first)");
+    println!("  http://{host}/api/health  health check");
+
+    if let Err(err) = HttpServer::builder()
+        .bind(&addr)
+        .serve_spa(web_dist)
+        .routes(
+            RouteGroup::new("/api")
+                .get("/health", health)
+                .get("/hello", hello),
+        )
+        .run()
+        .await
+    {
+        eprintln!("server error: {err:?}");
+        std::process::exit(1);
+    }
+}
+"#;
+
 /// Write the shared `crates/core` library (a `greet`-style helper) used by the
 /// workspace-based app types.
 fn write_core_crate(core_dir: &Path, kebab: &str, name: &str, crates: &[String]) -> NestResult<()> {
@@ -1213,7 +1269,8 @@ serde = {{ workspace = true }}
     fs::write(server_dir.join("Cargo.toml"), server_cargo)
         .map_err(|e| NestError::io(format!("failed to write server Cargo.toml: {e}")))?;
 
-    let server_main = API_MAIN_TEMPLATE.replace("__CORE_CRATE__", &core_crate);
+    let template = if with_web { API_WEB_MAIN_TEMPLATE } else { API_MAIN_TEMPLATE };
+    let server_main = template.replace("__CORE_CRATE__", &core_crate);
     fs::write(server_dir.join("src/main.rs"), server_main)
         .map_err(|e| NestError::io(format!("failed to write server main.rs: {e}")))?;
 
@@ -1224,12 +1281,20 @@ serde = {{ workspace = true }}
 
     progress("Writing build script");
     write_build_script(app_dir)?;
-    let readme_run = if with_web {
-        "./build run      # Run the API server (then `cd web && npm install && npm run dev`)"
+    let (summary, readme_run) = if with_web {
+        (
+            "Nest HTTP API server with a Vite/React front end",
+            "cd web && npm install && npm run build   # build the front end\n\
+             ./build run                              # serve web + API at http://localhost:3000\n\
+             # hot-reload dev instead: cd web && npm run dev  (Vite proxies /api)",
+        )
     } else {
-        "./build run      # Run the API server (GET http://localhost:3000/api/health)"
+        (
+            "Nest HTTP API server",
+            "./build run      # Run the API server (GET http://localhost:3000/api/health)",
+        )
     };
-    write_config_and_readme(app_dir, name, "Nest HTTP API server", readme_run)?;
+    write_config_and_readme(app_dir, name, summary, readme_run)?;
     Ok(())
 }
 
