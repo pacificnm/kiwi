@@ -1068,6 +1068,12 @@ struct Greeting {
     message: String,
 }
 
+#[derive(Serialize)]
+struct NotBuilt {
+    message: &'static str,
+    api: [&'static str; 2],
+}
+
 async fn health(_ctx: RequestContext) -> HttpResult {
     Json(Health { status: "ok" }).into_response()
 }
@@ -1079,28 +1085,41 @@ async fn hello(_ctx: RequestContext) -> HttpResult {
     .into_response()
 }
 
+// Shown at `/` until the front end is built.
+async fn index(_ctx: RequestContext) -> HttpResult {
+    Json(NotBuilt {
+        message: "Front end not built. Run: cd web && npm install && npm run build",
+        api: ["/api/health", "/api/hello"],
+    })
+    .into_response()
+}
+
 #[tokio::main]
 async fn main() {
     let addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".to_string());
     let host = if addr.starts_with("0.0.0.0") { "localhost:3000" } else { &addr };
-    // The built front end. Run `cd web && npm install && npm run build` first;
-    // resolved relative to this crate so it works whatever the process CWD is.
+    // The built front end, resolved relative to this crate (CWD-independent).
     let web_dist = concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/dist");
+
+    let mut builder = HttpServer::builder().bind(&addr).routes(
+        RouteGroup::new("/api")
+            .get("/health", health)
+            .get("/hello", hello),
+    );
+
     println!("{} listening on http://{addr}", env!("CARGO_PKG_NAME"));
-    println!("  http://{host}/            web app (build web/ first)");
+    if std::path::Path::new(web_dist).is_dir() {
+        // Serve the built SPA at / (with index.html fallback for client routes).
+        builder = builder.serve_spa(web_dist);
+        println!("  http://{host}/            web app");
+    } else {
+        // No build yet: keep serving the API and explain how to build the web app.
+        builder = builder.routes(RouteGroup::new("").get("/", index));
+        println!("  http://{host}/            (front end not built — see cd web)");
+    }
     println!("  http://{host}/api/health  health check");
 
-    if let Err(err) = HttpServer::builder()
-        .bind(&addr)
-        .serve_spa(web_dist)
-        .routes(
-            RouteGroup::new("/api")
-                .get("/health", health)
-                .get("/hello", hello),
-        )
-        .run()
-        .await
-    {
+    if let Err(err) = builder.run().await {
         eprintln!("server error: {err:?}");
         std::process::exit(1);
     }
