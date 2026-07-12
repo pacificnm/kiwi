@@ -2,7 +2,7 @@
 //!
 //! Product commands are invoked from the UI as `plugin:kiwi|<command>`.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use nest_error::{NestError, NestResult};
 use nest_logging::ui_buffer;
@@ -756,6 +756,48 @@ fn workspace_replace_all(
     result
 }
 
+/// After a fresh clone, install `node_modules` for the workspace's shared UI
+/// crates (e.g. `core/crates/nest-react-components`). Apps consume these crates
+/// as local path dependencies and type-check their `.tsx` source, so each crate's
+/// peer deps (react, react-dom, …) must resolve from its own `node_modules`.
+/// Without this, a freshly fetched workspace fails to build any GUI app.
+///
+/// Best-effort: logs and continues so a missing `npm` doesn't abort the fetch.
+fn bootstrap_ui_deps(root: &Path) {
+    for base in ["core/crates", "modules/crates"] {
+        let entries = match std::fs::read_dir(root.join(base)) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let crate_dir = entry.path();
+            if !crate_dir.join("package.json").is_file() {
+                continue;
+            }
+            tracing::info!(target: "kiwi", dir = %crate_dir.display(), "bootstrap_ui_deps: npm install");
+            match std::process::Command::new("npm")
+                .arg("install")
+                .current_dir(&crate_dir)
+                .status()
+            {
+                Ok(status) if status.success() => {}
+                Ok(status) => tracing::warn!(
+                    target: "kiwi",
+                    dir = %crate_dir.display(),
+                    code = ?status.code(),
+                    "bootstrap_ui_deps: npm install failed"
+                ),
+                Err(error) => tracing::warn!(
+                    target: "kiwi",
+                    %error,
+                    dir = %crate_dir.display(),
+                    "bootstrap_ui_deps: could not run npm"
+                ),
+            }
+        }
+    }
+}
+
 /// Clones a repo at `branch` into the (empty) workspace root (File → Fetch Nest Source).
 #[tauri::command]
 fn git_fetch_source(
@@ -765,7 +807,12 @@ fn git_fetch_source(
 ) -> NestResult<WorkspaceInfo> {
     tracing::info!(target: "kiwi", %url, %branch, "git_fetch_source: enter");
     let root = workspace.root();
-    let result = git::clone(&root, &url, &branch).and_then(|()| workspace.open(root));
+    let result = git::clone(&root, &url, &branch).and_then(|()| {
+        // Install shared UI crate deps so a freshly fetched workspace can build
+        // GUI apps without a manual `npm install`.
+        bootstrap_ui_deps(&root);
+        workspace.open(root)
+    });
     match &result {
         Ok(info) => tracing::info!(target: "kiwi", root = %info.root, "git_fetch_source: ok"),
         Err(error) => tracing::error!(target: "kiwi", %error, "git_fetch_source: err"),
@@ -817,6 +864,29 @@ fn git_unstage(workspace: State<'_, Workspace>, path: String) -> NestResult<()> 
 fn git_discard(workspace: State<'_, Workspace>, path: String) -> NestResult<()> {
     tracing::info!(target: "kiwi", %path, "git_discard: enter");
     git::discard(&workspace.root(), &path)
+}
+
+/// Lists local branch names (for the Create Branch base selector).
+#[tauri::command]
+fn git_branch_list(workspace: State<'_, Workspace>) -> NestResult<Vec<String>> {
+    tracing::info!(target: "kiwi", "git_branch_list: enter");
+    git::branch_list(&workspace.root())
+}
+
+/// Creates a new branch from `base` and checks it out.
+#[tauri::command]
+fn git_create_branch(
+    workspace: State<'_, Workspace>,
+    name: String,
+    base: String,
+) -> NestResult<()> {
+    tracing::info!(target: "kiwi", %name, %base, "git_create_branch: enter");
+    let result = git::create_branch(&workspace.root(), &name, &base);
+    match &result {
+        Ok(()) => tracing::info!(target: "kiwi", "git_create_branch: ok"),
+        Err(error) => tracing::error!(target: "kiwi", %error, "git_create_branch: err"),
+    }
+    result
 }
 
 /// Commits staged changes; stages everything first when `stageAll` is set.
@@ -1036,6 +1106,8 @@ pub fn kiwi_plugin<R: Runtime>() -> TauriPlugin<R> {
             git_unstage,
             git_discard,
             git_commit,
+            git_branch_list,
+            git_create_branch,
             git_push,
             git_pull,
             git_log,

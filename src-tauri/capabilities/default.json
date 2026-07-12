@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "kiwi:default",
+    "new-app:default",
     "dialog:default",
     "core:window:allow-close",
     "core:window:allow-minimize",

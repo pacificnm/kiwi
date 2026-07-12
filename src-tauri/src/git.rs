@@ -241,6 +241,38 @@ pub fn commit(root: &Path, message: &str, stage_all_first: bool) -> NestResult<(
     run(git(root).arg("commit").arg("-m").arg(message), "commit")
 }
 
+/// Lists local branch names (for the Create Branch base selector).
+pub fn branch_list(root: &Path) -> NestResult<Vec<String>> {
+    let output = git(root)
+        .args(["branch", "--format=%(refname:short)"])
+        .output()
+        .map_err(|error| NestError::io(format!("git branch failed: {error}")))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(NestError::io(format!("git branch failed: {}", stderr.trim())));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|line| line.trim().to_string())
+        .filter(|line| !line.is_empty())
+        .collect())
+}
+
+/// Creates a new branch `name` from `base` and checks it out (`git switch -c name base`).
+pub fn create_branch(root: &Path, name: &str, base: &str) -> NestResult<()> {
+    let name = name.trim();
+    let base = base.trim();
+    if name.is_empty() {
+        return Err(NestError::validation("branch name is empty"));
+    }
+    let mut command = git(root);
+    command.arg("switch").arg("-c").arg(name);
+    if !base.is_empty() {
+        command.arg(base);
+    }
+    run(&mut command, "create branch")
+}
+
 /// Pushes the current branch to its upstream, or publishes it to `origin` on first push.
 pub fn push(root: &Path) -> NestResult<()> {
     if !inside_work_tree(root)? {

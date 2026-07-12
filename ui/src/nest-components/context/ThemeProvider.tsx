@@ -17,8 +17,15 @@ export interface ThemeProviderProps {
 }
 
 /**
- * Theme provider that manages light/dark mode.
- * Applies the appropriate data-theme attribute to the root element.
+ * Tracks a light/dark UI-mode hint and mirrors it onto the root `data-theme`
+ * attribute.
+ *
+ * NOTE: This provider does **not** define any colors. Theming (the actual
+ * `--nest-color-*` / `--nest-spacing-*` / `--nest-radius-*` values) is host-driven:
+ * the Tauri host injects the active theme's `:root` block at runtime via the
+ * `nest_theme_css` command (nest-design → nest-react-theme pipeline), and it
+ * supports all built-in themes, not just light/dark. `data-theme` here is only a
+ * hint for components that branch on light/dark; it carries no palette.
  *
  * @example
  * <ThemeProvider defaultMode="light" storageKey="nest-theme">

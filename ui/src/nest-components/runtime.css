@@ -1,0 +1,42 @@
+/**
+ * Component runtime CSS for @nest/components.
+ *
+ * This file holds ONLY theme-independent motion (keyframes) that components
+ * reference. It intentionally contains NO color/spacing/radius values and NO
+ * CSS custom properties — all themable values come from the host at runtime
+ * (nest_theme_css → :root vars) via the nest-design / nest-react-theme pipeline.
+ *
+ * Imported once from src/index.ts so the animations are always delivered,
+ * regardless of the consumer's Tailwind content configuration.
+ */
+
+/* LinearProgress indeterminate animation (used by feedback/LinearProgress.tsx). */
+@keyframes linear-progress-indeterminate1 {
+  0% {
+    left: -100%;
+    width: 100%;
+  }
+  50% {
+    left: 0%;
+    width: 50%;
+  }
+  100% {
+    left: 100%;
+    width: 50%;
+  }
+}
+
+@keyframes linear-progress-indeterminate2 {
+  0% {
+    left: -100%;
+    width: 100%;
+  }
+  50% {
+    left: 0%;
+    width: 50%;
+  }
+  100% {
+    left: 100%;
+    width: 50%;
+  }
+}

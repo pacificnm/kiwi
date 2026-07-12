@@ -79,7 +79,8 @@ export function FetchSourceView() {
             </>
           ) : null}
           {" "}
-          — the folder must be empty. Once checked out, use Pull to bring in the latest changes
+          — the folder must be empty. Fetching also installs the shared UI crate dependencies,
+          so it may take a minute. Once checked out, use Pull to bring in the latest changes
           for the current branch.
         </p>
       </header>

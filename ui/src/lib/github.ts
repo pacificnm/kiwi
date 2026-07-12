@@ -24,6 +24,23 @@ export type GitHubMilestone = {
   dueOn: string | null;
 };
 
+/** Milestone as embedded on an issue (some fields may be absent vs. the list API). */
+export type GitHubIssueMilestone = {
+  number: number;
+  title: string;
+  state: string | null;
+  description: string | null;
+  dueOn: string | null;
+};
+
+/** A related issue in a dependency relationship (blocked by / blocking). */
+export type GitHubIssueDependency = {
+  number: number;
+  title: string;
+  state: string;
+  htmlUrl: string;
+};
+
 export type GitHubUser = {
   login: string;
 };
@@ -50,6 +67,9 @@ export type GitHubIssue = {
   updatedAt: string;
   author: GitHubUser | null;
   comments: number;
+  milestone: GitHubIssueMilestone | null;
+  blockedBy: GitHubIssueDependency[];
+  blocking: GitHubIssueDependency[];
 };
 
 export type GitHubIssueActionResult = {

@@ -39,7 +39,7 @@ provider = "ollama"
 
 [project]
 name = "nest"
-root = "/data/projects/nest"
+root = "/data/projects/test"
 
 [swift]
 config_path = "../../swift/config.toml"

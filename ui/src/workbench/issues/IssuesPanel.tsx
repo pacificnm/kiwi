@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { CircularProgress } from "@nest/components";
 import { ContextMenu, type ContextMenuItem } from "../../components/ContextMenu";
 import { formatIpcError } from "../../lib/agent";
 import {
@@ -51,6 +52,7 @@ export function IssuesPanel({ onToggleCollapse }: IssuesPanelProps) {
   const [panelTab, setPanelTab] = useState<PanelTab>("issues");
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loadingNumber, setLoadingNumber] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [menu, setMenu] = useState<{
     x: number;
@@ -97,11 +99,14 @@ export function IssuesPanel({ onToggleCollapse }: IssuesPanelProps) {
 
   const openIssueTab = useCallback(
     async (number: number) => {
+      setLoadingNumber(number);
       try {
         const issue = await githubIssueView(number);
         openIssue(issue);
       } catch (caught) {
         toast.error(formatIpcError(caught));
+      } finally {
+        setLoadingNumber(null);
       }
     },
     [openIssue, toast],
@@ -262,6 +267,7 @@ export function IssuesPanel({ onToggleCollapse }: IssuesPanelProps) {
                   <IssueRow
                     key={issue.number}
                     issue={issue}
+                    loading={loadingNumber === issue.number}
                     onOpen={() => void openIssueTab(issue.number)}
                     onContextMenu={(event) => onIssueContextMenu(event, issue)}
                   />
@@ -287,10 +293,12 @@ export function IssuesPanel({ onToggleCollapse }: IssuesPanelProps) {
 
 function IssueRow({
   issue,
+  loading,
   onOpen,
   onContextMenu,
 }: {
   issue: GitHubIssueListItem;
+  loading: boolean;
   onOpen: () => void;
   onContextMenu: (event: ReactMouseEvent) => void;
 }) {
@@ -303,17 +311,23 @@ function IssueRow({
         type="button"
         onClick={onOpen}
         onContextMenu={onContextMenu}
+        disabled={loading}
+        aria-busy={loading}
         className="flex w-full gap-2 px-3 py-2.5 text-left hover:bg-nest-muted/10"
       >
-        <span className="mt-0.5 shrink-0">
-          <Icon
-            icon={isOpen ? faCircle : faCircleCheck}
-            className={[
-              "size-3",
-              isOpen ? "text-green-500" : "text-purple-500",
-            ].join(" ")}
-            title={isOpen ? "Open" : "Closed"}
-          />
+        <span className="mt-0.5 flex size-3 shrink-0 items-center justify-center">
+          {loading ? (
+            <CircularProgress size={12} aria-label="Loading issue" />
+          ) : (
+            <Icon
+              icon={isOpen ? faCircle : faCircleCheck}
+              className={[
+                "size-3",
+                isOpen ? "text-green-500" : "text-purple-500",
+              ].join(" ")}
+              title={isOpen ? "Open" : "Closed"}
+            />
+          )}
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-xs font-medium leading-snug text-nest-foreground">

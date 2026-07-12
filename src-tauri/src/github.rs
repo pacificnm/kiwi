@@ -67,6 +67,31 @@ pub struct GitHubMilestone {
     pub due_on: Option<String>,
 }
 
+/// Milestone as embedded on an issue. `gh issue view --json milestone` omits
+/// some fields the REST milestone list has, so all but `number`/`title` are optional.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubIssueMilestone {
+    pub number: u64,
+    pub title: String,
+    #[serde(default)]
+    pub state: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub due_on: Option<String>,
+}
+
+/// A related issue in a dependency relationship (blocked by / blocking).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubIssueDependency {
+    pub number: u64,
+    pub title: String,
+    pub state: String,
+    pub html_url: String,
+}
+
 /// Full issue body for editor tabs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -81,6 +106,11 @@ pub struct GitHubIssue {
     pub updated_at: String,
     pub author: Option<GitHubUser>,
     pub comments: u32,
+    pub milestone: Option<GitHubIssueMilestone>,
+    /// Issues that block this one.
+    pub blocked_by: Vec<GitHubIssueDependency>,
+    /// Issues that this one blocks.
+    pub blocking: Vec<GitHubIssueDependency>,
 }
 
 /// Result of creating an issue or posting a comment.
@@ -191,11 +221,23 @@ pub fn issue_view(repo: &str, number: u64) -> NestResult<GitHubIssue> {
         "--repo",
         repo,
         "--json",
-        "number,title,body,state,labels,url,createdAt,updatedAt,author",
+        "number,title,body,state,labels,url,createdAt,updatedAt,author,milestone,blockedBy,blocking",
     ])?;
     let raw: RawIssue = serde_json::from_str(&json)
         .map_err(|error| NestError::io(format!("failed to parse gh issue view: {error}")))?;
     let comments = issue_comment_count(repo, number)?;
+    // `gh` gives us the dependency counts cheaply in the call above; only fetch
+    // the full lists (an extra REST call each) when there's actually something.
+    let blocked_by = if raw.blocked_by.as_ref().map_or(0, |c| c.total_count) > 0 {
+        issue_dependencies(repo, number, "blocked_by")
+    } else {
+        Vec::new()
+    };
+    let blocking = if raw.blocking.as_ref().map_or(0, |c| c.total_count) > 0 {
+        issue_dependencies(repo, number, "blocking")
+    } else {
+        Vec::new()
+    };
     Ok(GitHubIssue {
         number: raw.number,
         title: raw.title,
@@ -207,7 +249,32 @@ pub fn issue_view(repo: &str, number: u64) -> NestResult<GitHubIssue> {
         updated_at: raw.updated_at,
         author: raw.author,
         comments,
+        milestone: raw.milestone,
+        blocked_by,
+        blocking,
     })
+}
+
+/// Fetches issue dependencies in one direction (`blocked_by` or `blocking`).
+/// Best-effort: returns an empty list on any error (e.g. GitHub Enterprise
+/// without the dependencies feature) so it never blocks opening an issue.
+fn issue_dependencies(repo: &str, number: u64, direction: &str) -> Vec<GitHubIssueDependency> {
+    let json = match gh_json(&[
+        "api",
+        &format!("repos/{repo}/issues/{number}/dependencies/{direction}"),
+    ]) {
+        Ok(value) => value,
+        Err(_) => return Vec::new(),
+    };
+    let raw: Vec<RawDependency> = serde_json::from_str(&json).unwrap_or_default();
+    raw.into_iter()
+        .map(|item| GitHubIssueDependency {
+            number: item.number,
+            title: item.title,
+            state: item.state,
+            html_url: item.html_url,
+        })
+        .collect()
 }
 
 /// Creates a new GitHub issue.
@@ -331,6 +398,30 @@ struct RawIssue {
     #[serde(rename = "updatedAt")]
     updated_at: String,
     author: Option<GitHubUser>,
+    #[serde(default)]
+    milestone: Option<GitHubIssueMilestone>,
+    #[serde(rename = "blockedBy", default)]
+    blocked_by: Option<RawDependencyConnection>,
+    #[serde(default)]
+    blocking: Option<RawDependencyConnection>,
+}
+
+/// `gh`'s `{ nodes, totalCount }` shape for the `blockedBy` / `blocking`
+/// connection fields — we only need the count to decide whether to fetch details.
+#[derive(Debug, Deserialize)]
+struct RawDependencyConnection {
+    #[serde(rename = "totalCount")]
+    total_count: u32,
+}
+
+/// One element of the REST `dependencies/{blocked_by,blocking}` response
+/// (a standard issue object; only the fields we render are read).
+#[derive(Debug, Deserialize)]
+struct RawDependency {
+    number: u64,
+    title: String,
+    state: String,
+    html_url: String,
 }
 
 fn issue_comment_count(repo: &str, number: u64) -> NestResult<u32> {

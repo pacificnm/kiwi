@@ -9,6 +9,8 @@ import { useIssuesActions } from "./issues/issuesActions";
 import { useWorkbench } from "./state";
 import { LAYOUT } from "./activity";
 
+// Note: openNewAppWizard is accessed via useWorkbench() hook
+
 type MenuBarProps = {
   title: string;
   onOpenFolder?: () => void;
@@ -45,7 +47,7 @@ export function MenuBar({
   onReplace,
 }: MenuBarProps) {
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
-  const { activePath, openFetchSource } = useWorkbench();
+  const { activePath, openFetchSource, openNewAppWizard } = useWorkbench();
   const editor = useEditorCommands();
   const issues = useIssuesActions();
   const toast = useToast();
@@ -119,6 +121,13 @@ export function MenuBar({
           />
           <MenuItem label="Open Recent" disabled trailing={<Chevron />} />
           <MenuSeparator />
+          <MenuItem
+            label="New Application…"
+            onClick={() => {
+              openNewAppWizard();
+              close();
+            }}
+          />
           <MenuItem
             label="Fetch Nest Source…"
             onClick={() => {
