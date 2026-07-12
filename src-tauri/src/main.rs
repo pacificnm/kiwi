@@ -7,10 +7,11 @@ mod commands;
 mod config_host;
 mod doc_sources;
 mod docs;
-mod kiwi_config;
 mod git;
 mod github;
+mod kiwi_config;
 mod mcp;
+mod new_app;
 mod ollama;
 mod problems;
 mod swift;
@@ -82,6 +83,7 @@ fn main() {
             .plugin(tauri_plugin_dialog::init())
             .plugin(tauri_plugin_clipboard_manager::init())
             .plugin(commands::kiwi_plugin())
+            .plugin(new_app::new_app_plugin())
     })
     .run(tauri::generate_context!());
 }

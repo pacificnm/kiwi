@@ -9,6 +9,7 @@ import { ComponentDetailView } from "./ComponentDetailView";
 import { ThemeDetailView } from "./ThemeDetailView";
 import { SettingsDetailView } from "./SettingsDetailView";
 import { FetchSourceView } from "./FetchSourceView";
+import { NewAppWizard } from "./NewAppWizard";
 import { DocSourcesSettingsView } from "./DocSourcesSettingsView";
 import { KiwiConfigSettingsView } from "./KiwiConfigSettingsView";
 import { useWorkbench } from "./state";
@@ -87,6 +88,8 @@ export function EditorArea() {
             <p className="p-3 text-xs text-nest-error">{active.error}</p>
           ) : active.isFetchSource ? (
             <FetchSourceView />
+          ) : active.isNewAppWizard ? (
+            <NewAppWizard />
           ) : active.gitCommitChanges ? (
             <CommitChangesView changes={active.gitCommitChanges} />
           ) : active.githubIssue ? (

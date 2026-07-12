@@ -91,12 +91,23 @@ export function changeBadge(kind: GitChangeKind): string {
 /** Virtual editor tab key for the Fetch Source form (singleton tab). */
 const FETCH_SOURCE_TAB_KEY = "git-fetch-source";
 
+/** Virtual editor tab key for the New Application Wizard (singleton tab). */
+const NEW_APP_WIZARD_TAB_KEY = "new-app-wizard";
+
 export function fetchSourceTabKey(): string {
   return FETCH_SOURCE_TAB_KEY;
 }
 
 export function isFetchSourceTab(relPath: string): boolean {
   return relPath === FETCH_SOURCE_TAB_KEY;
+}
+
+export function newAppWizardTabKey(): string {
+  return NEW_APP_WIZARD_TAB_KEY;
+}
+
+export function isNewAppWizardTab(relPath: string): boolean {
+  return relPath === NEW_APP_WIZARD_TAB_KEY;
 }
 
 /** Clones `url` at `branch` into the (empty) workspace root. */

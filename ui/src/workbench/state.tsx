@@ -25,6 +25,7 @@ import {
   fetchSourceTabKey,
   isCommitTab,
   isFetchSourceTab,
+  newAppWizardTabKey,
   type GitCommitChanges,
 } from "../lib/git";
 import { componentTabKey, isComponentTab, type ComponentDef } from "../lib/componentsLibrary";
@@ -68,6 +69,8 @@ export type EditorTab = {
   settingsItemId?: string | null;
   /** True when this tab is the virtual Fetch Source form (File → Fetch Nest Source). */
   isFetchSource?: boolean;
+  /** True when this tab is the New Application Wizard. */
+  isNewAppWizard?: boolean;
 };
 
 type WorkbenchContextValue = {
@@ -97,6 +100,8 @@ type WorkbenchContextValue = {
   openSetting: (item: SettingsItem) => void;
   /** Opens (or focuses) the Fetch Source form tab (File → Fetch Nest Source). */
   openFetchSource: () => void;
+  /** Opens (or focuses) the New Application Wizard tab. */
+  openNewAppWizard: () => void;
   /** The currently active theme's id, once known. */
   activeThemeId: string | null;
   /** Focuses an already-open tab. */
@@ -612,6 +617,32 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const openNewAppWizard = useCallback(() => {
+    const relPath = newAppWizardTabKey();
+    klog("workbench", "openNewAppWizard");
+    setActivePath(relPath);
+    setTabs((current) => {
+      const existing = current.find((tab) => tab.relPath === relPath);
+      if (existing) {
+        return current;
+      }
+      return [
+        ...current,
+        {
+          relPath,
+          name: "New Application",
+          content: "",
+          savedContent: "",
+          dirty: false,
+          loading: false,
+          saving: false,
+          error: null,
+          isNewAppWizard: true,
+        },
+      ];
+    });
+  }, []);
+
   const closeTab = useCallback((relPath: string) => {
     setTabs((current) => {
       const next = current.filter((tab) => tab.relPath !== relPath);
@@ -661,6 +692,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       openTheme,
       openSetting,
       openFetchSource,
+      openNewAppWizard,
       activeThemeId,
       focusTab,
       updateTabContent,
@@ -683,6 +715,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       openTheme,
       openSetting,
       openFetchSource,
+      openNewAppWizard,
       activeThemeId,
       focusTab,
       updateTabContent,

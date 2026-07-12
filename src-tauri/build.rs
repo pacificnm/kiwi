@@ -81,14 +81,34 @@ const KIWI_COMMANDS: &[&str] = &[
     "github_milestone_list",
 ];
 
+/// Commands exposed by the inline `new-app` Tauri plugin (see `new_app.rs`).
+///
+/// Like `KIWI_COMMANDS`, listing them here lets `tauri-build` autogenerate the
+/// `allow-*` ACL permissions and a `new-app:default` set. Without this, Tauri v2
+/// denies every `plugin:new-app|*` invoke. Keep in sync with `new_app_plugin`'s
+/// `generate_handler!`.
+const NEW_APP_COMMANDS: &[&str] = &[
+    "new_app_list_crates",
+    "new_app_crate_profile",
+    "new_app_scaffold",
+    "new_app_build",
+];
+
 fn main() {
     tauri_build::try_build(
-        tauri_build::Attributes::new().plugin(
-            "kiwi",
-            tauri_build::InlinedPlugin::new()
-                .commands(KIWI_COMMANDS)
-                .default_permission(tauri_build::DefaultPermissionRule::AllowAllCommands),
-        ),
+        tauri_build::Attributes::new()
+            .plugin(
+                "kiwi",
+                tauri_build::InlinedPlugin::new()
+                    .commands(KIWI_COMMANDS)
+                    .default_permission(tauri_build::DefaultPermissionRule::AllowAllCommands),
+            )
+            .plugin(
+                "new-app",
+                tauri_build::InlinedPlugin::new()
+                    .commands(NEW_APP_COMMANDS)
+                    .default_permission(tauri_build::DefaultPermissionRule::AllowAllCommands),
+            ),
     )
     .expect("failed to run tauri-build");
 }

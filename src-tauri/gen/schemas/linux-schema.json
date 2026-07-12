@@ -3229,6 +3229,60 @@
           "type": "string",
           "const": "kiwi:deny-workspace-write",
           "markdownDescription": "Denies the workspace_write command without any pre-configured scope."
+        },
+        {
+          "description": "Default plugin permissions.\n#### This default permission set includes:\n\n- `allow-new-app-list-crates`\n- `allow-new-app-crate-profile`\n- `allow-new-app-scaffold`\n- `allow-new-app-build`",
+          "type": "string",
+          "const": "new-app:default",
+          "markdownDescription": "Default plugin permissions.\n#### This default permission set includes:\n\n- `allow-new-app-list-crates`\n- `allow-new-app-crate-profile`\n- `allow-new-app-scaffold`\n- `allow-new-app-build`"
+        },
+        {
+          "description": "Enables the new_app_build command without any pre-configured scope.",
+          "type": "string",
+          "const": "new-app:allow-new-app-build",
+          "markdownDescription": "Enables the new_app_build command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the new_app_crate_profile command without any pre-configured scope.",
+          "type": "string",
+          "const": "new-app:allow-new-app-crate-profile",
+          "markdownDescription": "Enables the new_app_crate_profile command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the new_app_list_crates command without any pre-configured scope.",
+          "type": "string",
+          "const": "new-app:allow-new-app-list-crates",
+          "markdownDescription": "Enables the new_app_list_crates command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the new_app_scaffold command without any pre-configured scope.",
+          "type": "string",
+          "const": "new-app:allow-new-app-scaffold",
+          "markdownDescription": "Enables the new_app_scaffold command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the new_app_build command without any pre-configured scope.",
+          "type": "string",
+          "const": "new-app:deny-new-app-build",
+          "markdownDescription": "Denies the new_app_build command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the new_app_crate_profile command without any pre-configured scope.",
+          "type": "string",
+          "const": "new-app:deny-new-app-crate-profile",
+          "markdownDescription": "Denies the new_app_crate_profile command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the new_app_list_crates command without any pre-configured scope.",
+          "type": "string",
+          "const": "new-app:deny-new-app-list-crates",
+          "markdownDescription": "Denies the new_app_list_crates command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the new_app_scaffold command without any pre-configured scope.",
+          "type": "string",
+          "const": "new-app:deny-new-app-scaffold",
+          "markdownDescription": "Denies the new_app_scaffold command without any pre-configured scope."
         }
       ]
     },
